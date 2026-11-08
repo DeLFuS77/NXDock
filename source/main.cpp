@@ -11,31 +11,16 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
-#include <switch.h>
-#include <cstdio>
+#include "app.hpp"
 
-// I0: a bootable shell. The real interface (deko3d + nanovg) and the
-// install core arrive in I1.
 int main(int, char**) {
-    consoleInit(nullptr);
-
-    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
-    PadState pad;
-    padInitializeDefault(&pad);
-
-    std::printf("\x1b[2;3HNXDock " NXDOCK_VERSION "\n");
-    std::printf("\x1b[4;3HInstall your own games over the network.\n");
-    std::printf("\x1b[6;3HThis build only checks that NXDock starts.\n");
-    std::printf("\x1b[8;3HPress + to exit.\n");
-
-    while (appletMainLoop()) {
-        padUpdate(&pad);
-        if (padGetButtonsDown(&pad) & HidNpadButton_Plus) {
-            break;
-        }
-        consoleUpdate(nullptr);
+    nxdock::App app;
+    if (!app.Init()) {
+        app.Exit();
+        return 1;
     }
-
-    consoleExit(nullptr);
+    while (app.Frame()) {
+    }
+    app.Exit();
     return 0;
 }
