@@ -1,0 +1,22 @@
+NXDock
+Copyright (C) 2026 DeLFuS77
+
+NXDock is free software, licensed under the GNU General Public License,
+version 3 or (at your option) any later version. See LICENSE.
+
+Third-party components
+----------------------
+
+libnx
+  https://github.com/switchbrew/libnx
+  Copyright (c) 2017-2026 libnx Authors
+  ISC License. Linked into the program.
+
+Planned components (not included yet; each is listed here, with its
+copyright and licence, in the same change that brings it in):
+
+- The install core "yati" from Sphaira (https://github.com/NaGaa95/sphaira),
+  GPL-3.0. Thanks to ITotalJustice and the Sphaira contributors: NXDock's
+  installer is built on their work.
+- deko3d (https://github.com/devkitPro/deko3d), zlib licence.
+- nanovg for deko3d (https://github.com/ITotalJustice/nanovg-deko3d), zlib licence.
