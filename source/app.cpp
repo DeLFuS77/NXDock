@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include "i18n.hpp"
+#include "net.hpp"
 
 namespace nxdock {
 namespace {
@@ -73,6 +74,42 @@ void Panel(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, f
     ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, t.line, 1);
 }
 
+// Text over several lines inside a width.
+void TextBox(NVGcontext* vg, float x, float y, float w, float size, NVGcolor color, const char* str) {
+    nvgFontFace(vg, "ui");
+    nvgFontSize(vg, size);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgTextLineHeight(vg, 1.3f);
+    nvgFillColor(vg, color);
+    nvgTextBox(vg, x, y, w, str, nullptr);
+}
+
+// The console's keyboard. A secret text is hidden while typed and never given as initial text.
+bool AskText(const char* guide, const std::string& initial, bool secret, std::string& out) {
+    SwkbdConfig kbd;
+    if (R_FAILED(swkbdCreate(&kbd, 0))) {
+        return false;
+    }
+    swkbdConfigMakePresetDefault(&kbd);
+    swkbdConfigSetGuideText(&kbd, guide);
+    swkbdConfigSetStringLenMax(&kbd, 255);
+    if (secret) {
+        swkbdConfigSetPasswordFlag(&kbd, 1);
+    } else {
+        swkbdConfigSetInitialText(&kbd, initial.c_str());
+    }
+    char text[256] = {};
+    const Result rc = swkbdShow(&kbd, text, sizeof(text));
+    swkbdClose(&kbd);
+    if (R_FAILED(rc) || !text[0]) {
+        return false;
+    }
+    out = text;
+    return true;
+}
+
+constexpr int kSettingRows = 4; // theme, address, key, speed test
+
 } // namespace
 
 bool App::Init() {
@@ -80,6 +117,9 @@ bool App::Init() {
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&m_pad);
     hidInitializeTouchScreen();
+    net::Init();
+    m_config = Config::Load();
+    m_theme = m_config.light ? LightTheme() : DarkTheme();
     if (!m_gfx.Init()) {
         return false;
     }
@@ -88,7 +128,46 @@ bool App::Init() {
 }
 
 void App::Exit() {
+    m_speed.Cancel();
     m_gfx.Exit();
+    net::Exit();
+}
+
+void App::ActivateSetting(int row) {
+    const auto& s = Tr();
+    switch (row) {
+        case 0:
+            m_config.light = m_theme.dark;
+            m_theme = m_config.light ? LightTheme() : DarkTheme();
+            m_config.Save();
+            break;
+        case 1: {
+            std::string url;
+            if (AskText(s.address, m_config.url.empty() ? "http://" : m_config.url, false, url)) {
+                if (url.find("://") == std::string::npos) {
+                    url = "http://" + url;
+                }
+                m_config.url = url;
+                m_config.Save();
+            }
+            break;
+        }
+        case 2: {
+            std::string key;
+            if (AskText(s.console_key, "", true, key)) {
+                m_config.key = key;
+                m_config.Save();
+            }
+            break;
+        }
+        case 3:
+            if (m_speed.Running()) {
+                m_speed.Cancel();
+            } else if (!m_config.url.empty() && !m_config.key.empty()) {
+                m_speed.Start(m_config.url, m_config.key);
+            }
+            break;
+    }
 }
 
 bool App::Repeat(u64 down, u64 held, u64 mask) {
@@ -171,7 +250,14 @@ void App::Tap(float x, float y, u64& down) {
                 }
                 break;
             case HitKind::QueueStrip: m_tab = Tab::Queue; break;
-            case HitKind::ThemeRow: down |= HidNpadButton_A; break;
+            case HitKind::SettingsRow:
+                // as in the library: the first tap marks a row, a second one uses it
+                if (m_setting == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_setting = it->index;
+                }
+                break;
         }
         return;
     }
@@ -205,9 +291,10 @@ void App::Update(u64 down, u64 held) {
             break;
         }
         case Tab::Settings:
-            if (down & HidNpadButton_A) {
-                m_theme = m_theme.dark ? LightTheme() : DarkTheme();
-            }
+            if (Repeat(down, held, up) && m_setting > 0) m_setting--;
+            if (Repeat(down, held, dn) && m_setting < kSettingRows - 1) m_setting++;
+            if (down & HidNpadButton_A) ActivateSetting(m_setting);
+            if (down & HidNpadButton_X) ActivateSetting(3);
             break;
         default:
             break;
@@ -474,15 +561,101 @@ void App::DrawQueue(NVGcontext* vg) {
 void App::DrawSettings(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
-    const float x = 48, y = 110, w = 560;
-    Panel(vg, t, x, y, w, 76, 14);
-    ui::Focus(vg, t, x, y, w, 76, 14, m_time);
-    AddHit(x, y, w, 76, HitKind::ThemeRow);
-    ui::Text(vg, x + 24, y + 38, 19, t.text, s.theme);
-    ui::Text(vg, x + w - 24, y + 38, 19, t.work, t.dark ? s.dark : s.light, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    ui::Text(vg, x, y + 112, 15, t.muted, s.preview_note);
-    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.change, HidNpadButton_A}, {ui::glyph::B, s.back, HidNpadButton_B}},
+    const bool running = m_speed.Running();
+
+    // Rows on the left.
+    std::string address = m_config.url.empty() ? s.not_set : m_config.url;
+    if (address.size() > 34) {
+        address = address.substr(0, 33) + "…";
+    }
+    struct Row { const char* label; std::string value; bool accent; };
+    const Row rows[kSettingRows] = {
+        {s.theme, t.dark ? s.dark : s.light, true},
+        {s.address, address, !m_config.url.empty()},
+        {s.console_key, m_config.key.empty() ? s.not_set : s.key_saved, !m_config.key.empty()},
+        {s.speed_test, running ? s.cancel : s.start, true},
+    };
+    const float x = 48, w = 540, h = 72, gap = 14;
+    float y = 100;
+    for (int i = 0; i < kSettingRows; i++) {
+        Panel(vg, t, x, y, w, h, 14);
+        if (i == m_setting) {
+            ui::Focus(vg, t, x, y, w, h, 14, m_time);
+        }
+        AddHit(x, y, w, h, HitKind::SettingsRow, i);
+        ui::Text(vg, x + 22, y + h / 2, 18, t.text, rows[i].label);
+        ui::Text(vg, x + w - 22, y + h / 2, 17, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(),
+                 NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        y += h + gap;
+    }
+    if (m_config.url.empty() || m_config.key.empty()) {
+        TextBox(vg, x, y + 6, w, 15, t.muted, s.need_config);
+    }
+
+    DrawSpeedPanel(vg, 620, 100, kWidth - 620 - 48, 540);
+
+    ui::HintBar(vg, t, nullptr,
+                {{ui::glyph::A, s.edit, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},
+                 {ui::glyph::B, s.back, HidNpadButton_B}},
                 m_hint_rects);
+}
+
+void App::DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    const SpeedTest::View v = m_speed.Snapshot();
+    Panel(vg, t, x, y, w, h, 16);
+    const float px = x + 24, pw = w - 48;
+    ui::Text(vg, px, y + 34, 21, t.text, s.speed_test);
+
+    // The mode: an applet gets small buffers, which caps the speed.
+    const bool applet = net::IsAppletMode();
+    TextBox(vg, px, y + 58, pw, 14, applet ? t.warn : t.muted, applet ? s.applet_warning : s.app_mode);
+
+    // One line per measure: label, bar and value. Bars share a scale so they compare at a glance.
+    double top = std::max({v.net[0], v.net[1], v.net[2], v.sd, 20.0});
+    if (v.live > top) top = v.live;
+    const int best = (v.net[0] >= v.net[1] && v.net[0] >= v.net[2]) ? 0 : (v.net[1] >= v.net[2] ? 1 : 2);
+    struct Line { const char* label; double value; SpeedTest::Stage stage; NVGcolor color; };
+    const Line lines[] = {
+        {s.conn1, v.net[0], SpeedTest::Stage::Net1, t.work},
+        {s.conn2, v.net[1], SpeedTest::Stage::Net2, t.work},
+        {s.conn4, v.net[2], SpeedTest::Stage::Net4, t.work},
+        {s.sd_write, v.sd, SpeedTest::Stage::Sd, t.orange},
+    };
+    float ly = y + 128;
+    for (int i = 0; i < 4; i++) {
+        const auto& l = lines[i];
+        const bool now = v.stage == l.stage;
+        const double value = now ? v.live : l.value;
+        ui::Text(vg, px, ly, 16, now ? t.text : t.muted, l.label);
+        char text[48];
+        if (value > 0) {
+            std::snprintf(text, sizeof(text), "%.1f MB/s", value);
+        } else {
+            std::snprintf(text, sizeof(text), "%s", now ? "…" : s.waiting_test);
+        }
+        const float vw = ui::Text(vg, px + pw, ly, 16, value > 0 ? t.text : t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        (void)vw;
+        if (i < 3 && v.stage == SpeedTest::Stage::Done && i == best && l.value > 0) {
+            const float bw = ui::TextWidth(vg, 12, s.best) + 14;
+            const float tx = px + ui::TextWidth(vg, 16, l.label) + 10;
+            ui::FillRound(vg, tx, ly - 11, bw, 22, 6, t.ok);
+            ui::Text(vg, tx + bw / 2, ly, 12, nvgRGB(255, 255, 255), s.best, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+        ui::Progress(vg, t, px, ly + 18, pw, 8, float(value / top), l.color, m_time, now);
+        ly += 66;
+    }
+
+    // Progress of the stage running, or the error, or what the test does.
+    const float by = y + h - 70;
+    if (v.stage == SpeedTest::Stage::Failed) {
+        TextBox(vg, px, by, pw, 15, t.err, v.error.c_str());
+    } else if (m_speed.Running()) {
+        ui::Progress(vg, t, px, by + 8, pw, 6, v.progress, t.muted, m_time, true);
+    } else {
+        TextBox(vg, px, by, pw, 14, t.muted, s.test_note);
+    }
 }
 
 void App::DrawComingSoon(NVGcontext* vg) {

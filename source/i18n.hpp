@@ -15,6 +15,12 @@ struct Strings {
     const char *theme, *dark, *light, *change;
     const char *coming_soon, *preview_note;
     const char *update_badge;
+    // settings and the speed test
+    const char *address, *console_key, *key_saved, *not_set, *speed_test, *start, *cancel;
+    const char *conn1, *conn2, *conn4, *sd_write, *waiting_test;
+    const char *applet_warning, *app_mode, *need_config, *test_note, *best;
+    const char *err_key, *err_off, *err_forbidden, *err_connect, *err_sd;
+    const char *edit;
 };
 
 // Picks English or Spanish from the console language; more languages later.

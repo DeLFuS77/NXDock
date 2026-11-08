@@ -4,7 +4,9 @@
 
 #include <switch.h>
 #include <vector>
+#include "config.hpp"
 #include "gfx.hpp"
+#include "speedtest.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
 
@@ -21,7 +23,7 @@ public:
 
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
-    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, ThemeRow };
+    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -35,6 +37,8 @@ private:
     void DrawLibrary(NVGcontext* vg);
     void DrawQueue(NVGcontext* vg);
     void DrawSettings(NVGcontext* vg);
+    void DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h);
+    void ActivateSetting(int row);
     void DrawComingSoon(NVGcontext* vg);
     void DrawTouchFeedback(NVGcontext* vg);
 
@@ -55,6 +59,9 @@ private:
     Tab m_tab = Tab::Library;
     int m_focus = 0;
     int m_filter = 0;
+    int m_setting = 0; // row in focus in Settings
+    Config m_config;
+    SpeedTest m_speed;
     double m_time = 0;
     double m_next_repeat = 0;
     u64 m_held_dir = 0;

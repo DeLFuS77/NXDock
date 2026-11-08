@@ -24,6 +24,9 @@ FetchContent_MakeAvailable(nanovg)
 add_executable(nxdock
     source/main.cpp
     source/app.cpp
+    source/config.cpp
+    source/net.cpp
+    source/speedtest.cpp
     source/gfx.cpp
     source/i18n.cpp
     source/ui.cpp
@@ -36,7 +39,12 @@ target_compile_definitions(nxdock PRIVATE
 target_compile_options(nxdock PRIVATE -Wall -Wextra -O2)
 
 find_library(deko3d_lib deko3d REQUIRED)
-target_link_libraries(nxdock PRIVATE nanovg ${deko3d_lib})
+# libcurl and zlib from devkitPro's portlibs (switch-curl, switch-zlib)
+find_path(curl_inc curl/curl.h REQUIRED)
+find_library(curl_lib curl REQUIRED)
+find_library(z_lib z REQUIRED)
+target_include_directories(nxdock PRIVATE ${curl_inc})
+target_link_libraries(nxdock PRIVATE nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
 
 nx_generate_nacp(
     OUTPUT nxdock.nacp
