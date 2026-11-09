@@ -39,3 +39,6 @@
     part is checked against its SHA-256 before anything is registered, and a
     failed or cancelled install leaves nothing behind;
   - XCI, XCZ and the internal memory come in a later step.
+- The language of the console: English, Spanish, French, German, Italian,
+  Portuguese, Dutch, Russian, Japanese, Korean and Chinese, as the library
+  app; English for any other.

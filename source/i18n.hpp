@@ -40,7 +40,8 @@ struct Strings {
     const char *failed, *cancelled, *thread_one, *clear_done, *download_test, *queue_done_hint, *leave_while_installing;
 };
 
-// Picks English or Spanish from the console language; more languages later.
+// Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,
+// Dutch, Russian, Japanese, Korean or Chinese, as the library app; English for any other.
 const Strings& Tr();
 void InitStrings();
 
