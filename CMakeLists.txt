@@ -32,6 +32,33 @@ FetchContent_Declare(yyjson
 )
 FetchContent_MakeAvailable(yyjson)
 
+# The install core "yati" from Sphaira (GPL-3.0), with NXDock's layer in place of Sphaira's
+# app, settings, translations and log (compat/). See NOTICE.
+add_library(yati STATIC
+    source/yati/yati.cpp
+    source/yati/container/nsp.cpp
+    source/yati/container/xci.cpp
+    source/yati/nx/es.cpp
+    source/yati/nx/keys.cpp
+    source/yati/nx/nca.cpp
+    source/yati/nx/ncm.cpp
+    source/yati/nx/ns.cpp
+    source/yati/nx/nxdumptool_rsa.c
+    source/yati/nx/nxdumptool/save.c
+    compat/yati_env.cpp
+)
+target_include_directories(yati PUBLIC include compat)
+target_include_directories(yati PRIVATE include/yati/nx/nxdumptool)
+target_compile_definitions(yati PRIVATE NXDOCK_VERSION="${PROJECT_VERSION}")
+# the core keeps its upstream style: signed/unsigned comparisons and partial initialisers are
+# not reported there; NXDock's own code is built with every -Wall -Wextra warning.
+target_compile_options(yati PRIVATE -Wall -Wextra -Wno-sign-compare -Wno-missing-field-initializers -O2)
+find_path(zstd_inc zstd.h REQUIRED)
+find_library(zstd_lib zstd REQUIRED)
+find_library(mbedcrypto_lib mbedcrypto REQUIRED)
+target_include_directories(yati PRIVATE ${zstd_inc})
+target_link_libraries(yati PUBLIC ${zstd_lib} ${mbedcrypto_lib})
+
 add_executable(nxdock
     source/main.cpp
     source/app.cpp

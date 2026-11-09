@@ -34,9 +34,42 @@ stb_image
   By Sean Barrett. Public domain or MIT licence. Used directly to decode
   the covers (JPEG and PNG), from the copy nanovg fetches.
 
-Planned components (not included yet; each is listed here, with its
-copyright and licence, in the same change that brings it in):
+The install core "yati" from Sphaira (commit 05bd057, 5 November 2026)
+  https://github.com/NaGaa95/sphaira
+  By ITotalJustice and the Sphaira contributors. GPL-3.0.
+  In source/yati and include/yati. Thanks to ITotalJustice and everyone who
+  worked on Sphaira: NXDock's installer is built on their work.
+  Changed for NXDock on 9 November 2026 (marked "NXDock:" in the code):
+  - Sphaira's app, settings, dialogs, translations, log and file system
+    helpers are replaced by NXDock's own layer in compat/;
+  - the USB, file and stream sources, the MSP installer and the random
+    access NCZ reader are left out; NXDock brings its own HTTP source;
+  - NCZBLOCK blocks are decompressed on three threads;
+  - the install is all or nothing: the free space and the firmware are
+    checked first, nothing is registered until every NCA is written and its
+    SHA-256 matches its content id, and a failed register is taken back;
+  - the user's prod.keys is never read, and tickets are not converted;
+  - the control NCA (name and icon) is not read; NXDock gets them from the
+    library app.
 
-- The install core "yati" from Sphaira (https://github.com/NaGaa95/sphaira),
-  GPL-3.0. Thanks to ITotalJustice and the Sphaira contributors: NXDock's
-  installer is built on their work.
+  Inside yati, from nxdumptool (https://github.com/DarkMatterCore/nxdumptool),
+  GPL-3.0, with their own notices kept in each file:
+  - nxdumptool_rsa.c: Copyright (c) 2018-2019 SciresM,
+    Copyright (c) 2020-2024 DarkMatterCore;
+  - nxdumptool/save.c and its headers: Copyright (c) 2019-2020 shchmue,
+    Copyright (c) 2020-2024 DarkMatterCore.
+
+Zstandard
+  https://github.com/facebook/zstd
+  Copyright (c) Meta Platforms, Inc. and affiliates.
+  BSD licence. Linked from devkitPro's portlibs (switch-zstd).
+
+Mbed TLS (the RSA check of tickets)
+  https://github.com/Mbed-TLS/mbedtls
+  Copyright The Mbed TLS Contributors.
+  Apache License 2.0. Linked from devkitPro's portlibs (switch-mbedtls).
+
+libcurl
+  https://curl.se
+  Copyright (c) Daniel Stenberg and many contributors.
+  curl licence (MIT/X style). Linked from devkitPro's portlibs (switch-curl).
