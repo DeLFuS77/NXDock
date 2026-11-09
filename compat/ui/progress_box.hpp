@@ -50,6 +50,11 @@ public:
         std::lock_guard lock(m_mutex);
         return m_what;
     }
+    // what the install registered, for "Undo what was installed in this session".
+    std::vector<NcmContentMetaKey> Registered() {
+        std::lock_guard lock(m_mutex);
+        return m_registered;
+    }
 
     // --- told by the install core and the source
     Result ShouldExitResult() const { return m_cancel ? Result(Result_TransferCancelled) : Result(0); }
@@ -76,6 +81,10 @@ public:
     void AddNet(u64 bytes) { m_net += bytes; }
     void AddReady(u64 bytes) { m_ready += bytes; }
     void NcaChecked() { m_checked++; }
+    void AddRegistered(const NcmContentMetaKey& key) {
+        std::lock_guard lock(m_mutex);
+        m_registered.push_back(key);
+    }
 
 private:
     UEvent m_cancel_event{};
@@ -86,6 +95,7 @@ private:
     std::atomic<int> m_threads{-1};
     std::mutex m_mutex;
     std::string m_what;
+    std::vector<NcmContentMetaKey> m_registered;
 };
 
 } // namespace sphaira::ui

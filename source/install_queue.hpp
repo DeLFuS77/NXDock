@@ -10,7 +10,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <switch.h>
 #include "catalog.hpp"
+#include "container_kind.hpp"
 
 namespace sphaira::ui {
 class ProgressBox;
@@ -29,10 +31,24 @@ struct InstallJob {
     CatalogFile::Kind kind = CatalogFile::Kind::Game;
     u64 title_id = 0;
     u64 size = 0;
+    bool nand = false; // to the internal memory (asked first, on the page of the game)
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took
     u64 written = 0;    // bytes installed
+};
+
+// What NXDock installed since it was opened, for "Undo what was installed in this session".
+struct SessionItem {
+    enum class State { Installed, Removing, Removed, Failed };
+
+    int job = 0;
+    std::string game, label, format, cover, color_key;
+    bool nand = false;
+    u64 size = 0;                        // bytes it took
+    std::vector<NcmContentMetaKey> keys; // what it registered
+    State state = State::Installed;
+    std::string error;                   // why it could not be removed
 };
 
 // The install queue: one job at a time, on its own thread, while the interface goes on.
@@ -80,9 +96,17 @@ public:
     unsigned Version() const { return m_version.load(); }
     std::map<u64, InstalledState> Installed();
 
+    // What was installed in this session, the latest first.
+    std::vector<SessionItem> Session();
+    // Removes what was installed in this session (those of jobs, or all when empty), on the
+    // queue's thread; false while something installs or waits.
+    bool StartUndo(std::vector<int> jobs = {});
+    bool Undoing();
+
 private:
     void Run();
     void RunJob(InstallJob& job);
+    void RunUndo();
 
     std::thread m_thread;
     std::mutex m_mutex;
@@ -94,6 +118,9 @@ private:
     bool m_download_test = false;
     std::atomic<unsigned> m_version{0};
     std::map<u64, InstalledState> m_installed;
+    std::vector<SessionItem> m_session;
+    std::vector<int> m_undo_jobs;
+    bool m_undo = false, m_undoing = false;
 
     // the running job
     sphaira::ui::ProgressBox* m_box = nullptr;
@@ -107,6 +134,6 @@ private:
 };
 
 // The message shown for a failed install, in the console language.
-std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes);
+std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand = false);
 
 } // namespace nxdock

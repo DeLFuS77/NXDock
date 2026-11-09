@@ -9,6 +9,8 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   g++ -std=c++20 -Wall -Wextra -O1 -o /tmp/json_test tests/json_test.cpp source/json.cpp && /tmp/json_test
   gcc -O1 -c -o /tmp/yyjson.o build/_deps/yyjson-src/src/yyjson.c
   g++ -std=c++20 -Wall -Wextra -O1 -Ibuild/_deps/yyjson-src/src -o /tmp/catalog_test tests/catalog_test.cpp source/catalog.cpp /tmp/yyjson.o && /tmp/catalog_test
+  # game card images, which container a file is, and the install history
+  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -Wno-missing-field-initializers -o /tmp/xci_history_test tests/xci_history_test.cpp source/yati/container/xci.cpp source/history.cpp && /tmp/xci_history_test /tmp
   # the network source, against a Range server that cuts answers on purpose; curl headers from
   # the portlibs, the library of the container
   mkdir -p /tmp/inc && cp -r /opt/devkitpro/portlibs/switch/include/curl /tmp/inc/

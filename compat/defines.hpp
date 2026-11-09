@@ -108,6 +108,8 @@ enum class NXDockResult : u32 {
     ServerRefused,         // the app answered with an error (key, gone file)
     ServerChanged,         // the file changed on the app while installing
     OutOfMemory,
+    GameRunning,           // the content is of the game NXDock was opened from
+    UnknownContainer,      // neither an NSP/NSZ nor an XCI/XCZ
 };
 
 #define MAKE_NXDOCK_RESULT_ENUM(x) Result_##x = MAKERESULT(Module_NXDock, (u32)NXDockResult::x)
@@ -166,4 +168,6 @@ enum : Result {
     MAKE_NXDOCK_RESULT_ENUM(ServerRefused),
     MAKE_NXDOCK_RESULT_ENUM(ServerChanged),
     MAKE_NXDOCK_RESULT_ENUM(OutOfMemory),
+    MAKE_NXDOCK_RESULT_ENUM(GameRunning),
+    MAKE_NXDOCK_RESULT_ENUM(UnknownContainer),
 };

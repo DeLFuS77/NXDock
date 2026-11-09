@@ -38,6 +38,7 @@ struct Strings {
     const char *added_to_queue, *already_in_queue, *internal_soon, *xci_soon, *needs_firmware, *nothing_picked;
     const char *installing_name, *in_queue_count, *preparing, *registering, *not_compressed;
     const char *failed, *cancelled, *thread_one, *clear_done, *download_test, *queue_done_hint, *leave_while_installing;
+    const char *err_container, *err_game_running, *err_space_nand;
 };
 
 // Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,

@@ -34,3 +34,11 @@ struct UEvent {
 };
 inline void ueventCreate(UEvent* e, bool) { e->signalled = 0; }
 inline void ueventSignal(UEvent* e) { e->signalled = 1; }
+
+struct NcmContentMetaKey {
+    u64 id;
+    u32 version;
+    u8 type;
+    u8 install_type;
+    u8 padding[2];
+};

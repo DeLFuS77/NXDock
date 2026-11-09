@@ -2,11 +2,14 @@
 // Copyright (C) 2026 DeLFuS77
 #include "install_queue.hpp"
 
+#include "history.hpp"
 #include "http_source.hpp"
 #include "i18n.hpp"
+#include "uninstall.hpp"
 #include "net.hpp"
 #include "ui/progress_box.hpp"
 #include "yati/container/nsp.hpp"
+#include "yati/container/xci.hpp"
 #include "yati/yati.hpp"
 #include "log.hpp"
 
@@ -14,6 +17,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 extern "C" void nxdock_log_open(const char* path);
 extern "C" void nxdock_log_close();
@@ -40,10 +44,9 @@ std::string Size(u64 bytes) {
 // The download-only check, for an emulator that cannot install: every NCA of the NSP is read
 // through the same source and its SHA-256 compared with the content id in its name. Nothing is
 // written. Turned on with download_test=1 in config.ini.
-Result DownloadCheck(HttpSource& source, ProgressBox& box) {
-    sphaira::yati::container::Nsp nsp(&source);
+Result DownloadCheck(HttpSource& source, sphaira::yati::container::Base& container, ProgressBox& box) {
     sphaira::yati::container::Collections collections;
-    R_TRY(nsp.GetCollections(collections));
+    R_TRY(container.GetCollections(collections));
     u64 total = 0;
     u32 count = 0;
     for (const auto& c : collections) {
@@ -91,9 +94,36 @@ Result DownloadCheck(HttpSource& source, ProgressBox& box) {
     R_SUCCEED();
 }
 
+// The container of the file, from its first bytes.
+Result OpenContainer(HttpSource& source, std::unique_ptr<sphaira::yati::container::Base>& out, const char*& kind) {
+    std::vector<unsigned char> head(kContainerHeadSize);
+    u64 got = 0;
+    R_TRY(source.Read(head.data(), 0, s64(head.size()), &got));
+    switch (DetectContainer(head.data(), size_t(got))) {
+        case ContainerKind::Nsp:
+            out = std::make_unique<sphaira::yati::container::Nsp>(&source);
+            kind = "PFS0";
+            R_SUCCEED();
+        case ContainerKind::Xci:
+            out = std::make_unique<sphaira::yati::container::Xci>(&source);
+            kind = "XCI";
+            R_SUCCEED();
+        default:
+            R_THROW(Result_UnknownContainer);
+    }
+}
+
+HistoryEntry::Result HistoryResult(InstallJob::State state) {
+    switch (state) {
+        case InstallJob::State::Done: return HistoryEntry::Result::Installed;
+        case InstallJob::State::Cancelled: return HistoryEntry::Result::Cancelled;
+        default: return HistoryEntry::Result::Failed;
+    }
+}
+
 } // namespace
 
-std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes) {
+std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand) {
     const auto& s = Tr();
     char text[256];
     const u32 desc = R_DESCRIPTION(rc);
@@ -101,7 +131,7 @@ std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned fi
         switch (NXDockResult(desc)) {
             case NXDockResult::TransferCancelled: return s.err_cancelled;
             case NXDockResult::NotEnoughSpace:
-                std::snprintf(text, sizeof(text), s.err_space, Size(needed).c_str(), free_bytes >= 0 ? Size(u64(free_bytes)).c_str() : "?");
+                std::snprintf(text, sizeof(text), nand ? s.err_space_nand : s.err_space, Size(needed).c_str(), free_bytes >= 0 ? Size(u64(free_bytes)).c_str() : "?");
                 return text;
             case NXDockResult::FirmwareTooOld: {
                 char fw[24];
@@ -126,6 +156,12 @@ std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned fi
             case NXDockResult::YatiCertNotFound: return s.err_ticket;
             case NXDockResult::OutOfMemory: return s.err_memory;
             case NXDockResult::NczExperimental: return s.err_experimental;
+            case NXDockResult::UnknownContainer:
+            case NXDockResult::NspBadMagic:
+            case NXDockResult::NspInvalidHeader:
+            case NXDockResult::XciBadMagic:
+            case NXDockResult::XciSecurePartitionNotFound: return s.err_container;
+            case NXDockResult::GameRunning: return s.err_game_running;
             default: break;
         }
     }
@@ -158,6 +194,9 @@ void InstallQueue::SetOptions(int connections, bool download_test) {
 bool InstallQueue::Add(InstallJob job) {
     {
         std::lock_guard lock(m_mutex);
+        if (m_undo || m_undoing) {
+            return false;
+        }
         for (const auto& j : m_jobs) {
             if (j.file_id == job.file_id && (j.state == InstallJob::State::Waiting || j.state == InstallJob::State::Running)) {
                 return false;
@@ -236,6 +275,30 @@ std::map<u64, InstalledState> InstallQueue::Installed() {
     return m_installed;
 }
 
+std::vector<SessionItem> InstallQueue::Session() {
+    std::lock_guard lock(m_mutex);
+    return {m_session.rbegin(), m_session.rend()};
+}
+
+bool InstallQueue::StartUndo(std::vector<int> jobs) {
+    {
+        std::lock_guard lock(m_mutex);
+        const bool busy = m_running != 0 || std::any_of(m_jobs.begin(), m_jobs.end(), [](const InstallJob& j) { return j.state == InstallJob::State::Waiting; });
+        if (busy || m_undo || m_undoing) {
+            return false;
+        }
+        m_undo = true;
+        m_undo_jobs = std::move(jobs);
+    }
+    m_cv.notify_all();
+    return true;
+}
+
+bool InstallQueue::Undoing() {
+    std::lock_guard lock(m_mutex);
+    return m_undo || m_undoing;
+}
+
 InstallQueue::Live InstallQueue::GetLive() {
     std::lock_guard lock(m_mutex);
     Live l;
@@ -283,6 +346,16 @@ InstallQueue::Live InstallQueue::GetLive() {
 void InstallQueue::Run() {
     std::unique_lock lock(m_mutex);
     while (!m_quit) {
+        if (m_undo) {
+            m_undo = false;
+            m_undoing = true;
+            lock.unlock();
+            RunUndo();
+            lock.lock();
+            m_undoing = false;
+            m_version++;
+            continue;
+        }
         auto it = std::find_if(m_jobs.begin(), m_jobs.end(), [](const InstallJob& j) { return j.state == InstallJob::State::Waiting; });
         if (it == m_jobs.end()) {
             m_cv.wait(lock);
@@ -343,13 +416,17 @@ void InstallQueue::RunJob(InstallJob& job) {
             m_source_size = u64(std::max<s64>(0, source.Size()));
         }
         if (R_SUCCEEDED(rc)) {
-            if (test) {
-                rc = DownloadCheck(source, box);
-            } else {
-                sphaira::yati::container::Nsp nsp(&source);
+            std::unique_ptr<sphaira::yati::container::Base> container;
+            const char* kind = "";
+            rc = OpenContainer(source, container, kind);
+            log_write("[NXDock] container %s, to %s\n", kind, job.nand ? "the internal memory" : "the SD card");
+            if (R_SUCCEEDED(rc) && test) {
+                rc = DownloadCheck(source, *container, box);
+            } else if (R_SUCCEEDED(rc)) {
                 sphaira::yati::ConfigOverride config;
-                config.sd_card_install = true; // the SD card only, in this step
-                rc = sphaira::yati::InstallFromContainer(&box, &nsp, config);
+                // the internal memory only for a job the user confirmed on the page of the game
+                config.sd_card_install = !job.nand;
+                rc = sphaira::yati::InstallFromContainer(&box, container.get(), config);
             }
         }
         source.SignalCancel();
@@ -364,20 +441,104 @@ void InstallQueue::RunJob(InstallJob& job) {
     } else {
         job.state = R_DESCRIPTION(rc) == u32(NXDockResult::TransferCancelled) && R_MODULE(rc) == Module_NXDock ? InstallJob::State::Cancelled
                                                                                                                  : InstallJob::State::Failed;
-        s64 free_bytes = -1;
-        FsFileSystem fs;
-        if (R_SUCCEEDED(fsOpenSdCardFileSystem(&fs))) {
-            char root[FS_MAX_PATH] = "/";
-            fsFsGetFreeSpace(&fs, root, &free_bytes);
-            fsFsClose(&fs);
-        }
-        job.error = InstallErrorText(rc, box.NeededBytes(), box.NeededFirmware(), free_bytes);
+        const s64 free_bytes = StorageFreeSpace(job.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
+        job.error = InstallErrorText(rc, box.NeededBytes(), box.NeededFirmware(), free_bytes, job.nand);
     }
     auto installed = ReadInstalled();
 
+    // the history on the SD card, also for a failed or cancelled job
+    HistoryEntry entry;
+    entry.when = std::time(nullptr);
+    entry.game = job.game;
+    entry.label = job.label;
+    entry.format = job.format;
+    entry.nand = job.nand;
+    entry.size = m_source_size ? m_source_size : job.size;
+    entry.written = job.written;
+    entry.seconds = job.seconds;
+    entry.result = HistoryResult(job.state);
+    entry.error = job.error;
+    if (!test) {
+        History(HistoryPath()).Append(entry);
+    }
+
     std::lock_guard lock(m_mutex);
+    if (job.state == InstallJob::State::Done && !test) {
+        SessionItem item;
+        item.job = job.id;
+        item.game = job.game;
+        item.label = job.label;
+        item.format = job.format;
+        item.cover = job.cover;
+        item.color_key = job.color_key;
+        item.nand = job.nand;
+        item.size = job.written;
+        item.keys = box.Registered();
+        if (!item.keys.empty()) {
+            m_session.push_back(std::move(item));
+        }
+    }
     m_box = nullptr;
     m_running = 0;
+    m_installed = std::move(installed);
+}
+
+void InstallQueue::RunUndo() {
+    std::vector<size_t> todo;
+    {
+        std::lock_guard lock(m_mutex);
+        for (size_t i = 0; i < m_session.size(); i++) {
+            auto& item = m_session[i];
+            const bool wanted = m_undo_jobs.empty() || std::find(m_undo_jobs.begin(), m_undo_jobs.end(), item.job) != m_undo_jobs.end();
+            if (wanted && (item.state == SessionItem::State::Installed || item.state == SessionItem::State::Failed)) {
+                item.state = SessionItem::State::Removing;
+                todo.push_back(i);
+            }
+        }
+    }
+    nxdock_log_open("sdmc:/switch/NXDock/install.log");
+    // the latest first: an update goes before its game
+    for (auto it = todo.rbegin(); it != todo.rend(); ++it) {
+        std::vector<NcmContentMetaKey> keys;
+        bool nand;
+        {
+            std::lock_guard lock(m_mutex);
+            keys = m_session[*it].keys;
+            nand = m_session[*it].nand;
+        }
+        Result rc = 0;
+        for (const auto& key : keys) {
+            const Result r = RemoveInstalled(key, nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
+            if (R_FAILED(r) && R_SUCCEEDED(rc)) {
+                rc = r;
+            }
+        }
+        std::lock_guard lock(m_mutex);
+        SessionItem& item = m_session[*it];
+        log_write("[NXDock] removed %s (%s): 0x%X\n", item.game.c_str(), item.label.c_str(), rc);
+        HistoryEntry entry;
+        entry.when = std::time(nullptr);
+        entry.game = item.game;
+        entry.label = item.label;
+        entry.format = item.format;
+        entry.nand = item.nand;
+        entry.size = item.size;
+        entry.written = item.size;
+        if (R_SUCCEEDED(rc)) {
+            item.state = SessionItem::State::Removed;
+            item.error.clear();
+            entry.result = HistoryEntry::Result::Removed;
+        } else {
+            item.state = SessionItem::State::Failed;
+            item.error = InstallErrorText(rc, 0, 0, -1);
+            entry.result = HistoryEntry::Result::Failed;
+            entry.error = item.error;
+        }
+        History(HistoryPath()).Append(entry);
+    }
+    nxdock_log_close();
+    auto installed = ReadInstalled();
+    std::lock_guard lock(m_mutex);
     m_installed = std::move(installed);
 }
 

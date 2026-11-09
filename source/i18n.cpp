@@ -69,6 +69,9 @@ constexpr Strings kEnglish{
     "Failed", "Cancelled", "thread", "Clear finished", "Download check only (test mode): nothing is written.",
     "Installs go on while you look around the library.",
     "Leaving stops the install; nothing is left half done. Press + again to leave.",
+    "This file is not an NSP, NSZ, XCI or XCZ the console can read. Nothing was installed.",
+    "It is the game NXDock was opened from: open NXDock from another game first.",
+    "It does not fit: it needs %s and the internal memory has %s free. Nothing was installed.",
 };
 
 constexpr Strings kSpanish{
@@ -133,6 +136,9 @@ constexpr Strings kSpanish{
     "Falló", "Cancelado", "hilo", "Quitar terminados", "Solo comprobar la descarga (modo de prueba): no se escribe nada.",
     "Las instalaciones siguen mientras miras la biblioteca.",
     "Si sales, se para la instalación y no queda nada a medias. Pulsa + otra vez para salir.",
+    "Este archivo no es un NSP, NSZ, XCI o XCZ que la consola pueda leer. No se ha instalado nada.",
+    "Es el juego desde el que se abrió NXDock: abre antes NXDock desde otro juego.",
+    "No cabe: hacen falta %s y en la memoria interna quedan %s. No se ha instalado nada.",
 };
 
 constexpr Strings kFrench{
@@ -278,6 +284,9 @@ constexpr Strings kFrench{
     "Vérifier le téléchargement seulement (mode test) : rien n'est écrit.",
     "Les installations continuent pendant que tu parcours la bibliothèque.",
     "Quitter arrête l'installation ; rien ne reste à moitié fait. Appuie de nouveau sur + pour quitter.",
+    "Ce fichier n'est pas un NSP, NSZ, XCI ou XCZ que la console peut lire. Rien n'a été installé.",
+    "C'est le jeu depuis lequel NXDock a été ouvert : ouvrez d'abord NXDock depuis un autre jeu.",
+    "Ça ne rentre pas : il faut %s et la mémoire interne a %s de libre. Rien n'a été installé.",
 };
 
 constexpr Strings kGerman{
@@ -423,6 +432,9 @@ constexpr Strings kGerman{
     "Nur den Download prüfen (Testmodus): Es wird nichts geschrieben.",
     "Installationen laufen weiter, während du dich in der Bibliothek umsiehst.",
     "Beenden stoppt die Installation; nichts bleibt halb fertig. Drücke + erneut zum Beenden.",
+    "Diese Datei ist kein NSP, NSZ, XCI oder XCZ, das die Konsole lesen kann. Es wurde nichts installiert.",
+    "Das ist das Spiel, aus dem NXDock geöffnet wurde: öffne NXDock zuerst aus einem anderen Spiel.",
+    "Es passt nicht: Es braucht %s und der interne Speicher hat %s frei. Es wurde nichts installiert.",
 };
 
 constexpr Strings kItalian{
@@ -568,6 +580,9 @@ constexpr Strings kItalian{
     "Solo controllo del download (modalità test): non si scrive nulla.",
     "Le installazioni continuano mentre guardi la libreria.",
     "Uscire ferma l'installazione; non resta nulla a metà. Premi di nuovo + per uscire.",
+    "Questo file non è un NSP, NSZ, XCI o XCZ leggibile dalla console. Non è stato installato nulla.",
+    "È il gioco da cui è stato aperto NXDock: apri prima NXDock da un altro gioco.",
+    "Non ci sta: servono %s e la memoria interna ha %s liberi. Non è stato installato nulla.",
 };
 
 constexpr Strings kPortuguese{
@@ -713,6 +728,9 @@ constexpr Strings kPortuguese{
     "Só verificar a transferência (modo de teste): não se escreve nada.",
     "As instalações continuam enquanto vês a biblioteca.",
     "Sair para a instalação; nada fica a meio. Carrega + outra vez para sair.",
+    "Este ficheiro não é um NSP, NSZ, XCI ou XCZ que a consola consiga ler. Nada foi instalado.",
+    "É o jogo a partir do qual o NXDock foi aberto: abre primeiro o NXDock a partir de outro jogo.",
+    "Não cabe: são precisos %s e a memória interna tem %s livres. Nada foi instalado.",
 };
 
 constexpr Strings kDutch{
@@ -858,6 +876,9 @@ constexpr Strings kDutch{
     "Alleen de download controleren (testmodus): er wordt niets geschreven.",
     "Installaties gaan door terwijl je in de bibliotheek rondkijkt.",
     "Afsluiten stopt de installatie; er blijft niets half achter. Druk nogmaals op + om af te sluiten.",
+    "Dit bestand is geen NSP, NSZ, XCI of XCZ die de console kan lezen. Er is niets geïnstalleerd.",
+    "Dit is de game waaruit NXDock is geopend: open NXDock eerst vanuit een andere game.",
+    "Het past niet: er is %s nodig en het interne geheugen heeft %s vrij. Er is niets geïnstalleerd.",
 };
 
 constexpr Strings kRussian{
@@ -1003,6 +1024,9 @@ constexpr Strings kRussian{
     "Только проверка загрузки (тестовый режим): ничего не записывается.",
     "Установка продолжается, пока вы смотрите библиотеку.",
     "Выход остановит установку; ничего не останется наполовину. Нажмите + ещё раз, чтобы выйти.",
+    "Этот файл не является NSP, NSZ, XCI или XCZ, который может прочитать консоль. Ничего не установлено.",
+    "Это игра, из которой открыт NXDock: сначала откройте NXDock из другой игры.",
+    "Не помещается: нужно %s, а во внутренней памяти свободно %s. Ничего не установлено.",
 };
 
 constexpr Strings kJapanese{
@@ -1148,6 +1172,9 @@ constexpr Strings kJapanese{
     "ダウンロードの確認のみ(テストモード): 何も書き込みません。",
     "ライブラリを見ている間もインストールは続きます。",
     "終了するとインストールが止まり、途中のものは残りません。もう一度+を押すと終了します。",
+    "このファイルは本体で読める NSP、NSZ、XCI、XCZ ではありません。何もインストールされていません。",
+    "NXDock を起動したゲームです。先に別のゲームから NXDock を開いてください。",
+    "容量が足りません：%s 必要ですが、本体保存メモリーの空きは %s です。何もインストールされていません。",
 };
 
 constexpr Strings kKorean{
@@ -1293,6 +1320,9 @@ constexpr Strings kKorean{
     "다운로드 확인만 (테스트 모드): 아무것도 쓰지 않습니다.",
     "라이브러리를 둘러보는 동안에도 설치가 계속됩니다.",
     "종료하면 설치가 멈추고 중간 상태로 남는 것은 없습니다. 종료하려면 +를 다시 누르세요.",
+    "이 파일은 본체가 읽을 수 있는 NSP, NSZ, XCI, XCZ가 아닙니다. 아무것도 설치되지 않았습니다.",
+    "NXDock을 연 게임입니다. 먼저 다른 게임에서 NXDock을 여세요.",
+    "공간이 부족합니다: %s 필요하지만 본체 저장 메모리의 남은 공간은 %s입니다. 아무것도 설치되지 않았습니다.",
 };
 
 constexpr Strings kChinese{
@@ -1438,6 +1468,9 @@ constexpr Strings kChinese{
     "仅校验下载（测试模式）：不写入任何内容。",
     "浏览游戏库时安装会继续进行。",
     "退出会停止安装，不会留下未完成的内容。再按一次 + 退出。",
+    "此文件不是主机可读取的 NSP、NSZ、XCI 或 XCZ。未安装任何内容。",
+    "这是打开 NXDock 的游戏：请先从其他游戏打开 NXDock。",
+    "空间不足：需要 %s，主机内存剩余 %s。未安装任何内容。",
 };
 
 const Strings* g_strings = &kEnglish;

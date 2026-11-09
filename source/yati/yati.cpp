@@ -1836,6 +1836,9 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
         }
         done.push_back(i);
     }
+    for (const auto i : done) {
+        pbox->AddRegistered(cnmts[i].key);
+    }
 
     log_write("success!\n");
     R_SUCCEED();

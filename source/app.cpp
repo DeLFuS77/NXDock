@@ -1001,7 +1001,7 @@ void App::EnqueuePicked() {
     const Config c = m_link.CurrentConfig();
     const u32 hos = hosversionGet();
     const u32 console = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
-    int added = 0, duplicate = 0, xci = 0, picked = 0;
+    int added = 0, duplicate = 0, picked = 0;
     std::string firmware_note;
     // the game first, then the update, then the DLC
     for (const auto kind : {CatalogFile::Kind::Game, CatalogFile::Kind::Update, CatalogFile::Kind::Dlc}) {
@@ -1011,11 +1011,6 @@ void App::EnqueuePicked() {
                 continue;
             }
             picked++;
-            const std::string format = Lower(f.format);
-            if (format == "xci" || format == "xcz") {
-                xci++;
-                continue;
-            }
             std::string label;
             switch (f.kind) {
                 case CatalogFile::Kind::Game: label = s.base_game; break;
@@ -1053,8 +1048,6 @@ void App::EnqueuePicked() {
         Notice(firmware_note);
     } else if (added) {
         Notice(s.added_to_queue);
-    } else if (xci) {
-        Notice(s.xci_soon);
     } else if (duplicate) {
         Notice(s.already_in_queue);
     }

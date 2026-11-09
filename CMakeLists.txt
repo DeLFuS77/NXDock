@@ -67,12 +67,14 @@ add_executable(nxdock
     source/covers.cpp
     source/discovery.cpp
     source/http.cpp
+    source/history.cpp
     source/http_source.cpp
     source/install_queue.cpp
     source/json.cpp
     source/link.cpp
     source/net.cpp
     source/speedtest.cpp
+    source/uninstall.cpp
     source/gfx.cpp
     source/i18n.cpp
     source/ui.cpp
