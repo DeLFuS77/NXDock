@@ -27,6 +27,11 @@ struct Strings {
     const char *reconnecting, *not_linked, *forget, *link_off_warning, *choose, *none_found;
     const char *link_not_app, *link_offline, *link_busy, *link_expired, *link_refused, *connected_to;
     const char *manual_address, *manual_key;
+    // the real library and the page of a game
+    const char *loading_library, *empty_filter, *retry, *queue_empty, *queue_empty_hint, *filter;
+    const char *version, *format, *will_take, *firmware, *on_console, *not_on_console, *or_newer;
+    const char *base_game, *update_word, *dlc_prefix, *install_to, *sd_card, *internal, *install_size;
+    const char *install_soon, *space_line, *new_tag, *installed_tag, *select, *search_hint;
 };
 
 // Picks English or Spanish from the console language; more languages later.

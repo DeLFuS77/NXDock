@@ -57,13 +57,13 @@ void Progress(NVGcontext* vg, const Theme& t, float x, float y, float w, float h
 
 // Sample cover: colour gradient with an initial; badges for format, installed and update.
 void Cover(NVGcontext* vg, const Theme& t, float x, float y, float s, unsigned rgb, const char* initial,
-           const char* format, bool installed, bool update, float radius = 10.f);
+           const char* format, bool installed, bool update, float radius = 10.f, int image = 0);
 
 void Spinner(NVGcontext* vg, float cx, float cy, float r, NVGcolor c, double time);
 void CheckMark(NVGcontext* vg, float cx, float cy, float s, NVGcolor c, float width);
 
 // Draws the bar on top; `tabs` receives the area of each tab (the full bar height, easy to tap).
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[4]);
+void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[4], const char* sd_free);
 // Draws the hint bar; each hint adds its area to `hits` (the full bar height).
 void HintBar(NVGcontext* vg, const Theme& t, const char* left, std::initializer_list<Hint> hints,
              std::vector<HitRect>& hits);

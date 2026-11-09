@@ -5,47 +5,75 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
+#include <string>
 #include "i18n.hpp"
 #include "net.hpp"
 
 namespace nxdock {
 namespace {
 
-// Sample library until the app's catalogue arrives (I1.2). Names are made up.
-struct SampleGame {
-    const char* name;
-    const char* initial;
-    unsigned color;
-    const char* format;
-    const char* size;
-    bool installed;
-    bool update;
-};
+// Text of a size: 6.8 GB, 450 MB.
+std::string SizeText(u64 bytes) {
+    char text[32];
+    if (bytes >= (1ull << 30)) {
+        std::snprintf(text, sizeof(text), "%.1f GB", double(bytes) / double(1ull << 30));
+    } else {
+        std::snprintf(text, sizeof(text), "%.0f MB", std::max(1.0, double(bytes) / double(1ull << 20)));
+    }
+    return text;
+}
 
-constexpr SampleGame kGames[] = {
-    {"Lighthouse Tale", "L", 0xc8743a, "NSZ", "6.8 GB", true, true},
-    {"Nebula Racers", "N", 0x2e7d6b, "XCZ", "7.0 GB", false, false},
-    {"Midnight Rhythm", "M", 0x6a4ae0, "NSZ", "3.2 GB", false, false},
-    {"Frozen Peaks", "F", 0x3a6fc8, "NSP", "1.9 GB", true, false},
-    {"Secret Garden", "S", 0xb8406e, "NSZ", "2.4 GB", true, false},
-    {"Ancient Woods", "A", 0x8a8f2a, "XCI", "11.2 GB", false, false},
-    {"Robot Workshop", "R", 0x5a5f6e, "NSZ", "900 MB", false, false},
-    {"Golden Cup", "G", 0xc49a2a, "NSZ", "4.6 GB", true, true},
-    {"Tide Runner", "T", 0x2a8fb0, "NSP", "2.1 GB", false, false},
-    {"Ember Knights", "E", 0x9a3a3a, "XCZ", "8.3 GB", false, false},
-    {"Beetle Quest", "B", 0x4a7a3a, "NSZ", "1.2 GB", true, false},
-    {"Moon Station", "M", 0x7a4ab0, "NSZ", "5.5 GB", false, false},
-    {"Paper Pilots", "P", 0x2f8a8a, "NSZ", "700 MB", false, false},
-    {"Quiet Harbour", "Q", 0x8a5a3a, "NSP", "3.9 GB", false, false},
-    {"Crystal Caves", "C", 0x3a8ac8, "NSZ", "2.7 GB", false, false},
-    {"Desert Drift", "D", 0xb88a3a, "XCZ", "6.1 GB", true, false},
-    {"Owl Academy", "O", 0x6a5a9a, "NSZ", "1.4 GB", false, false},
-    {"Pixel Picnic", "P", 0xc85a7a, "NSP", "450 MB", false, false},
-    {"Storm Sailors", "S", 0x3a5a8a, "NSZ", "9.0 GB", false, true},
-    {"Velvet Thief", "V", 0x8a3a6a, "NSZ", "3.3 GB", false, false},
-    {"Winter Market", "W", 0x5a8aa0, "NSP", "1.1 GB", true, false},
-};
-constexpr int kGameCount = sizeof(kGames) / sizeof(kGames[0]);
+// The firmware a title needs, from its required system version: 15.0.0.
+std::string FirmwareText(u32 version) {
+    if (version == 0) {
+        return "";
+    }
+    char text[24];
+    std::snprintf(text, sizeof(text), "%u.%u.%u", version >> 26, (version >> 20) & 0x3F, (version >> 16) & 0xF);
+    return text;
+}
+
+// The first letter of a name (one UTF-8 character), for a cover not loaded yet.
+std::string Initial(const std::string& name) {
+    if (name.empty()) {
+        return "?";
+    }
+    size_t len = 1;
+    const unsigned char c = static_cast<unsigned char>(name[0]);
+    if (c >= 0xF0) len = 4;
+    else if (c >= 0xE0) len = 3;
+    else if (c >= 0xC0) len = 2;
+    return name.substr(0, std::min(len, name.size()));
+}
+
+// A colour for the placeholder of a cover, the same for a game every time.
+unsigned PlaceholderColor(const std::string& key) {
+    static constexpr unsigned kColors[] = {0xc8743a, 0x2e7d6b, 0x6a4ae0, 0x3a6fc8, 0xb8406e, 0x8a8f2a, 0x2a8fb0,
+                                           0x9a3a3a, 0x4a7a3a, 0x7a4ab0, 0x2f8a8a, 0x8a5a3a};
+    return kColors[std::hash<std::string>{}(key) % (sizeof(kColors) / sizeof(kColors[0]))];
+}
+
+std::string Lower(std::string text) {
+    for (auto& c : text) {
+        if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+    }
+    return text;
+}
+
+std::string Upper(std::string text) {
+    for (auto& c : text) {
+        if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
+    }
+    return text;
+}
+
+// The format shown on a cover: that of the game, or of what there is.
+std::string FormatOf(const Game& game) {
+    const CatalogFile* base = game.Base();
+    if (base) return Upper(base->format);
+    return game.files.empty() ? "" : Upper(game.files.front().format);
+}
 
 // Library grid layout.
 constexpr int kColumns = 7;
@@ -140,6 +168,8 @@ bool App::Init() {
 void App::Exit() {
     m_speed.Cancel();
     m_link.Stop();
+    m_covers.Stop();
+    m_covers.Free(m_gfx.vg());
     m_gfx.Exit();
     net::Exit();
 }
@@ -239,7 +269,7 @@ bool App::Repeat(u64 down, u64 held, u64 mask) {
 }
 
 float App::MaxScroll() const {
-    const int rows = (kGameCount + kColumns - 1) / kColumns;
+    const int rows = (int(m_view.size()) + kColumns - 1) / kColumns;
     return std::max(0.f, rows * kRowPitch - kGridGap - kGridViewH);
 }
 
@@ -294,7 +324,10 @@ void App::Tap(float x, float y, u64& down) {
         switch (it->kind) {
             case HitKind::Button: down |= it->rect.button; break;
             case HitKind::Tab: m_tab = Tab(it->index); break;
-            case HitKind::Chip: m_filter = it->index; break;
+            case HitKind::Chip:
+                m_filter = it->index;
+                RebuildView();
+                break;
             case HitKind::Cover:
                 // First tap marks it, a second tap opens it (as A does).
                 if (m_focus == it->index) {
@@ -321,6 +354,15 @@ void App::Tap(float x, float y, u64& down) {
                 }
                 break;
             case HitKind::Remember: down |= HidNpadButton_Y; break;
+            case HitKind::DetailRow:
+            case HitKind::Install:
+                if (m_detail_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_detail_focus = it->index;
+                }
+                break;
+            case HitKind::Dest: m_to_nand = it->index == 1; break;
         }
         return;
     }
@@ -331,14 +373,21 @@ void App::Update(u64 down, u64 held) {
         m_quit = true;
         return;
     }
-    if (down & (HidNpadButton_L | HidNpadButton_ZL)) {
+    if (m_detail && m_tab == Tab::Library) {
+        if (m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
+            m_detail = false;
+        } else {
+            UpdateDetail(down, held);
+            return;
+        }
+    }
+    if (down & HidNpadButton_L) {
         m_tab = Tab((int(m_tab) + 3) % 4);
     }
-    if (down & (HidNpadButton_R | HidNpadButton_ZR)) {
+    if (down & HidNpadButton_R) {
         m_tab = Tab((int(m_tab) + 1) % 4);
     }
 
-    const u64 left = HidNpadButton_AnyLeft, right = HidNpadButton_AnyRight;
     const u64 up = HidNpadButton_AnyUp, dn = HidNpadButton_AnyDown;
 
     switch (m_tab) {
@@ -348,14 +397,7 @@ void App::Update(u64 down, u64 held) {
                 UpdatePairing(down, held, link);
                 break;
             }
-            const int before = m_focus;
-            if (Repeat(down, held, left) && m_focus % kColumns > 0) m_focus--;
-            if (Repeat(down, held, right) && m_focus % kColumns < kColumns - 1 && m_focus + 1 < kGameCount) m_focus++;
-            if (Repeat(down, held, up) && m_focus >= kColumns) m_focus -= kColumns;
-            if (Repeat(down, held, dn) && m_focus + kColumns < kGameCount) m_focus += kColumns;
-            if (m_focus != before) KeepFocusVisible();
-            if (down & HidNpadButton_Y) m_filter = (m_filter + 1) % 4;
-            if (down & HidNpadButton_X) m_tab = Tab::Queue;
+            UpdateLibrary(down, held);
             break;
         }
         case Tab::Settings:
@@ -384,6 +426,8 @@ bool App::Frame() {
     u64 down = padGetButtonsDown(&m_pad);
     ReadTouch(down);
     Update(down, padGetButtons(&m_pad));
+    FollowLink();
+    CheckSdSpace();
 
     // Ease the grid toward where it should be (frame-rate independent).
     if (!m_dragging) {
@@ -393,6 +437,7 @@ bool App::Frame() {
 
     m_gfx.CheckResize();
     NVGcontext* vg = m_gfx.BeginFrame();
+    m_covers.Upload(vg);
     Draw(vg);
     m_gfx.EndFrame();
     return !m_quit;
@@ -409,7 +454,7 @@ void App::Draw(NVGcontext* vg) {
     m_hint_rects.clear();
     Background(vg, m_theme);
     ui::HitRect tabs[4];
-    ui::TopBar(vg, m_theme, int(m_tab), 3, tabs);
+    ui::TopBar(vg, m_theme, int(m_tab), 0, tabs, m_sd_free.c_str());
     for (int i = 0; i < 4; i++) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
     }
@@ -417,7 +462,11 @@ void App::Draw(NVGcontext* vg) {
         case Tab::Library: {
             const Link::View link = m_link.Snapshot();
             if (link.state == Link::State::Connected) {
-                DrawLibrary(vg);
+                if (m_detail) {
+                    DrawDetail(vg);
+                } else {
+                    DrawLibrary(vg);
+                }
             } else {
                 DrawPairing(vg, link);
             }
@@ -428,6 +477,16 @@ void App::Draw(NVGcontext* vg) {
         default: DrawComingSoon(vg); break;
     }
     AddHints(m_hint_rects);
+    if (m_time < m_notice_until && !m_notice.empty()) {
+        // a short notice above the hint bar
+        const float w = ui::TextWidth(vg, 16, m_notice.c_str()) + 48;
+        const float x = (kWidth - w) / 2, y = 600;
+        nvgGlobalAlpha(vg, float(std::min(1.0, (m_notice_until - m_time) * 3)));
+        ui::FillRound(vg, x, y, w, 44, 22, m_theme.panel2);
+        ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, 43, 22, m_theme.work, 1.5f);
+        ui::Text(vg, x + w / 2, y + 22, 16, m_theme.text, m_notice.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgGlobalAlpha(vg, 1.f);
+    }
     DrawTouchFeedback(vg);
 }
 
@@ -446,28 +505,204 @@ void App::DrawTouchFeedback(NVGcontext* vg) {
     }
 }
 
+void App::Notice(const std::string& text) {
+    m_notice = text;
+    m_notice_until = m_time + 3.5;
+}
+
+void App::CheckSdSpace() {
+    if (m_time - m_sd_checked < 10) {
+        return;
+    }
+    m_sd_checked = m_time;
+    FsFileSystem fs;
+    if (R_SUCCEEDED(fsOpenSdCardFileSystem(&fs))) {
+        s64 free_bytes = 0;
+        char root[FS_MAX_PATH] = "/";
+        if (R_SUCCEEDED(fsFsGetFreeSpace(&fs, root, &free_bytes))) {
+            m_sd_free_bytes = free_bytes;
+            m_sd_free = SizeText(u64(free_bytes));
+        }
+        fsFsClose(&fs);
+    }
+}
+
+// Starts the catalog and the covers of the library linked, and takes a new catalog when it comes.
+void App::FollowLink() {
+    const Link::View link = m_link.Snapshot();
+    if (link.state == Link::State::Connected) {
+        const Config c = m_link.CurrentConfig();
+        if (c.url != m_loaded_url) {
+            m_loaded_url = c.url;
+            m_covers.Stop();
+            m_covers.Free(m_gfx.vg());
+            m_covers.Start(c.url, c.key);
+            m_catalog.Load(c.url, c.key);
+        }
+    }
+    if (m_catalog.Version() != m_games_version) {
+        m_games_version = m_catalog.Version();
+        m_games = m_catalog.Games();
+        RebuildView();
+    }
+}
+
+void App::RebuildView() {
+    m_view.clear();
+    const std::string search = Lower(m_search);
+    for (int i = 0; i < int(m_games.size()); i++) {
+        const Game& g = m_games[i];
+        bool keep = true;
+        switch (m_filter) {
+            case 1: keep = !g.installed.base; break;
+            case 2: keep = g.UpdateAvailable() || g.MissingDlc(); break;
+            case 3: keep = !g.Dlc().empty(); break;
+            default: break;
+        }
+        if (keep && !search.empty()) {
+            keep = Lower(g.name).find(search) != std::string::npos;
+        }
+        if (keep) {
+            m_view.push_back(i);
+        }
+    }
+    m_focus = std::clamp(m_focus, 0, std::max(0, int(m_view.size()) - 1));
+    m_scroll_target = std::clamp(m_scroll_target, 0.f, MaxScroll());
+    KeepFocusVisible();
+}
+
+void App::UpdateLibrary(u64 down, u64 held) {
+    const u64 left = HidNpadButton_AnyLeft, right = HidNpadButton_AnyRight;
+    const u64 up = HidNpadButton_AnyUp, dn = HidNpadButton_AnyDown;
+    const int count = int(m_view.size());
+    const int before = m_focus;
+    if (Repeat(down, held, left) && m_focus % kColumns > 0) m_focus--;
+    if (Repeat(down, held, right) && m_focus % kColumns < kColumns - 1 && m_focus + 1 < count) m_focus++;
+    if (Repeat(down, held, up) && m_focus >= kColumns) m_focus -= kColumns;
+    if (Repeat(down, held, dn) && m_focus + kColumns < count) m_focus += kColumns;
+    if (m_focus != before) KeepFocusVisible();
+    if (down & (HidNpadButton_ZL)) {
+        m_filter = (m_filter + 3) % 4;
+        RebuildView();
+    }
+    if (down & (HidNpadButton_ZR)) {
+        m_filter = (m_filter + 1) % 4;
+        RebuildView();
+    }
+    if ((down & HidNpadButton_A) && count > 0) {
+        OpenDetail(m_focus);
+    }
+    if (down & HidNpadButton_Y) {
+        std::string text;
+        if (AskText(Tr().search_hint, m_search, false, text) || !m_search.empty()) {
+            m_search = text;
+            RebuildView();
+        }
+    }
+    if (down & HidNpadButton_X) {
+        if (m_catalog.GetState() == Catalog::State::Failed) {
+            const Config c = m_link.CurrentConfig();
+            m_catalog.Load(c.url, c.key);
+        } else {
+            m_tab = Tab::Queue;
+        }
+    }
+}
+
+void App::OpenDetail(int view_index) {
+    if (view_index < 0 || view_index >= int(m_view.size())) {
+        return;
+    }
+    m_detail = true;
+    m_detail_game = m_view[view_index];
+    m_detail_focus = 0;
+    m_to_nand = false;
+    // what is missing is marked: the game if not installed, a newer update, the DLC not installed
+    const Game& g = m_games[m_detail_game];
+    m_detail_pick.assign(g.files.size(), 0);
+    const CatalogFile* newest = g.NewestUpdate();
+    for (size_t i = 0; i < g.files.size(); i++) {
+        const CatalogFile& f = g.files[i];
+        switch (f.kind) {
+            case CatalogFile::Kind::Game: m_detail_pick[i] = !g.installed.base; break;
+            case CatalogFile::Kind::Update: m_detail_pick[i] = &f == newest && f.version > g.installed.patch; break;
+            case CatalogFile::Kind::Dlc: m_detail_pick[i] = !g.installed.dlc.count(f.title_id); break;
+        }
+    }
+}
+
+void App::UpdateDetail(u64 down, u64 held) {
+    const Game& g = m_games[m_detail_game];
+    // the rows: the files shown (the game, the newest update, every DLC), then Install
+    std::vector<int> rows;
+    const CatalogFile* newest = g.NewestUpdate();
+    for (int i = 0; i < int(g.files.size()); i++) {
+        if (g.files[i].kind != CatalogFile::Kind::Update || &g.files[i] == newest) rows.push_back(i);
+    }
+    const int count = int(rows.size()) + 1;
+    if (Repeat(down, held, HidNpadButton_AnyUp) && m_detail_focus > 0) m_detail_focus--;
+    if (Repeat(down, held, HidNpadButton_AnyDown) && m_detail_focus < count - 1) m_detail_focus++;
+    if (down & (HidNpadButton_L | HidNpadButton_ZL)) m_to_nand = false;
+    if (down & (HidNpadButton_R | HidNpadButton_ZR)) m_to_nand = true;
+    if (down & HidNpadButton_A) {
+        if (m_detail_focus < int(rows.size())) {
+            m_detail_pick[rows[m_detail_focus]] ^= 1;
+        } else {
+            Notice(Tr().install_soon);
+        }
+    }
+    if (down & HidNpadButton_B) {
+        m_detail = false;
+    }
+}
+
 void App::DrawLibrary(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
+    const Config linked = m_link.CurrentConfig();
+    const size_t scheme = linked.url.find("://");
+    const std::string where = linked.url.empty() ? std::string() : linked.url.substr(scheme == std::string::npos ? 0 : scheme + 3);
+    const Catalog::State state = m_catalog.GetState();
 
-    // Filters.
-    char all[32], ni[48], wu[48], dlc[32];
-    std::snprintf(all, sizeof(all), "%s · 148", s.all);
-    std::snprintf(ni, sizeof(ni), "%s · 37", s.not_installed);
-    std::snprintf(wu, sizeof(wu), "%s · 6", s.with_update);
-    std::snprintf(dlc, sizeof(dlc), "%s · 41", s.dlc);
+    if (m_games.empty()) {
+        // loading, or it could not be read
+        if (state == Catalog::State::Failed) {
+            TextBox(vg, kWidth / 2 - 300, 300, 600, 18, t.warn, m_catalog.Error().c_str());
+            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.retry, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+                        m_hint_rects);
+        } else {
+            ui::Spinner(vg, kWidth / 2, 330, 20, t.work, m_time);
+            ui::Text(vg, kWidth / 2, 384, 20, t.muted, s.loading_library, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::Plus, s.exit, HidNpadButton_Plus}}, m_hint_rects);
+        }
+        return;
+    }
+
+    // Filters, with what each shows.
+    int counts[4] = {int(m_games.size()), 0, 0, 0};
+    for (const auto& g : m_games) {
+        counts[1] += !g.installed.base;
+        counts[2] += g.UpdateAvailable() || g.MissingDlc();
+        counts[3] += !g.Dlc().empty();
+    }
+    const char* names[] = {s.all, s.not_installed, s.with_update, s.dlc};
     float x = kGridX;
-    const char* chips[] = {all, ni, wu, dlc};
     for (int i = 0; i < 4; i++) {
-        const float w = ui::Chip(vg, t, x, 92, chips[i], i == m_filter);
+        char chip[64];
+        std::snprintf(chip, sizeof(chip), "%s · %d", names[i], counts[i]);
+        const float w = ui::Chip(vg, t, x, 92, chip, i == m_filter);
         AddHit(x - 4, 82, w + 8, 54, HitKind::Chip, i); // taller than drawn: easy to hit
         x += w + 10;
+    }
+    if (!m_search.empty()) {
+        const std::string label = "“" + m_search + "”";
+        ui::Chip(vg, t, x + 10, 92, label.c_str(), true);
     }
 
     // Grid of covers, clipped to its viewport and scrolled.
     nvgSave(vg);
     nvgScissor(vg, 0, kGridTop - kGridMargin, kWidth, kGridViewH + 2 * kGridMargin);
-    for (int i = 0; i < kGameCount; i++) {
+    for (int i = 0; i < int(m_view.size()); i++) {
         const float cx = kGridX + (i % kColumns) * (kCoverSize + kGridGap);
         const float cy = kGridTop + (i / kColumns) * kRowPitch - m_scroll;
         if (cy + kCoverSize < kGridTop - kGridMargin || cy > kGridTop + kGridViewH + kGridMargin) {
@@ -476,8 +711,10 @@ void App::DrawLibrary(NVGcontext* vg) {
         if (i == m_focus) {
             ui::Focus(vg, t, cx, cy, kCoverSize, kCoverSize, 10, m_time);
         }
-        const auto& g = kGames[i];
-        ui::Cover(vg, t, cx, cy, kCoverSize, g.color, g.initial, g.format, g.installed, g.update);
+        const Game& g = m_games[m_view[i]];
+        const std::string format = FormatOf(g);
+        ui::Cover(vg, t, cx, cy, kCoverSize, PlaceholderColor(g.key), Initial(g.name).c_str(), format.c_str(),
+                  g.installed.base, g.UpdateAvailable(), 10, m_covers.Get(g.cover));
         // Only the visible part of a cover can be tapped.
         const float top = std::max(cy, kGridTop - kGridMargin), bottom = std::min(cy + kCoverSize, kGridTop + kGridViewH + kGridMargin);
         if (bottom > top) {
@@ -485,6 +722,9 @@ void App::DrawLibrary(NVGcontext* vg) {
         }
     }
     nvgRestore(vg);
+    if (m_view.empty()) {
+        ui::Text(vg, kWidth / 2, kGridTop + kGridViewH / 2, 18, t.muted, s.empty_filter, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
 
     // Scroll indicator when there are more rows than fit.
     if (MaxScroll() > 0) {
@@ -496,47 +736,205 @@ void App::DrawLibrary(NVGcontext* vg) {
         ui::FillRound(vg, kWidth - 16, thumb_y, 4, thumb_h, 2, c);
     }
 
-    // Name of the game in focus.
-    const auto& g = kGames[m_focus];
-    const float ny = kGridTop + kGridViewH + 22;
-    const float nw = ui::Text(vg, kGridX, ny, 22, t.text, g.name) - kGridX;
-    char facts[96];
-    std::snprintf(facts, sizeof(facts), "%s · %s", g.format, g.size);
-    ui::Text(vg, kGridX + nw + 16, ny + 1, 16, t.muted, facts);
+    // Name of the game in focus, with what matters of it.
+    if (!m_view.empty()) {
+        const Game& g = m_games[m_view[m_focus]];
+        const float ny = kGridTop + kGridViewH + 22;
+        nvgSave(vg);
+        nvgScissor(vg, kGridX, ny - 20, 700, 40);
+        const float nw = ui::Text(vg, kGridX, ny, 22, t.text, g.name.c_str()) - kGridX;
+        nvgRestore(vg);
+        std::string facts = FormatOf(g) + " · " + SizeText(g.SizeOfAll());
+        if (!g.Dlc().empty()) facts += " · " + std::to_string(g.Dlc().size()) + " DLC";
+        facts += " · ";
+        facts += g.installed.base ? s.on_console : s.not_on_console;
+        ui::Text(vg, kGridX + std::min(nw, 700.f) + 16, ny + 1, 16, t.muted, facts.c_str());
+    }
 
     // Queue strip, always in sight; tapping it opens the queue.
     const float qy = 556;
     Panel(vg, t, kGridX, qy, kWidth - 2 * kGridX, 54, 12);
     AddHit(kGridX, qy, kWidth - 2 * kGridX, 54, HitKind::QueueStrip);
-    ui::Cover(vg, t, 54, qy + 10, 34, 0x2e7d6b, "N", nullptr, false, false, 7);
-    char now[96];
-    std::snprintf(now, sizeof(now), "%s Nebula Racers", s.installing);
-    const float tw = ui::TextWidth(vg, 16, now);
-    ui::Text(vg, 104, qy + 27, 16, t.text, now);
-    char more[48];
-    std::snprintf(more, sizeof(more), " · 2 %s", s.more_in_queue);
-    ui::Text(vg, 104 + tw, qy + 27, 16, t.muted, more);
-    const float frac = float(std::fmod(m_time * 0.02, 1.0));
-    ui::Progress(vg, t, 520, qy + 23, 400, 8, frac, t.work, m_time);
-    char pct[64];
-    std::snprintf(pct, sizeof(pct), "%d %% · 86 MB/s", int(frac * 100));
-    ui::Text(vg, 940, qy + 27, 16, t.muted, pct);
+    const float qw = ui::Text(vg, 58, qy + 27, 16, t.muted, s.queue_empty) - 58;
+    ui::Text(vg, 58 + qw + 12, qy + 27, 15, t.muted, s.queue_empty_hint);
     ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 
-    ui::Text(vg, kGridX, 638, 14, t.muted, s.preview_note);
-
-    const Config linked = m_link.CurrentConfig();
-    const size_t scheme = linked.url.find("://");
-    const std::string where = linked.url.empty() ? std::string() : linked.url.substr(scheme == std::string::npos ? 0 : scheme + 3);
     ui::HintBar(vg, t, where.c_str(),
-                {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::X, s.queue, HidNpadButton_X},
+                {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::ZR, s.filter, HidNpadButton_ZR},
                  {ui::glyph::Y, s.search, HidNpadButton_Y}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+                m_hint_rects);
+}
+
+void App::DrawDetail(NVGcontext* vg) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    const Game& g = m_games[m_detail_game];
+    const float top = 72, bottom = 664;
+
+    // the colour of the cover, blurred behind everything
+    const NVGcolor tint = Hex(PlaceholderColor(g.key), t.dark ? 0.20f : 0.14f);
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, top, kWidth, bottom - top);
+    nvgFillPaint(vg, nvgRadialGradient(vg, 300, 330, 40, 700, tint, Hex(0, 0)));
+    nvgFill(vg);
+
+    // the cover
+    const float cs = 330, cx = 48, cy = top + 34;
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, cx + 4, cy + 14, cs - 8, cs, 14);
+    nvgFillPaint(vg, nvgBoxGradient(vg, cx, cy + 14, cs, cs, 14, 30, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, m_covers.Get(g.cover));
+
+    // name and facts
+    const float rx = cx + cs + 44, rw = kWidth - rx - 48;
+    nvgSave(vg);
+    nvgScissor(vg, rx, cy, rw, 60);
+    ui::Text(vg, rx, cy + 26, 32, t.text, g.name.c_str());
+    nvgRestore(vg);
+    const CatalogFile* newest = g.NewestUpdate();
+    u64 picked_size = 0;
+    for (size_t i = 0; i < g.files.size(); i++) {
+        if (m_detail_pick[i]) picked_size += g.files[i].size;
+    }
+    u32 firmware = 0;
+    for (const auto& f : g.files) firmware = std::max(firmware, f.required_system);
+    struct Fact { const char* label; std::string value; NVGcolor color; };
+    std::vector<Fact> facts;
+    if (newest) {
+        facts.push_back({s.version, "v" + std::to_string(newest->version), t.text});
+    }
+    facts.push_back({s.format, FormatOf(g), t.text});
+    facts.push_back({s.will_take, SizeText(picked_size), t.text});
+    if (firmware) facts.push_back({s.firmware, FirmwareText(firmware) + " " + s.or_newer, t.text});
+    if (g.installed.base) {
+        facts.push_back({s.on_console, g.installed.patch ? "v" + std::to_string(g.installed.patch) : std::string("v0"), t.ok});
+    } else {
+        facts.push_back({s.on_console, "—", t.muted});
+    }
+    float fx = rx;
+    const float fy = cy + 62;
+    for (const auto& f : facts) {
+        const float w = std::max(ui::TextWidth(vg, 14, f.label), ui::TextWidth(vg, 17, f.value.c_str())) + 28;
+        ui::FillRound(vg, fx, fy, w, 56, 10, Hex(0, t.dark ? 0.25f : 0.04f));
+        ui::StrokeRound(vg, fx + .5f, fy + .5f, w - 1, 55, 10, t.line, 1);
+        ui::Text(vg, fx + 14, fy + 18, 14, t.muted, f.label);
+        ui::Text(vg, fx + 14, fy + 39, 17, f.color, f.value.c_str());
+        fx += w + 10;
+    }
+
+    // what to install: the game, the newest update, every DLC
+    std::vector<int> rows;
+    for (int i = 0; i < int(g.files.size()); i++) {
+        if (g.files[i].kind != CatalogFile::Kind::Update || &g.files[i] == newest) rows.push_back(i);
+    }
+    float ly = fy + 76;
+    const float lh = 46;
+    const float list_h = std::min(float(rows.size()) * lh + 12, 250.f);
+    ui::FillRound(vg, rx, ly, rw, list_h, 12, Hex(0, t.dark ? 0.22f : 0.03f));
+    ui::StrokeRound(vg, rx + .5f, ly + .5f, rw - 1, list_h - 1, 12, t.line, 1);
+    nvgSave(vg);
+    nvgScissor(vg, rx, ly, rw, list_h);
+    // keep the row in focus in sight
+    const int visible = int((list_h - 12) / lh);
+    const int first = std::clamp(m_detail_focus - visible + 1, 0, std::max(0, int(rows.size()) - visible));
+    for (int r = first; r < int(rows.size()); r++) {
+        const CatalogFile& f = g.files[rows[r]];
+        const float y = ly + 6 + (r - first) * lh;
+        if (r == m_detail_focus) {
+            ui::FillRound(vg, rx + 6, y, rw - 12, lh - 4, 8, t.panel2);
+            ui::StrokeRound(vg, rx + 6, y, rw - 12, lh - 4, 8, t.work, 3);
+        }
+        AddHit(rx + 6, y, rw - 12, lh - 4, HitKind::DetailRow, r);
+        const bool on = m_detail_pick[rows[r]];
+        ui::FillRound(vg, rx + 20, y + 9, 24, 24, 6, on ? t.work : Hex(0, 0));
+        if (on) {
+            ui::CheckMark(vg, rx + 32, y + 21, 13, nvgRGB(255, 255, 255), 2.4f);
+        } else {
+            ui::StrokeRound(vg, rx + 20.5f, y + 9.5f, 23, 23, 6, t.muted, 1.5f);
+        }
+        std::string label;
+        bool installed = false, fresh = false;
+        switch (f.kind) {
+            case CatalogFile::Kind::Game: label = s.base_game; installed = g.installed.base; break;
+            case CatalogFile::Kind::Update:
+                label = std::string(s.update_word) + " v" + std::to_string(f.version);
+                fresh = g.installed.base && f.version > g.installed.patch;
+                installed = g.installed.base && f.version <= g.installed.patch;
+                break;
+            case CatalogFile::Kind::Dlc:
+                label = s.dlc_prefix + (f.dlc_name.empty() ? f.name : f.dlc_name);
+                installed = g.installed.dlc.count(f.title_id) > 0;
+                break;
+        }
+        nvgSave(vg);
+        nvgIntersectScissor(vg, rx + 56, y, rw - 56 - 200, lh);
+        const float tw = ui::Text(vg, rx + 56, y + 21, 17, t.text, label.c_str()) - (rx + 56);
+        nvgRestore(vg);
+        if (fresh || installed) {
+            const char* tag = fresh ? s.new_tag : s.installed_tag;
+            const NVGcolor color = fresh ? t.cyan : t.ok;
+            const float tx = rx + 56 + std::min(tw, rw - 270) + 10, tagw = ui::TextWidth(vg, 12, tag) + 14;
+            ui::StrokeRound(vg, tx, y + 10, tagw, 22, 6, color, 1);
+            ui::Text(vg, tx + tagw / 2, y + 21, 12, color, tag, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+        ui::Text(vg, rx + rw - 18, y + 21, 15, t.muted, (Upper(f.format) + " · " + SizeText(f.size)).c_str(),
+                 NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    }
+    nvgRestore(vg);
+
+    // where, and Install
+    const float dy = ly + list_h + 22;
+    ui::Text(vg, rx, dy + 22, 16, t.muted, s.install_to);
+    const float segx = rx + ui::TextWidth(vg, 16, s.install_to) + 16;
+    const char* dests[] = {s.sd_card, s.internal};
+    float sx = segx;
+    const float segw0 = ui::TextWidth(vg, 16, dests[0]) + 36, segw1 = ui::TextWidth(vg, 16, dests[1]) + 36;
+    ui::FillRound(vg, sx, dy, segw0 + segw1 + 8, 44, 10, t.panel2);
+    for (int d = 0; d < 2; d++) {
+        const float w = d == 0 ? segw0 : segw1;
+        const bool on = (d == 1) == m_to_nand;
+        if (on) ui::FillRound(vg, sx + 4, dy + 4, w, 36, 8, t.work);
+        ui::Text(vg, sx + 4 + w / 2, dy + 22, 16, on ? t.on_work : t.muted, dests[d], NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        AddHit(sx, dy - 6, w + 8, 56, HitKind::Dest, d);
+        sx += w + 4;
+    }
+    char install[64];
+    std::snprintf(install, sizeof(install), s.install_size, SizeText(picked_size).c_str());
+    const float bw = ui::TextWidth(vg, 20, install) + 64, bx = kWidth - 48 - bw;
+    const bool can = picked_size > 0;
+    if (m_detail_focus == int(rows.size())) {
+        ui::Focus(vg, t, bx, dy - 4, bw, 52, 12, m_time);
+    }
+    nvgGlobalAlpha(vg, can ? 1.f : 0.45f);
+    ui::FillRound(vg, bx, dy - 4, bw, 52, 12, t.work);
+    ui::Text(vg, bx + bw / 2, dy + 22, 20, t.on_work, install, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgGlobalAlpha(vg, 1.f);
+    AddHit(bx, dy - 4, bw, 52, HitKind::Install, int(rows.size()));
+    if (m_sd_free_bytes >= 0 && !m_to_nand) {
+        char line[128];
+        const u64 left = u64(m_sd_free_bytes) > picked_size ? u64(m_sd_free_bytes) - picked_size : 0;
+        std::snprintf(line, sizeof(line), s.space_line, m_sd_free.c_str(), SizeText(left).c_str());
+        ui::Text(vg, rx, dy + 72, 15, t.muted, line);
+    }
+
+    ui::HintBar(vg, t, nullptr,
+                {{ui::glyph::A, s.select, HidNpadButton_A}, {ui::glyph::L, s.sd_card, HidNpadButton_L},
+                 {ui::glyph::R, s.internal, HidNpadButton_R}, {ui::glyph::B, s.back, HidNpadButton_B}},
                 m_hint_rects);
 }
 
 void App::DrawQueue(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
+    // nothing is installed yet: the queue fills from the install step
+    const bool has_jobs = false;
+    if (!has_jobs) {
+        ui::Text(vg, kWidth / 2, 320, 22, t.text, s.queue_empty, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, kWidth / 2, 356, 16, t.muted, s.queue_empty_hint, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::HintBar(vg, t, nullptr, {{ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
+        return;
+    }
     const float frac = float(std::fmod(m_time * 0.02, 1.0));
 
     // The game being installed, with its four stages.

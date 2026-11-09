@@ -2,7 +2,7 @@
 // Copyright (C) 2026 DeLFuS77
 //
 // The JSON NXDock reads: the flat answers of the library app. No dependencies, so it is
-// tested on the computer (tools/test-json.sh).
+// tested on the computer (tools/test.sh).
 #include "http.hpp"
 
 #include <cstdio>

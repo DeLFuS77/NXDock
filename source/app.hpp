@@ -4,7 +4,9 @@
 
 #include <switch.h>
 #include <vector>
+#include "catalog.hpp"
 #include "config.hpp"
+#include "covers.hpp"
 #include "gfx.hpp"
 #include "link.hpp"
 #include "speedtest.hpp"
@@ -24,7 +26,7 @@ public:
 
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
-    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember };
+    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -36,6 +38,14 @@ private:
     void Update(u64 down, u64 held);
     void Draw(NVGcontext* vg);
     void DrawLibrary(NVGcontext* vg);
+    void UpdateLibrary(u64 down, u64 held);
+    void DrawDetail(NVGcontext* vg);
+    void UpdateDetail(u64 down, u64 held);
+    void OpenDetail(int view_index);
+    void RebuildView();
+    void FollowLink();
+    void CheckSdSpace();
+    void Notice(const std::string& text);
     void DrawPairing(NVGcontext* vg, const Link::View& v);
     void UpdatePairing(u64 down, u64 held, const Link::View& v);
     void ActivatePairRow(int row, const Link::View& v);
@@ -65,6 +75,24 @@ private:
     int m_filter = 0;
     int m_setting = 0; // row in focus in Settings
     Link m_link;
+    Catalog m_catalog;
+    Covers m_covers;
+    std::vector<Game> m_games;
+    std::vector<int> m_view;        // games shown: the filter and the search applied
+    unsigned m_games_version = 0;
+    std::string m_loaded_url;       // the library the catalog and covers come from
+    std::string m_search;
+    // the page of a game
+    bool m_detail = false;
+    int m_detail_game = -1;
+    int m_detail_focus = 0;
+    std::vector<char> m_detail_pick;
+    bool m_to_nand = false;
+    std::string m_sd_free;
+    s64 m_sd_free_bytes = -1;
+    double m_sd_checked = -100;
+    std::string m_notice;
+    double m_notice_until = 0;
     int m_pair_focus = 0; // row in focus on the pairing screen
     std::string m_manual_url; // typed in Settings, until the key is typed too
     SpeedTest m_speed;

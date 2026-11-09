@@ -21,10 +21,23 @@ FetchContent_Declare(nanovg
 )
 FetchContent_MakeAvailable(nanovg)
 
+# yyjson (MIT licence), the JSON reader, the same version Sphaira uses.
+set(YYJSON_INSTALL OFF)
+set(YYJSON_DISABLE_WRITER ON)
+set(YYJSON_DISABLE_UTILS ON)
+set(YYJSON_DISABLE_NON_STANDARD ON)
+FetchContent_Declare(yyjson
+    GIT_REPOSITORY https://github.com/ibireme/yyjson.git
+    GIT_TAG 0.12.0
+)
+FetchContent_MakeAvailable(yyjson)
+
 add_executable(nxdock
     source/main.cpp
     source/app.cpp
+    source/catalog.cpp
     source/config.cpp
+    source/covers.cpp
     source/discovery.cpp
     source/http.cpp
     source/json.cpp
@@ -48,7 +61,7 @@ find_path(curl_inc curl/curl.h REQUIRED)
 find_library(curl_lib curl REQUIRED)
 find_library(z_lib z REQUIRED)
 target_include_directories(nxdock PRIVATE ${curl_inc})
-target_link_libraries(nxdock PRIVATE nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
+target_link_libraries(nxdock PRIVATE nanovg yyjson stb_nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
 
 nx_generate_nacp(
     OUTPUT nxdock.nacp

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 DeLFuS77
 #include "ui.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -108,7 +109,18 @@ void CheckMark(NVGcontext* vg, float cx, float cy, float s, NVGcolor c, float wi
 }
 
 void Cover(NVGcontext* vg, const Theme& t, float x, float y, float s, unsigned rgb, const char* initial,
-           const char* format, bool installed, bool update, float radius) {
+           const char* format, bool installed, bool update, float radius, int image) {
+    if (image > 0) {
+        // the real cover, filling the square (a cover that is not square is cut at its sides)
+        int iw = 1, ih = 1;
+        nvgImageSize(vg, image, &iw, &ih);
+        const float scale = s / float(std::min(iw, ih));
+        const float dw = iw * scale, dh = ih * scale;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x, y, s, s, radius);
+        nvgFillPaint(vg, nvgImagePattern(vg, x + (s - dw) / 2, y + (s - dh) / 2, dw, dh, 0, image, 1));
+        nvgFill(vg);
+    } else {
     const NVGcolor base = Hex(rgb);
     const NVGcolor light = nvgLerpRGBA(base, nvgRGB(255, 255, 255), 0.22f);
     const NVGcolor dark = nvgLerpRGBA(base, nvgRGB(0, 0, 0), 0.30f);
@@ -124,6 +136,7 @@ void Cover(NVGcontext* vg, const Theme& t, float x, float y, float s, unsigned r
 
     Text(vg, x + s / 2, y + s / 2 + 2, s * 0.42f, nvgRGBAf(1, 1, 1, 0.88f), initial,
          NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
 
     if (format && s >= 80) {
         const float fw = TextWidth(vg, 12, format) + 14;
@@ -190,7 +203,7 @@ void BrandMark(NVGcontext* vg, const Theme& t, float x, float y, float s) {
 
 } // namespace
 
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[4]) {
+void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[4], const char* sd_free) {
     BrandMark(vg, t, 36, 19, 34);
     Text(vg, 80, 36, 24, t.text, "NXDock");
 
@@ -226,9 +239,11 @@ void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect ta
     const struct tm* lt = localtime(&now);
     std::snprintf(clock, sizeof(clock), "%02d:%02d", lt ? lt->tm_hour : 0, lt ? lt->tm_min : 0);
     Text(vg, 1244, 36, 17, t.text, clock, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    char sd[48];
-    std::snprintf(sd, sizeof(sd), "SD  212 GB %s", s.free_space);
-    Text(vg, 1180, 36, 16, t.muted, sd, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    if (sd_free && sd_free[0]) {
+        char sd[64];
+        std::snprintf(sd, sizeof(sd), "SD  %s %s", sd_free, s.free_space);
+        Text(vg, 1180, 36, 16, t.muted, sd, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    }
 
     nvgBeginPath(vg);
     nvgRect(vg, 0, 72, kWidth, 1);

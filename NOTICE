@@ -24,6 +24,16 @@ nanovg for deko3d (revision 2acb0f3)
   (zlib licence) and stb_truetype / stb_image by Sean Barrett (public domain
   or MIT).
 
+yyjson (version 0.12.0)
+  https://github.com/ibireme/yyjson
+  Copyright (c) 2020 YaoYuan
+  MIT licence. Fetched at build time.
+
+stb_image
+  https://github.com/nothings/stb
+  By Sean Barrett. Public domain or MIT licence. Used directly to decode
+  the covers (JPEG and PNG), from the copy nanovg fetches.
+
 Planned components (not included yet; each is listed here, with its
 copyright and licence, in the same change that brings it in):
 

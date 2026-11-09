@@ -12,18 +12,24 @@ namespace {
 
 constexpr size_t kMaxBody = 64 * 1024;
 
+struct Sink {
+    std::string* body;
+    size_t max;
+};
+
 size_t OnBody(char* data, size_t size, size_t count, void* user) {
-    auto* body = static_cast<std::string*>(user);
+    auto* sink = static_cast<Sink*>(user);
     const size_t n = size * count;
-    if (body->size() + n > kMaxBody) {
+    if (sink->body->size() + n > sink->max) {
         return 0;
     }
-    body->append(data, n);
+    sink->body->append(data, n);
     return n;
 }
 
-Response Request(const std::string& url, const std::string* json, const std::string& key, long timeout_ms) {
+Response Request(const std::string& url, const std::string* json, const std::string& key, long timeout_ms, size_t max_bytes = kMaxBody) {
     Response r;
+    Sink sink{&r.body, max_bytes};
     CURL* curl = curl_easy_init();
     if (!curl) {
         r.error = "curl";
@@ -32,7 +38,7 @@ Response Request(const std::string& url, const std::string* json, const std::str
     curl_slist* headers = nullptr;
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, OnBody);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &r.body);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, std::min(timeout_ms, 3000L));
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
@@ -64,6 +70,10 @@ Response Request(const std::string& url, const std::string* json, const std::str
 
 Response Get(const std::string& url, const std::string& key, long timeout_ms) {
     return Request(url, nullptr, key, timeout_ms);
+}
+
+Response GetLarge(const std::string& url, const std::string& key, long timeout_ms, size_t max_bytes) {
+    return Request(url, nullptr, key, timeout_ms, max_bytes);
 }
 
 Response PostJson(const std::string& url, const std::string& json, const std::string& key, long timeout_ms) {

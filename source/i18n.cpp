@@ -46,6 +46,11 @@ constexpr Strings kEnglish{
     "The console was refused in the app.",
     "Connected to %s",
     "Address by hand", "Key by hand",
+    "Loading your library…", "Nothing here with this filter.", "Try again",
+    "The queue is empty", "Choose a game and press A to see what to install.", "Filter",
+    "Version", "Format", "Will take", "Firmware", "On your console", "Not on your console", "or newer",
+    "Base game", "Update", "DLC: ", "Install to", "SD card", "Internal memory", "Install %s",
+    "Installing comes in the next step of NXDock.", "Free on the SD card: %s · %s left after", "new", "installed", "Select", "Search your library",
 };
 
 constexpr Strings kSpanish{
@@ -87,6 +92,11 @@ constexpr Strings kSpanish{
     "La consola se ha rechazado en la app.",
     "Conectada a %s",
     "Dirección a mano", "Llave a mano",
+    "Cargando tu biblioteca…", "No hay nada con este filtro.", "Probar otra vez",
+    "La cola está vacía", "Elige un juego y pulsa A para ver qué instalar.", "Filtro",
+    "Versión", "Formato", "Ocupará", "Firmware", "En tu consola", "No está en tu consola", "o más",
+    "Juego base", "Actualización", "DLC: ", "Instalar en", "Tarjeta SD", "Memoria interna", "Instalar %s",
+    "La instalación llega en el siguiente paso de NXDock.", "Libre en la SD: %s · quedarán %s", "nueva", "instalado", "Marcar", "Buscar en tu biblioteca",
 };
 
 const Strings* g_strings = &kEnglish;

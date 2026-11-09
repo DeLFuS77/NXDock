@@ -16,3 +16,11 @@
   app it is paired. With "Remember this library" on, the next times it
   connects by itself, also when the address of the app changes. The address
   and the key can still be typed by hand in Settings.
+- The real library: the games of the library app with their covers (kept on
+  the SD card after the first time), filters with what each shows (all, not
+  installed, with an update, with DLC), search with the console's keyboard,
+  and what is already on the console read from the system.
+- The page of a game: its cover, version, format, size, firmware and what the
+  console has; the game, the newest update and every DLC to tick (what is
+  missing comes ticked), the SD card or the internal memory, and the space
+  left. Installing comes in the next step.
