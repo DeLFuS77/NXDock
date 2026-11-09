@@ -253,6 +253,11 @@ void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect ta
 
 void HintBar(NVGcontext* vg, const Theme& t, const char* left, std::initializer_list<Hint> hints,
              std::vector<HitRect>& hits) {
+    HintBar(vg, t, left, std::vector<Hint>(hints), hits);
+}
+
+void HintBar(NVGcontext* vg, const Theme& t, const char* left, const std::vector<Hint>& hints,
+             std::vector<HitRect>& hits) {
     FillRound(vg, 0, 664, kWidth, 56, 0, t.bg);
     nvgBeginPath(vg);
     nvgRect(vg, 0, 664, kWidth, 1);

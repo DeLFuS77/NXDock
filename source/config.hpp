@@ -20,4 +20,13 @@ struct Config {
     bool Save() const;
 };
 
+// How NXDock installs, in sdmc:/config/NXDock/install.ini.
+struct InstallPrefs {
+    int connections = 0;        // best of the last speed test (1, 2 or 4); 0: never measured
+    bool download_test = false; // download_test=1: only download and check, nothing is written
+
+    static InstallPrefs Load();
+    bool Save() const;
+};
+
 } // namespace nxdock

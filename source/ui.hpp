@@ -67,5 +67,7 @@ void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect ta
 // Draws the hint bar; each hint adds its area to `hits` (the full bar height).
 void HintBar(NVGcontext* vg, const Theme& t, const char* left, std::initializer_list<Hint> hints,
              std::vector<HitRect>& hits);
+void HintBar(NVGcontext* vg, const Theme& t, const char* left, const std::vector<Hint>& hints,
+             std::vector<HitRect>& hits);
 
 } // namespace nxdock::ui

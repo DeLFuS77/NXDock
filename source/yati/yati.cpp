@@ -389,6 +389,7 @@ struct Yati {
     bool es_init{};
     // NXDock: the system partition, read only, for the certificates of a ticket that needs them.
     bool system_mounted{};
+    bool ncm_init{};
 };
 
 auto ThreadData::GetResults() volatile -> Result {
@@ -498,6 +499,8 @@ Result Yati::readFuncInternal(ThreadData* t) {
             // check for ncz section header.
             ncz::Header header{};
             std::memcpy(std::addressof(header), buf.data() + 0x4000, sizeof(header));
+            // NXDock: say so clearly instead of failing on the SHA-256 after the download.
+            R_UNLESS(header.magic != NCZ_SECTION2_MAGIC && header.magic != NCZ_SECTION3_MAGIC, Result_NczExperimental);
             if (header.magic == NCZ_SECTION_MAGIC) {
                 // validate section header.
                 R_UNLESS(header.total_sections, Result_YatiInvalidNczSectionCount);
@@ -1150,6 +1153,9 @@ Yati::~Yati() {
     if (system_mounted) {
         fsdevUnmountDevice("SYSTEM");
     }
+    if (ncm_init) {
+        ncmExit();
+    }
 }
 
 Result Yati::Setup(const ConfigOverride& override) {
@@ -1180,6 +1186,10 @@ Result Yati::Setup(const ConfigOverride& override) {
 
     R_TRY(es::Initialize());
     es_init = true;
+
+    // NXDock: Sphaira opens ncm when it starts; NXDock opens it for the install.
+    R_TRY(ncmInitialize());
+    ncm_init = true;
 
     for (size_t i = 0; i < std::size(NCM_STORAGE_IDS); i++) {
         R_TRY(ncmOpenContentMetaDatabase(std::addressof(ncm_db[i]), NCM_STORAGE_IDS[i]));

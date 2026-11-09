@@ -23,4 +23,19 @@
 - The page of a game: its cover, version, format, size, firmware and what the
   console has; the game, the newest update and every DLC to tick (what is
   missing comes ticked), the SD card or the internal memory, and the space
-  left. Installing comes in the next step.
+  left.
+- Installing NSP and NSZ to the SD card from the library, on the install core
+  of Sphaira (yati):
+  - the Install button of a game puts what is ticked in a queue, which goes on
+    while the library is browsed; the queue screen and the strip of the
+    library show the four stages as they happen: network, decompress, write
+    and check;
+  - each file comes over several connections at once (as many as the speed
+    test found best), in large pieces; a connection that drops is asked again
+    from where it stopped;
+  - an NSZ travels compressed and its blocks are decompressed on three
+    threads; the CPU runs at its fast clock and the console stays awake;
+  - all or nothing: the free space and the firmware are checked first, every
+    part is checked against its SHA-256 before anything is registered, and a
+    failed or cancelled install leaves nothing behind;
+  - XCI, XCZ and the internal memory come in a later step.

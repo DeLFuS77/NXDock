@@ -32,6 +32,12 @@ struct Strings {
     const char *version, *format, *will_take, *firmware, *on_console, *not_on_console, *or_newer;
     const char *base_game, *update_word, *dlc_prefix, *install_to, *sd_card, *internal, *install_size;
     const char *install_soon, *space_line, *new_tag, *installed_tag, *select, *search_hint;
+    // installing
+    const char *err_cancelled, *err_space, *err_firmware, *err_network, *err_refused, *err_changed;
+    const char *err_sha, *err_ncz, *err_ticket, *err_memory, *err_other, *err_experimental;
+    const char *added_to_queue, *already_in_queue, *internal_soon, *xci_soon, *needs_firmware, *nothing_picked;
+    const char *installing_name, *in_queue_count, *preparing, *registering, *not_compressed;
+    const char *failed, *cancelled, *thread_one, *clear_done, *download_test, *queue_done_hint, *leave_while_installing;
 };
 
 // Picks English or Spanish from the console language; more languages later.

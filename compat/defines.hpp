@@ -7,11 +7,14 @@
 
 #include <switch.h>
 #include <utility>
+#include "log.hpp"
 
 #define R_SUCCEED() return (Result)0
 #define R_THROW(_rc) return _rc
+// NXDock: a failure is noted in install.log with where it happened, to read after a test.
 #define R_TRY(r) { \
     if (const auto _rc = (r); R_FAILED(_rc)) { \
+        log_write("[fail] 0x%X at %s:%d\n", (unsigned)_rc, __FILE__, __LINE__); \
         R_THROW(_rc); \
     } \
 }
@@ -98,6 +101,7 @@ enum class NXDockResult : u32 {
     YatiHttpReadFailed,
     // added by NXDock
     NotEnoughSpace,        // the storage has less room than the install needs
+    NczExperimental,       // NCZSECT2/3 of NXPress: the app sends them as plain NCA
     FirmwareTooOld,        // the content needs a newer system version
     NczBlockTooLarge,      // a block too large to decompress in memory
     NetworkLost,           // the app stopped answering and retries ran out
@@ -155,6 +159,7 @@ enum : Result {
     MAKE_NXDOCK_RESULT_ENUM(YatiNcmDbCorruptInfos),
     MAKE_NXDOCK_RESULT_ENUM(YatiHttpReadFailed),
     MAKE_NXDOCK_RESULT_ENUM(NotEnoughSpace),
+    MAKE_NXDOCK_RESULT_ENUM(NczExperimental),
     MAKE_NXDOCK_RESULT_ENUM(FirmwareTooOld),
     MAKE_NXDOCK_RESULT_ENUM(NczBlockTooLarge),
     MAKE_NXDOCK_RESULT_ENUM(NetworkLost),

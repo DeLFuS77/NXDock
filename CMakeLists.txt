@@ -67,6 +67,8 @@ add_executable(nxdock
     source/covers.cpp
     source/discovery.cpp
     source/http.cpp
+    source/http_source.cpp
+    source/install_queue.cpp
     source/json.cpp
     source/link.cpp
     source/net.cpp
@@ -88,7 +90,7 @@ find_path(curl_inc curl/curl.h REQUIRED)
 find_library(curl_lib curl REQUIRED)
 find_library(z_lib z REQUIRED)
 target_include_directories(nxdock PRIVATE ${curl_inc})
-target_link_libraries(nxdock PRIVATE nanovg yyjson stb_nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
+target_link_libraries(nxdock PRIVATE yati nanovg yyjson stb_nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
 
 nx_generate_nacp(
     OUTPUT nxdock.nacp

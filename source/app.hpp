@@ -3,11 +3,13 @@
 #pragma once
 
 #include <switch.h>
+#include <memory>
 #include <vector>
 #include "catalog.hpp"
 #include "config.hpp"
 #include "covers.hpp"
 #include "gfx.hpp"
+#include "install_queue.hpp"
 #include "link.hpp"
 #include "speedtest.hpp"
 #include "theme.hpp"
@@ -26,7 +28,7 @@ public:
 
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
-    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install };
+    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -50,6 +52,12 @@ private:
     void UpdatePairing(u64 down, u64 held, const Link::View& v);
     void ActivatePairRow(int row, const Link::View& v);
     void DrawQueue(NVGcontext* vg);
+    void UpdateQueue(u64 down, u64 held);
+    void DrawQueueStrip(NVGcontext* vg, float y);
+    // The marked files of the page of a game go to the queue.
+    void EnqueuePicked();
+    // Applies what a finished job installed, and the speed test to the downloads.
+    void FollowQueue();
     void DrawSettings(NVGcontext* vg);
     void DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h);
     void ActivateSetting(int row);
@@ -96,6 +104,12 @@ private:
     int m_pair_focus = 0; // row in focus on the pairing screen
     std::string m_manual_url; // typed in Settings, until the key is typed too
     SpeedTest m_speed;
+    bool m_speed_kept = false;      // the result of the last test went to install.ini
+    InstallPrefs m_prefs;
+    std::unique_ptr<InstallQueue> m_queue;
+    unsigned m_queue_version = 0;
+    int m_queue_focus = 0;          // row in focus on the queue screen
+    double m_quit_asked = -100;     // + while installing asks first
     double m_time = 0;
     double m_next_repeat = 0;
     u64 m_held_dir = 0;

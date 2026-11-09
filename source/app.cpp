@@ -161,11 +161,16 @@ bool App::Init() {
     }
     // remembered: connects by itself; else looks for the app on the network
     m_link.Start(config);
+    m_prefs = InstallPrefs::Load();
+    m_queue = std::make_unique<InstallQueue>();
+    m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_time = Now();
     return true;
 }
 
 void App::Exit() {
+    // a job running is cancelled and cleaned up before the network goes
+    m_queue.reset();
     m_speed.Cancel();
     m_link.Stop();
     m_covers.Stop();
@@ -215,6 +220,7 @@ void App::ActivateSetting(int row) {
             if (m_speed.Running()) {
                 m_speed.Cancel();
             } else if (current.Linked()) {
+                m_speed_kept = false;
                 m_speed.Start(current.url, current.key);
             }
             break;
@@ -363,6 +369,13 @@ void App::Tap(float x, float y, u64& down) {
                 }
                 break;
             case HitKind::Dest: m_to_nand = it->index == 1; break;
+            case HitKind::QueueRow:
+                if (m_queue_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_queue_focus = it->index;
+                }
+                break;
         }
         return;
     }
@@ -370,6 +383,12 @@ void App::Tap(float x, float y, u64& down) {
 
 void App::Update(u64 down, u64 held) {
     if (down & HidNpadButton_Plus) {
+        // leaving stops an install (nothing is left half done): the second + leaves
+        if (m_queue && m_queue->Busy() && m_time - m_quit_asked > 4) {
+            m_quit_asked = m_time;
+            Notice(Tr().leave_while_installing);
+            return;
+        }
         m_quit = true;
         return;
     }
@@ -400,6 +419,9 @@ void App::Update(u64 down, u64 held) {
             UpdateLibrary(down, held);
             break;
         }
+        case Tab::Queue:
+            UpdateQueue(down, held);
+            break;
         case Tab::Settings:
             if (Repeat(down, held, up) && m_setting > 0) m_setting--;
             if (Repeat(down, held, dn) && m_setting < kSettingRows - 1) m_setting++;
@@ -427,6 +449,7 @@ bool App::Frame() {
     ReadTouch(down);
     Update(down, padGetButtons(&m_pad));
     FollowLink();
+    FollowQueue();
     CheckSdSpace();
 
     // Ease the grid toward where it should be (frame-rate independent).
@@ -454,7 +477,11 @@ void App::Draw(NVGcontext* vg) {
     m_hint_rects.clear();
     Background(vg, m_theme);
     ui::HitRect tabs[4];
-    ui::TopBar(vg, m_theme, int(m_tab), 0, tabs, m_sd_free.c_str());
+    int queued = 0;
+    if (m_queue) {
+        queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
+    }
+    ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str());
     for (int i = 0; i < 4; i++) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
     }
@@ -648,7 +675,7 @@ void App::UpdateDetail(u64 down, u64 held) {
         if (m_detail_focus < int(rows.size())) {
             m_detail_pick[rows[m_detail_focus]] ^= 1;
         } else {
-            Notice(Tr().install_soon);
+            EnqueuePicked();
         }
     }
     if (down & HidNpadButton_B) {
@@ -752,12 +779,7 @@ void App::DrawLibrary(NVGcontext* vg) {
     }
 
     // Queue strip, always in sight; tapping it opens the queue.
-    const float qy = 556;
-    Panel(vg, t, kGridX, qy, kWidth - 2 * kGridX, 54, 12);
-    AddHit(kGridX, qy, kWidth - 2 * kGridX, 54, HitKind::QueueStrip);
-    const float qw = ui::Text(vg, 58, qy + 27, 16, t.muted, s.queue_empty) - 58;
-    ui::Text(vg, 58 + qw + 12, qy + 27, 15, t.muted, s.queue_empty_hint);
-    ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    DrawQueueStrip(vg, 556);
 
     ui::HintBar(vg, t, where.c_str(),
                 {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::ZR, s.filter, HidNpadButton_ZR},
@@ -924,115 +946,426 @@ void App::DrawDetail(NVGcontext* vg) {
                 m_hint_rects);
 }
 
+namespace {
+
+std::string FileLabel(const InstallJob& j) {
+    return j.label.empty() ? j.game : j.game + " · " + j.label;
+}
+
+std::string Duration(double seconds) {
+    char text[32];
+    const int sec = int(seconds + 0.5);
+    if (sec >= 3600) {
+        std::snprintf(text, sizeof(text), "%d h %02d min", sec / 3600, (sec / 60) % 60);
+    } else if (sec >= 60) {
+        std::snprintf(text, sizeof(text), "%d min %02d s", sec / 60, sec % 60);
+    } else {
+        std::snprintf(text, sizeof(text), "%d s", sec);
+    }
+    return text;
+}
+
+// The jobs in the order the queue screen shows them: the one installing, those waiting, then
+// the finished ones, the latest first.
+std::vector<InstallJob> QueueOrder(std::vector<InstallJob> jobs) {
+    std::vector<InstallJob> out;
+    for (const auto& j : jobs) {
+        if (j.state == InstallJob::State::Running) out.push_back(j);
+    }
+    for (const auto& j : jobs) {
+        if (j.state == InstallJob::State::Waiting) out.push_back(j);
+    }
+    for (auto it = jobs.rbegin(); it != jobs.rend(); ++it) {
+        if (it->state != InstallJob::State::Running && it->state != InstallJob::State::Waiting) out.push_back(*it);
+    }
+    return out;
+}
+
+// Of what the install writes: how far, from the live counters.
+float JobFraction(const InstallQueue::Live& l) {
+    if (l.phase >= 3) return 1.f;
+    if (l.total == 0) return 0.f;
+    return std::clamp(float(double(l.written) / double(l.total)), 0.f, 1.f);
+}
+
+} // namespace
+
+void App::EnqueuePicked() {
+    const auto& s = Tr();
+    if (m_to_nand) {
+        // never to the internal memory without asking: it comes, with its question, later
+        Notice(s.internal_soon);
+        return;
+    }
+    const Game& g = m_games[m_detail_game];
+    const Config c = m_link.CurrentConfig();
+    const u32 hos = hosversionGet();
+    const u32 console = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
+    int added = 0, duplicate = 0, xci = 0, picked = 0;
+    std::string firmware_note;
+    // the game first, then the update, then the DLC
+    for (const auto kind : {CatalogFile::Kind::Game, CatalogFile::Kind::Update, CatalogFile::Kind::Dlc}) {
+        for (size_t i = 0; i < g.files.size(); i++) {
+            const CatalogFile& f = g.files[i];
+            if (!m_detail_pick[i] || f.kind != kind) {
+                continue;
+            }
+            picked++;
+            const std::string format = Lower(f.format);
+            if (format == "xci" || format == "xcz") {
+                xci++;
+                continue;
+            }
+            std::string label;
+            switch (f.kind) {
+                case CatalogFile::Kind::Game: label = s.base_game; break;
+                case CatalogFile::Kind::Update: label = std::string(s.update_word) + " v" + std::to_string(f.version); break;
+                case CatalogFile::Kind::Dlc: label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
+            }
+            if (f.required_system && (f.required_system & 0xFFFF0000) > console) {
+                char text[160];
+                std::snprintf(text, sizeof(text), s.needs_firmware, label.c_str(), FirmwareText(f.required_system).c_str());
+                firmware_note = text;
+                continue;
+            }
+            InstallJob job;
+            job.game = g.name;
+            job.label = label;
+            job.cover = g.cover;
+            job.color_key = g.key;
+            job.file_id = f.id;
+            job.url = c.url + f.url;
+            job.key = c.key;
+            job.format = f.format;
+            job.kind = f.kind;
+            job.title_id = f.title_id;
+            job.size = f.size;
+            if (m_queue->Add(std::move(job))) {
+                added++;
+            } else {
+                duplicate++;
+            }
+        }
+    }
+    if (!picked) {
+        Notice(s.nothing_picked);
+    } else if (!firmware_note.empty()) {
+        Notice(firmware_note);
+    } else if (added) {
+        Notice(s.added_to_queue);
+    } else if (xci) {
+        Notice(s.xci_soon);
+    } else if (duplicate) {
+        Notice(s.already_in_queue);
+    }
+    if (added) {
+        // back to the library: the strip shows the install going on
+        m_detail = false;
+    }
+}
+
+void App::FollowQueue() {
+    if (!m_queue) {
+        return;
+    }
+    // the best of the last speed test sets how many connections each download uses
+    if (!m_speed_kept) {
+        const SpeedTest::View v = m_speed.Snapshot();
+        if (v.stage == SpeedTest::Stage::Done) {
+            m_speed_kept = true;
+            const int best = (v.net[0] >= v.net[1] && v.net[0] >= v.net[2]) ? 1 : (v.net[1] >= v.net[2] ? 2 : 4);
+            if (v.net[best == 1 ? 0 : best == 2 ? 1 : 2] > 0 && best != m_prefs.connections) {
+                m_prefs.connections = best;
+                m_prefs.Save();
+                m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
+            }
+        }
+    }
+    if (m_queue->Version() == m_queue_version) {
+        return;
+    }
+    // a job ended: what the console has now, and the free space
+    m_queue_version = m_queue->Version();
+    const auto installed = m_queue->Installed();
+    for (auto& g : m_games) {
+        const auto it = installed.find(g.title_id);
+        g.installed = it != installed.end() ? it->second : InstalledState{};
+    }
+    RebuildView();
+    m_sd_checked = -100;
+}
+
+void App::UpdateQueue(u64 down, u64 held) {
+    const auto rows = QueueOrder(m_queue->Jobs());
+    const int count = int(rows.size());
+    if (Repeat(down, held, HidNpadButton_AnyUp) && m_queue_focus > 0) m_queue_focus--;
+    if (Repeat(down, held, HidNpadButton_AnyDown) && m_queue_focus < count - 1) m_queue_focus++;
+    m_queue_focus = std::clamp(m_queue_focus, 0, std::max(0, count - 1));
+    if (count == 0) {
+        return;
+    }
+    const InstallJob& j = rows[m_queue_focus];
+    if (down & HidNpadButton_X) {
+        m_queue->Remove(j.id); // a waiting one goes; the one installing is cancelled
+    }
+    if ((down & HidNpadButton_A) && (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled)) {
+        m_queue->Retry(j.id);
+    }
+    if (down & HidNpadButton_Y) {
+        m_queue->Clear();
+    }
+}
+
+void App::DrawQueueStrip(NVGcontext* vg, float qy) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    Panel(vg, t, kGridX, qy, kWidth - 2 * kGridX, 54, 12);
+    AddHit(kGridX, qy, kWidth - 2 * kGridX, 54, HitKind::QueueStrip);
+    const auto live = m_queue->GetLive();
+    if (!live.running) {
+        const float qw = ui::Text(vg, 58, qy + 27, 16, t.muted, s.queue_empty) - 58;
+        ui::Text(vg, 58 + qw + 12, qy + 27, 15, t.muted, m_queue->Busy() ? s.preparing : s.queue_empty_hint);
+        ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        return;
+    }
+    const auto jobs = m_queue->Jobs();
+    const auto it = std::find_if(jobs.begin(), jobs.end(), [&](const InstallJob& j) { return j.id == live.job; });
+    if (it == jobs.end()) {
+        return;
+    }
+    // as chosen (1A): the picture, the name and how many wait, the bar, then the figures
+    ui::Cover(vg, t, 54, qy + 10, 34, PlaceholderColor(it->color_key), Initial(it->game).c_str(), nullptr, false, false, 7,
+              m_covers.Get(it->cover));
+    char title[160];
+    std::snprintf(title, sizeof(title), s.installing_name, it->game.c_str());
+    std::string head = title;
+    const int waiting = m_queue->Waiting();
+    if (waiting > 0) {
+        char more[48];
+        std::snprintf(more, sizeof(more), s.in_queue_count, waiting);
+        head += std::string(" · ") + more;
+    }
+    nvgSave(vg);
+    nvgScissor(vg, 100, qy, 380, 54);
+    ui::Text(vg, 104, qy + 27, 16, t.text, head.c_str());
+    nvgRestore(vg);
+
+    // the four stages, as figures: network, decompress, write, check
+    char figures[200];
+    const float frac = JobFraction(live);
+    if (live.phase >= 3) {
+        std::snprintf(figures, sizeof(figures), "%s…", s.registering);
+    } else if (live.total == 0) {
+        std::snprintf(figures, sizeof(figures), "%s… · %s %.0f MB/s", s.preparing, s.network, live.net_rate);
+    } else {
+        const double left = live.write_rate > 0.1 ? double(live.total - std::min(live.total, live.written)) / (live.write_rate * 1024 * 1024) : -1;
+        std::snprintf(figures, sizeof(figures), "%d %% · %s %.0f · %s %.0f · SD %.0f MB/s · %u/%u%s%s", int(frac * 100), s.network,
+                      live.net_rate, s.decompress, live.ready_rate, live.write_rate, live.checked, live.ncas,
+                      left >= 0 ? " · " : "", left >= 0 ? (std::string(s.left) + " " + Duration(left)).c_str() : "");
+    }
+    const float fw = ui::TextWidth(vg, 15, figures);
+    const float bar_x = 494, bar_end = 1196 - fw - 18;
+    if (bar_end - bar_x > 40) {
+        ui::Progress(vg, t, bar_x, qy + 23, bar_end - bar_x, 8, frac, t.work, m_time);
+    }
+    ui::Text(vg, 1196, qy + 27, 15, t.muted, figures, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+}
+
 void App::DrawQueue(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
-    // nothing is installed yet: the queue fills from the install step
-    const bool has_jobs = false;
-    if (!has_jobs) {
+    const auto rows = QueueOrder(m_queue->Jobs());
+    if (rows.empty()) {
         ui::Text(vg, kWidth / 2, 320, 22, t.text, s.queue_empty, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         ui::Text(vg, kWidth / 2, 356, 16, t.muted, s.queue_empty_hint, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         ui::HintBar(vg, t, nullptr, {{ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
         return;
     }
-    const float frac = float(std::fmod(m_time * 0.02, 1.0));
+    m_queue_focus = std::clamp(m_queue_focus, 0, int(rows.size()) - 1);
+    const auto live = m_queue->GetLive();
+    const bool running = live.running && rows.front().state == InstallJob::State::Running;
+    float y = 98;
 
-    // The game being installed, with its four stages.
-    const float px = 48, py = 98, pw = kWidth - 96, ph = 236;
-    Panel(vg, t, px, py, pw, ph, 16);
-    ui::Cover(vg, t, px + 24, py + 24, 120, 0x2e7d6b, "N", nullptr, false, false, 10);
-    const float cx = px + 168;
-    const float nw = ui::Text(vg, cx, py + 40, 24, t.text, "Nebula Racers") - cx;
-    ui::Text(vg, cx + nw + 14, py + 41, 16, t.muted, s.base_update_sd);
-    char pct[16];
-    std::snprintf(pct, sizeof(pct), "%d %%", int(frac * 100));
-    ui::Text(vg, px + pw - 24, py + 40, 26, t.text, pct, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    char eta[96];
-    const int left_s = int((1 - frac) * 240);
-    std::snprintf(eta, sizeof(eta), "%.1f / 7.0 GB · %s %d min %02d s", frac * 7.0, s.left, left_s / 60, left_s % 60);
-    ui::Text(vg, cx, py + 70, 16, t.muted, eta);
-    ui::Progress(vg, t, cx, py + 88, pw - 168 - 24, 12, frac, t.work, m_time);
+    // The game being installed, with its four stages (3A).
+    if (running) {
+        const InstallJob& j = rows.front();
+        const float px = 48, py = y, pw = kWidth - 96, ph = 236;
+        Panel(vg, t, px, py, pw, ph, 16);
+        if (m_queue_focus == 0) {
+            ui::Focus(vg, t, px, py, pw, ph, 16, m_time);
+        }
+        AddHit(px, py, pw, ph, HitKind::QueueRow, 0);
+        ui::Cover(vg, t, px + 24, py + 24, 120, PlaceholderColor(j.color_key), Initial(j.game).c_str(), nullptr, false, false, 10,
+                  m_covers.Get(j.cover));
+        const float cx = px + 168;
+        nvgSave(vg);
+        nvgScissor(vg, cx, py + 16, pw - 168 - 140, 48);
+        const float nw = ui::Text(vg, cx, py + 40, 24, t.text, j.game.c_str()) - cx;
+        const std::string sub = j.label + " · " + Upper(j.format) + " · SD";
+        ui::Text(vg, cx + nw + 14, py + 41, 16, t.muted, sub.c_str());
+        nvgRestore(vg);
 
-    struct Lane { const char* title; NVGcolor color; const char* value; const char* unit; float meter; };
-    char v_net[16], v_dec[16], v_wr[16], v_hash[16], dec_title[64], hash_unit[32];
-    const float wob = float(std::sin(m_time * 1.7));
-    std::snprintf(v_net, sizeof(v_net), "%d", 86 + int(wob * 6));
-    std::snprintf(v_dec, sizeof(v_dec), "%d", 142 + int(wob * 9));
-    std::snprintf(v_wr, sizeof(v_wr), "%d", 91 + int(wob * 4));
-    const int parts = std::min(1 + int(frac * 5), 5);
-    std::snprintf(v_hash, sizeof(v_hash), "%d", parts);
-    std::snprintf(dec_title, sizeof(dec_title), "%s · 3 %s", s.decompress, s.threads);
-    std::snprintf(hash_unit, sizeof(hash_unit), "%s 5", s.parts_of);
-    const Lane lanes[] = {
-        {s.network, t.work, v_net, "MB/s", 0.72f + wob * 0.05f},
-        {dec_title, t.violet, v_dec, "MB/s", -1},
-        {s.write_sd, t.orange, v_wr, "MB/s", 0.64f - wob * 0.05f},
-        {s.check_sha, t.ok, v_hash, hash_unit, parts / 5.f},
-    };
-    const float lw = (pw - 168 - 24 - 3 * 14) / 4;
-    for (int i = 0; i < 4; i++) {
-        const float lx = cx + i * (lw + 14), ly = py + 118;
-        ui::FillRound(vg, lx, ly, lw, 92, 12, t.panel2);
-        ui::StrokeRound(vg, lx + .5f, ly + .5f, lw - 1, 91, 12, t.line, 1);
-        nvgBeginPath(vg);
-        nvgCircle(vg, lx + 18, ly + 20, 5);
-        nvgFillColor(vg, lanes[i].color);
-        nvgFill(vg);
-        ui::Text(vg, lx + 30, ly + 20, 14, t.muted, lanes[i].title);
-        const float vw = ui::Text(vg, lx + 14, ly + 48, 22, t.text, lanes[i].value) - (lx + 14);
-        ui::Text(vg, lx + 14 + vw + 6, ly + 50, 14, t.muted, lanes[i].unit);
-        if (lanes[i].meter >= 0) {
-            NVGcolor track = t.text;
-            track.a = 0.10f;
-            ui::FillRound(vg, lx + 14, ly + 70, lw - 28, 6, 3, track);
-            ui::FillRound(vg, lx + 14, ly + 70, (lw - 28) * lanes[i].meter, 6, 3, lanes[i].color);
+        const float frac = JobFraction(live);
+        char pct[16];
+        std::snprintf(pct, sizeof(pct), "%d %%", int(frac * 100));
+        ui::Text(vg, px + pw - 24, py + 40, 26, t.text, pct, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        char eta[160];
+        if (live.phase >= 3) {
+            std::snprintf(eta, sizeof(eta), "%s…", s.registering);
+        } else if (live.total == 0) {
+            std::snprintf(eta, sizeof(eta), "%s… · %s", s.preparing, Duration(live.elapsed).c_str());
         } else {
-            // One segment per decompression thread; the fourth core is kept free.
-            const float sw = (lw - 28 - 12) / 4;
-            for (int k = 0; k < 4; k++) {
-                NVGcolor c = lanes[i].color;
-                c.a = k < 3 ? 1.f : 0.25f;
-                ui::FillRound(vg, lx + 14 + k * (sw + 4), ly + 70, sw, 6, 3, c);
+            const double left = live.write_rate > 0.1 ? double(live.total - std::min(live.total, live.written)) / (live.write_rate * 1024 * 1024) : -1;
+            std::snprintf(eta, sizeof(eta), "%s / %s%s%s", SizeText(live.written).c_str(), SizeText(live.total).c_str(),
+                          left >= 0 ? (std::string(" · ") + s.left + " ").c_str() : "", left >= 0 ? Duration(left).c_str() : "");
+        }
+        ui::Text(vg, cx, py + 70, 16, t.muted, eta);
+        ui::Progress(vg, t, cx, py + 88, pw - 168 - 24, 12, frac, t.work, m_time);
+
+        struct Lane { std::string title; NVGcolor color; std::string value; std::string unit; float meter; int segments; };
+        char v[32];
+        std::vector<Lane> lanes;
+        std::snprintf(v, sizeof(v), "%.0f", live.net_rate);
+        lanes.push_back({s.network, t.work, v, "MB/s", live.source_size ? float(double(live.net) / double(live.source_size)) : 0.f, -1});
+        if (live.threads == 0) {
+            lanes.push_back({s.decompress, t.violet, "—", s.not_compressed, -1, 0});
+        } else {
+            std::snprintf(v, sizeof(v), "%.0f", live.ready_rate);
+            std::string title = s.decompress;
+            if (live.threads > 0) {
+                title += " · " + std::to_string(live.threads) + " " + (live.threads == 1 ? s.thread_one : s.threads);
+            }
+            lanes.push_back({title, t.violet, v, "MB/s", -1, std::max(0, live.threads)});
+        }
+        std::snprintf(v, sizeof(v), "%.0f", live.write_rate);
+        lanes.push_back({s.write_sd, t.orange, v, "MB/s", live.total ? float(double(live.written) / double(live.total)) : 0.f, -1});
+        std::snprintf(v, sizeof(v), "%u", live.checked);
+        lanes.push_back({s.check_sha, t.ok, v, std::string(s.parts_of) + " " + std::to_string(live.ncas),
+                         live.ncas ? float(live.checked) / float(live.ncas) : 0.f, -1});
+        const float lw = (pw - 168 - 24 - 3 * 14) / 4;
+        for (int i = 0; i < 4; i++) {
+            const Lane& lane = lanes[i];
+            const float lx = cx + i * (lw + 14), ly = py + 118;
+            ui::FillRound(vg, lx, ly, lw, 92, 12, t.panel2);
+            ui::StrokeRound(vg, lx + .5f, ly + .5f, lw - 1, 91, 12, t.line, 1);
+            nvgBeginPath(vg);
+            nvgCircle(vg, lx + 18, ly + 20, 5);
+            nvgFillColor(vg, lane.color);
+            nvgFill(vg);
+            nvgSave(vg);
+            nvgScissor(vg, lx, ly, lw - 8, 92);
+            ui::Text(vg, lx + 30, ly + 20, 14, t.muted, lane.title.c_str());
+            const float vw = ui::Text(vg, lx + 14, ly + 48, 22, t.text, lane.value.c_str()) - (lx + 14);
+            ui::Text(vg, lx + 14 + vw + 6, ly + 50, 14, t.muted, lane.unit.c_str());
+            nvgRestore(vg);
+            if (lane.segments < 0) {
+                NVGcolor track = t.text;
+                track.a = 0.10f;
+                ui::FillRound(vg, lx + 14, ly + 70, lw - 28, 6, 3, track);
+                ui::FillRound(vg, lx + 14, ly + 70, (lw - 28) * std::clamp(lane.meter, 0.f, 1.f), 6, 3, lane.color);
+            } else {
+                // One segment per decompression thread; the fourth core is the system's.
+                const float sw = (lw - 28 - 12) / 4;
+                for (int k = 0; k < 4; k++) {
+                    NVGcolor c = lane.color;
+                    c.a = k < lane.segments ? 1.f : 0.25f;
+                    ui::FillRound(vg, lx + 14 + k * (sw + 4), ly + 70, sw, 6, 3, c);
+                }
             }
         }
+        y = py + ph + 26;
     }
 
-    // Waiting and done.
-    float y = py + ph + 26;
-    ui::Text(vg, 62, y, 13, t.muted, s.in_queue);
-    y += 22;
-    struct Row { const char* name; const char* initial; unsigned color; const char* info; };
-    const Row rows[] = {
-        {"Midnight Rhythm", "M", 0x6a4ae0, "XCZ · 3.2 GB · SD"},
-        {"Secret Garden · DLC", "S", 0xb8406e, "NSZ · 380 MB · SD"},
-    };
-    for (const auto& r : rows) {
-        nvgGlobalAlpha(vg, 0.55f);
-        ui::Cover(vg, t, 62, y, 44, r.color, r.initial, nullptr, false, false, 8);
-        ui::Text(vg, 122, y + 22, 17, t.text, r.name);
-        ui::Text(vg, 1010, y + 22, 15, t.muted, r.info, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        ui::Text(vg, 1218, y + 22, 15, t.muted, s.waiting, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    // Waiting, then done; the list scrolls to keep the row in focus in sight.
+    const int first_row = running ? 1 : 0;
+    const float list_top = y, list_bottom = 640;
+    const float pitch = 54;
+    const int visible = std::max(1, int((list_bottom - list_top - 34) / pitch));
+    const int focus_in_list = std::max(0, m_queue_focus - first_row);
+    const int skip = std::max(0, focus_in_list - visible + 1);
+    bool shown_waiting = false, shown_done = false;
+    int drawn = 0;
+    for (int r = first_row; r < int(rows.size()); r++) {
+        const InstallJob& j = rows[r];
+        if (r - first_row < skip) {
+            continue;
+        }
+        if (drawn >= visible) {
+            break;
+        }
+        const bool waiting = j.state == InstallJob::State::Waiting;
+        if (waiting && !shown_waiting) {
+            ui::Text(vg, 62, y, 13, t.muted, s.in_queue);
+            y += 22;
+            shown_waiting = true;
+        } else if (!waiting && !shown_done) {
+            y += shown_waiting ? 12 : 0;
+            ui::Text(vg, 62, y + 8, 13, t.muted, s.done);
+            y += 30;
+            shown_done = true;
+        }
+        if (y + 44 > list_bottom) {
+            break;
+        }
+        if (r == m_queue_focus) {
+            ui::Focus(vg, t, 54, y - 5, kWidth - 108, 54, 10, m_time);
+        }
+        AddHit(54, y - 5, kWidth - 108, 54, HitKind::QueueRow, r);
+        nvgGlobalAlpha(vg, waiting ? 0.55f : 1.f);
+        ui::Cover(vg, t, 62, y, 44, PlaceholderColor(j.color_key), Initial(j.game).c_str(), nullptr, false, false, 8, m_covers.Get(j.cover));
+        nvgSave(vg);
+        nvgScissor(vg, 122, y, 600, 44);
+        ui::Text(vg, 122, y + 22, 17, t.text, FileLabel(j).c_str());
+        nvgRestore(vg);
+        std::string info = Upper(j.format) + " · " + SizeText(j.size) + " · SD";
+        if (j.state == InstallJob::State::Done) info += " · " + Duration(j.seconds);
+        if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
+            // why, in place of the figures
+            nvgSave(vg);
+            nvgScissor(vg, 730, y, 340, 44);
+            ui::Text(vg, 1070, y + 22, 14, j.state == InstallJob::State::Failed ? t.err : t.muted, j.error.c_str(),
+                     NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            nvgRestore(vg);
+        } else {
+            ui::Text(vg, 1070, y + 22, 15, t.muted, info.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
+        switch (j.state) {
+            case InstallJob::State::Waiting:
+                ui::Text(vg, 1218, y + 22, 15, t.muted, s.waiting, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                break;
+            case InstallJob::State::Done: {
+                const float cw = ui::TextWidth(vg, 15, s.checked);
+                ui::Text(vg, 1218, y + 22, 15, t.ok, s.checked, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                nvgBeginPath(vg);
+                nvgCircle(vg, 1218 - cw - 14, y + 22, 9);
+                nvgFillColor(vg, t.ok);
+                nvgFill(vg);
+                ui::CheckMark(vg, 1218 - cw - 14, y + 22, 10, t.panel, 2.2f);
+                break;
+            }
+            case InstallJob::State::Failed:
+                ui::Text(vg, 1218, y + 22, 15, t.err, s.failed, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                break;
+            case InstallJob::State::Cancelled:
+                ui::Text(vg, 1218, y + 22, 15, t.muted, s.cancelled, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                break;
+            default: break;
+        }
         nvgGlobalAlpha(vg, 1.f);
-        y += 54;
+        y += pitch;
+        drawn++;
     }
-    y += 12;
-    ui::Text(vg, 62, y + 8, 13, t.muted, s.done);
-    y += 30;
-    ui::Cover(vg, t, 62, y, 44, 0x3a6fc8, "F", nullptr, false, false, 8);
-    ui::Text(vg, 122, y + 22, 17, t.text, "Frozen Peaks");
-    ui::Text(vg, 1010, y + 22, 15, t.muted, "NSP · 1.9 GB · SD · 42 s", NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    const float cw = ui::TextWidth(vg, 15, s.checked);
-    ui::Text(vg, 1218, y + 22, 15, t.ok, s.checked, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    nvgBeginPath(vg);
-    nvgCircle(vg, 1218 - cw - 14, y + 22, 9);
-    nvgFillColor(vg, t.ok);
-    nvgFill(vg);
-    ui::CheckMark(vg, 1218 - cw - 14, y + 22, 10, t.panel, 2.2f);
 
-    ui::HintBar(vg, t, s.no_sleep,
-                {{ui::glyph::Y, s.pause, HidNpadButton_Y}, {ui::glyph::X, s.remove, HidNpadButton_X},
-                 {ui::glyph::B, s.back, HidNpadButton_B}},
-                m_hint_rects);
+    const InstallJob& f = rows[m_queue_focus];
+    std::vector<ui::Hint> hints;
+    if (f.state == InstallJob::State::Failed || f.state == InstallJob::State::Cancelled) {
+        hints.push_back({ui::glyph::A, s.retry, HidNpadButton_A});
+    }
+    hints.push_back({ui::glyph::X, f.state == InstallJob::State::Running ? s.cancel : s.remove, HidNpadButton_X});
+    hints.push_back({ui::glyph::Y, s.clear_done, HidNpadButton_Y});
+    hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
+    ui::HintBar(vg, t, m_prefs.download_test ? s.download_test : (running ? s.no_sleep : s.queue_done_hint), hints, m_hint_rects);
 }
 
 void App::DrawSettings(NVGcontext* vg) {

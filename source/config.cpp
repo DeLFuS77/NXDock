@@ -3,6 +3,7 @@
 #include "config.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <sys/stat.h>
 
@@ -12,6 +13,8 @@ namespace {
 constexpr const char* kDir = "sdmc:/config/NXDock";
 constexpr const char* kPath = "sdmc:/config/NXDock/config.ini";
 constexpr const char* kTemp = "sdmc:/config/NXDock/config.ini.tmp";
+constexpr const char* kInstallPath = "sdmc:/config/NXDock/install.ini";
+constexpr const char* kInstallTemp = "sdmc:/config/NXDock/install.ini.tmp";
 
 std::string Trim(const char* s) {
     std::string out(s);
@@ -58,6 +61,41 @@ bool Config::Save() const {
     }
     std::remove(kPath);
     return std::rename(kTemp, kPath) == 0;
+}
+
+InstallPrefs InstallPrefs::Load() {
+    InstallPrefs p;
+    FILE* f = std::fopen(kInstallPath, "r");
+    if (!f) {
+        return p;
+    }
+    char line[256];
+    while (std::fgets(line, sizeof(line), f)) {
+        if (!std::strncmp(line, "connections=", 12)) p.connections = std::atoi(line + 12);
+        else if (!std::strncmp(line, "download_test=", 14)) p.download_test = std::atoi(line + 14) != 0;
+    }
+    std::fclose(f);
+    return p;
+}
+
+bool InstallPrefs::Save() const {
+    mkdir("sdmc:/config", 0777);
+    mkdir(kDir, 0777);
+    FILE* f = std::fopen(kInstallTemp, "w");
+    if (!f) {
+        return false;
+    }
+    std::fprintf(f, "connections=%d\n", connections);
+    if (download_test) {
+        std::fprintf(f, "download_test=1\n");
+    }
+    const bool ok = std::fclose(f) == 0;
+    if (!ok) {
+        std::remove(kInstallTemp);
+        return false;
+    }
+    std::remove(kInstallPath);
+    return std::rename(kInstallTemp, kInstallPath) == 0;
 }
 
 } // namespace nxdock
