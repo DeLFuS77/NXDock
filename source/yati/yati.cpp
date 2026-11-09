@@ -223,18 +223,26 @@ struct ThreadData {
 
     Result Read(void* buf, s64 size, u64* bytes_read);
 
+    // NXDock: the four hand-overs wait in a loop and look again after every wake. Sphaira's
+    // waited once with an if: a wake with nothing in the ring popped a stale slot (an old buffer
+    // at an old offset), which the parallel NCZBLOCK path hit at the end of an NCA, and a full
+    // ring with the other side gone returned with the mutex held. The wait has a timeout because
+    // the *_running flags are cleared without the mutex, so a wake can come before the wait.
+    static constexpr u64 RING_WAIT_NS = 50'000'000; // 50 ms
+
     Result SetDecompressBuf(std::vector<u8>& buf, s64 off, s64 size) {
         buf.resize(size);
 
         mutexLock(std::addressof(read_mutex));
-        if (!read_buffers.ringbuf_free()) {
-            if (!write_running) {
+        ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
+        while (!read_buffers.ringbuf_free()) {
+            R_TRY(GetResults());
+            if (!decompress_running) {
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_read), std::addressof(read_mutex)));
+            condvarWaitTimeout(std::addressof(can_read), std::addressof(read_mutex), RING_WAIT_NS);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
         R_TRY(GetResults());
         read_buffers.ringbuf_push(buf, off);
         return condvarWakeOne(std::addressof(can_decompress));
@@ -242,15 +250,16 @@ struct ThreadData {
 
     Result GetDecompressBuf(std::vector<u8>& buf_out, s64& off_out) {
         mutexLock(std::addressof(read_mutex));
-        if (!read_buffers.ringbuf_size()) {
+        ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
+        while (!read_buffers.ringbuf_size()) {
+            R_TRY(GetResults());
             if (!read_running) {
                 buf_out.resize(0);
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_decompress), std::addressof(read_mutex)));
+            condvarWaitTimeout(std::addressof(can_decompress), std::addressof(read_mutex), RING_WAIT_NS);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
         R_TRY(GetResults());
         read_buffers.ringbuf_pop(buf_out, off_out);
         return condvarWakeOne(std::addressof(can_read));
@@ -265,14 +274,15 @@ struct ThreadData {
         pbox->AddReady(size);
 
         mutexLock(std::addressof(write_mutex));
-        if (!write_buffers.ringbuf_free()) {
-            if (!decompress_running) {
+        ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
+        while (!write_buffers.ringbuf_free()) {
+            R_TRY(GetResults());
+            if (!write_running) {
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_decompress_write), std::addressof(write_mutex)));
+            condvarWaitTimeout(std::addressof(can_decompress_write), std::addressof(write_mutex), RING_WAIT_NS);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
         R_TRY(GetResults());
         write_buffers.ringbuf_push(buf, 0);
         return condvarWakeOne(std::addressof(can_write));
@@ -280,15 +290,16 @@ struct ThreadData {
 
     Result GetWriteBuf(std::vector<u8>& buf_out, s64& off_out) {
         mutexLock(std::addressof(write_mutex));
-        if (!write_buffers.ringbuf_size()) {
+        ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
+        while (!write_buffers.ringbuf_size()) {
+            R_TRY(GetResults());
             if (!decompress_running) {
                 buf_out.resize(0);
                 R_SUCCEED();
             }
-            R_TRY(condvarWait(std::addressof(can_write), std::addressof(write_mutex)));
+            condvarWaitTimeout(std::addressof(can_write), std::addressof(write_mutex), RING_WAIT_NS);
         }
 
-        ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
         R_TRY(GetResults());
         write_buffers.ringbuf_pop(buf_out, off_out);
         return condvarWakeOne(std::addressof(can_decompress_write));
@@ -909,6 +920,11 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                         auto it = std::ranges::find_if(t->ncz_blocks, [decompress_buf_off](auto& e){
                             return e.InRange(decompress_buf_off);
                         });
+                        if (it == t->ncz_blocks.cend()) {
+                            log_write("[NCZ] no block at compressed offset %lld (blocks %zu, first %llu, last %llu)\n",
+                                      (long long)decompress_buf_off, t->ncz_blocks.size(),
+                                      (unsigned long long)t->ncz_blocks.front().offset, (unsigned long long)t->ncz_blocks.back().offset);
+                        }
                         R_UNLESS(it != t->ncz_blocks.cend(), Result_YatiNczBlockNotFound);
                         ncz_block = &(*it);
 

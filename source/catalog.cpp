@@ -136,11 +136,37 @@ bool ParseCatalog(const std::string& json, std::vector<Game>& out) {
 }
 
 #ifdef __SWITCH__
+// What the console has, by application. A record of ns is not enough: ns keeps the record and
+// its metas of an archived game, or of one whose contents were removed, so a content counts only
+// when the meta database of its storage (SD card or internal memory) holds it.
 std::map<u64, InstalledState> ReadInstalled() {
     std::map<u64, InstalledState> installed;
     if (R_FAILED(nsInitialize())) {
         return installed;
     }
+    const bool ncm = R_SUCCEEDED(ncmInitialize());
+    NcmContentMetaDatabase sd_db{}, nand_db{};
+    const bool sd_open = ncm && R_SUCCEEDED(ncmOpenContentMetaDatabase(&sd_db, NcmStorageId_SdCard));
+    const bool nand_open = ncm && R_SUCCEEDED(ncmOpenContentMetaDatabase(&nand_db, NcmStorageId_BuiltInUser));
+    const auto present = [&](const NsApplicationContentMetaStatus& m) {
+        NcmContentMetaDatabase* db = nullptr;
+        if (m.storageID == NcmStorageId_SdCard && sd_open) db = &sd_db;
+        if (m.storageID == NcmStorageId_BuiltInUser && nand_open) db = &nand_db;
+        if (!sd_open && !nand_open) {
+            // ncm did not answer: fall back to what ns says
+            return m.storageID == NcmStorageId_SdCard || m.storageID == NcmStorageId_BuiltInUser;
+        }
+        if (!db) {
+            return false; // no storage (archived), a game card, or a database that did not open
+        }
+        NcmContentMetaKey key{};
+        key.id = m.application_id;
+        key.version = m.version;
+        key.type = m.meta_type;
+        key.install_type = NcmContentInstallType_Full;
+        bool has = false;
+        return R_SUCCEEDED(ncmContentMetaDatabaseHas(db, &has, &key)) && has;
+    };
     std::vector<NsApplicationRecord> records(64);
     s32 offset = 0;
     while (true) {
@@ -155,6 +181,9 @@ std::map<u64, InstalledState> ReadInstalled() {
             s32 metas_count = 0;
             if (R_SUCCEEDED(nsListApplicationContentMetaStatus(app, 0, metas, 32, &metas_count))) {
                 for (s32 m = 0; m < metas_count; m++) {
+                    if (!present(metas[m])) {
+                        continue;
+                    }
                     switch (metas[m].meta_type) {
                         case NcmContentMetaType_Application: state.base = true; break;
                         case NcmContentMetaType_Patch: state.patch = std::max(state.patch, metas[m].version); break;
@@ -163,13 +192,18 @@ std::map<u64, InstalledState> ReadInstalled() {
                     }
                 }
             }
-            installed[app] = state;
+            if (state.base || state.patch || !state.dlc.empty()) {
+                installed[app] = state;
+            }
         }
         offset += count;
         if (count < s32(records.size())) {
             break;
         }
     }
+    if (sd_open) ncmContentMetaDatabaseClose(&sd_db);
+    if (nand_open) ncmContentMetaDatabaseClose(&nand_db);
+    if (ncm) ncmExit();
     nsExit();
     return installed;
 }
