@@ -25,6 +25,10 @@ add_executable(nxdock
     source/main.cpp
     source/app.cpp
     source/config.cpp
+    source/discovery.cpp
+    source/http.cpp
+    source/json.cpp
+    source/link.cpp
     source/net.cpp
     source/speedtest.cpp
     source/gfx.cpp

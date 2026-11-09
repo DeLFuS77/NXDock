@@ -108,7 +108,15 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
     return true;
 }
 
-constexpr int kSettingRows = 4; // theme, address, key, speed test
+// Settings: theme, library, forget it, address and key by hand (advanced), speed test.
+enum SettingRow { kRowTheme, kRowLibrary, kRowForget, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+
+std::string Clip(std::string text, size_t max) {
+    if (text.size() > max) {
+        text = text.substr(0, max - 1) + "…";
+    }
+    return text;
+}
 
 } // namespace
 
@@ -118,55 +126,102 @@ bool App::Init() {
     padInitializeDefault(&m_pad);
     hidInitializeTouchScreen();
     net::Init();
-    m_config = Config::Load();
-    m_theme = m_config.light ? LightTheme() : DarkTheme();
+    const Config config = Config::Load();
+    m_theme = config.light ? LightTheme() : DarkTheme();
     if (!m_gfx.Init()) {
         return false;
     }
+    // remembered: connects by itself; else looks for the app on the network
+    m_link.Start(config);
     m_time = Now();
     return true;
 }
 
 void App::Exit() {
     m_speed.Cancel();
+    m_link.Stop();
     m_gfx.Exit();
     net::Exit();
 }
 
 void App::ActivateSetting(int row) {
     const auto& s = Tr();
+    const Config current = m_link.CurrentConfig();
     switch (row) {
-        case 0:
-            m_config.light = m_theme.dark;
-            m_theme = m_config.light ? LightTheme() : DarkTheme();
-            m_config.Save();
+        case kRowTheme:
+            m_theme = m_theme.dark ? LightTheme() : DarkTheme();
+            m_link.SaveTheme(!m_theme.dark);
             break;
-        case 1: {
+        case kRowLibrary:
+            // the pairing screen, or the library when linked
+            m_tab = Tab::Library;
+            if (!current.Linked()) {
+                m_link.Search();
+            }
+            break;
+        case kRowForget:
+            if (current.Linked()) {
+                m_speed.Cancel();
+                m_link.Forget();
+                m_tab = Tab::Library;
+            }
+            break;
+        case kRowAddress: {
             std::string url;
-            if (AskText(s.address, m_config.url.empty() ? "http://" : m_config.url, false, url)) {
-                if (url.find("://") == std::string::npos) {
-                    url = "http://" + url;
-                }
-                m_config.url = url;
-                m_config.Save();
+            if (AskText(s.address, !m_manual_url.empty() ? m_manual_url : current.url.empty() ? "http://" : current.url, false, url)) {
+                m_manual_url = url;
             }
             break;
         }
-        case 2: {
+        case kRowKey: {
             std::string key;
-            if (AskText(s.console_key, "", true, key)) {
-                m_config.key = key;
-                m_config.Save();
+            const std::string url = !m_manual_url.empty() ? m_manual_url : current.url;
+            if (!url.empty() && AskText(s.console_key, "", true, key)) {
+                m_link.UseKey(url, key);
             }
             break;
         }
-        case 3:
+        case kRowSpeed:
             if (m_speed.Running()) {
                 m_speed.Cancel();
-            } else if (!m_config.url.empty() && !m_config.key.empty()) {
-                m_speed.Start(m_config.url, m_config.key);
+            } else if (current.Linked()) {
+                m_speed.Start(current.url, current.key);
             }
             break;
+    }
+}
+
+void App::ActivatePairRow(int row, const Link::View& v) {
+    if (row < int(v.found.size())) {
+        m_link.Choose(row);
+        return;
+    }
+    std::string url;
+    if (AskText(Tr().address, "http://", false, url)) {
+        m_link.UseAddress(url);
+    }
+}
+
+void App::UpdatePairing(u64 down, u64 held, const Link::View& v) {
+    const int rows = int(v.found.size()) + 1; // the apps found and "Type the address"
+    const u64 up = HidNpadButton_AnyUp, dn = HidNpadButton_AnyDown;
+    if (Repeat(down, held, up) && m_pair_focus > 0) m_pair_focus--;
+    if (Repeat(down, held, dn) && m_pair_focus < rows - 1) m_pair_focus++;
+    m_pair_focus = std::clamp(m_pair_focus, 0, rows - 1);
+    const bool busy = v.state == Link::State::Searching || v.state == Link::State::Reconnecting;
+    if ((down & HidNpadButton_A) && !busy) {
+        ActivatePairRow(m_pair_focus, v);
+    }
+    if (down & HidNpadButton_X) {
+        // a new code from the same app, or a new look at the network
+        if (v.chosen >= 0 && v.chosen < int(v.found.size()) && v.state != Link::State::Offline) {
+            m_link.Choose(v.chosen);
+        } else {
+            m_link.Search();
+        }
+    }
+    if (down & HidNpadButton_Y) {
+        m_link.SetRemember(!v.remember);
     }
 }
 
@@ -258,6 +313,14 @@ void App::Tap(float x, float y, u64& down) {
                     m_setting = it->index;
                 }
                 break;
+            case HitKind::PairRow:
+                if (m_pair_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_pair_focus = it->index;
+                }
+                break;
+            case HitKind::Remember: down |= HidNpadButton_Y; break;
         }
         return;
     }
@@ -280,6 +343,11 @@ void App::Update(u64 down, u64 held) {
 
     switch (m_tab) {
         case Tab::Library: {
+            const Link::View link = m_link.Snapshot();
+            if (link.state != Link::State::Connected) {
+                UpdatePairing(down, held, link);
+                break;
+            }
             const int before = m_focus;
             if (Repeat(down, held, left) && m_focus % kColumns > 0) m_focus--;
             if (Repeat(down, held, right) && m_focus % kColumns < kColumns - 1 && m_focus + 1 < kGameCount) m_focus++;
@@ -294,7 +362,7 @@ void App::Update(u64 down, u64 held) {
             if (Repeat(down, held, up) && m_setting > 0) m_setting--;
             if (Repeat(down, held, dn) && m_setting < kSettingRows - 1) m_setting++;
             if (down & HidNpadButton_A) ActivateSetting(m_setting);
-            if (down & HidNpadButton_X) ActivateSetting(3);
+            if (down & HidNpadButton_X) ActivateSetting(kRowSpeed);
             break;
         default:
             break;
@@ -346,7 +414,15 @@ void App::Draw(NVGcontext* vg) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
     }
     switch (m_tab) {
-        case Tab::Library: DrawLibrary(vg); break;
+        case Tab::Library: {
+            const Link::View link = m_link.Snapshot();
+            if (link.state == Link::State::Connected) {
+                DrawLibrary(vg);
+            } else {
+                DrawPairing(vg, link);
+            }
+            break;
+        }
         case Tab::Queue: DrawQueue(vg); break;
         case Tab::Settings: DrawSettings(vg); break;
         default: DrawComingSoon(vg); break;
@@ -449,7 +525,10 @@ void App::DrawLibrary(NVGcontext* vg) {
 
     ui::Text(vg, kGridX, 638, 14, t.muted, s.preview_note);
 
-    ui::HintBar(vg, t, "192.168.1.10",
+    const Config linked = m_link.CurrentConfig();
+    const size_t scheme = linked.url.find("://");
+    const std::string where = linked.url.empty() ? std::string() : linked.url.substr(scheme == std::string::npos ? 0 : scheme + 3);
+    ui::HintBar(vg, t, where.c_str(),
                 {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::X, s.queue, HidNpadButton_X},
                  {ui::glyph::Y, s.search, HidNpadButton_Y}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
                 m_hint_rects);
@@ -562,41 +641,179 @@ void App::DrawSettings(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
     const bool running = m_speed.Running();
+    const Link::View link = m_link.Snapshot();
+    const Config current = m_link.CurrentConfig();
+    const bool linked = current.Linked();
 
-    // Rows on the left.
-    std::string address = m_config.url.empty() ? s.not_set : m_config.url;
-    if (address.size() > 34) {
-        address = address.substr(0, 33) + "…";
+    // Rows on the left: the usual ones first, the ones by hand last.
+    std::string library = s.not_linked;
+    if (linked) {
+        const std::string host = current.url.substr(current.url.find("://") == std::string::npos ? 0 : current.url.find("://") + 3);
+        library = Clip((current.name.empty() ? link.app_name : current.name) + " · " + host, 36);
     }
+    const std::string address = !m_manual_url.empty() ? Clip(m_manual_url, 32) : s.not_set;
     struct Row { const char* label; std::string value; bool accent; };
     const Row rows[kSettingRows] = {
         {s.theme, t.dark ? s.dark : s.light, true},
-        {s.address, address, !m_config.url.empty()},
-        {s.console_key, m_config.key.empty() ? s.not_set : s.key_saved, !m_config.key.empty()},
-        {s.speed_test, running ? s.cancel : s.start, true},
+        {s.library, library, linked},
+        {s.forget, "", false},
+        {s.manual_address, address, !m_manual_url.empty()},
+        {s.manual_key, linked ? s.key_saved : s.not_set, linked},
+        {s.speed_test, running ? s.cancel : s.start, linked},
     };
-    const float x = 48, w = 540, h = 72, gap = 14;
-    float y = 100;
+    const float x = 48, w = 540, h = 62, gap = 10;
+    float y = 96;
     for (int i = 0; i < kSettingRows; i++) {
+        if (i == kRowAddress) {
+            y += 8; // the ones by hand apart
+        }
+        const bool dim = (i == kRowForget || i == kRowSpeed) && !linked;
+        nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
         Panel(vg, t, x, y, w, h, 14);
         if (i == m_setting) {
             ui::Focus(vg, t, x, y, w, h, 14, m_time);
         }
         AddHit(x, y, w, h, HitKind::SettingsRow, i);
-        ui::Text(vg, x + 22, y + h / 2, 18, t.text, rows[i].label);
-        ui::Text(vg, x + w - 22, y + h / 2, 17, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(),
+        ui::Text(vg, x + 22, y + h / 2, 18, i == kRowForget ? t.warn : t.text, rows[i].label);
+        ui::Text(vg, x + w - 22, y + h / 2, 16, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(),
                  NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgGlobalAlpha(vg, 1.f);
         y += h + gap;
     }
-    if (m_config.url.empty() || m_config.key.empty()) {
-        TextBox(vg, x, y + 6, w, 15, t.muted, s.need_config);
+    if (linked && !link.enabled) {
+        TextBox(vg, x, y + 4, w, 15, t.warn, s.link_off_warning);
+    } else if (!linked) {
+        TextBox(vg, x, y + 4, w, 15, t.muted, s.need_config);
     }
 
-    DrawSpeedPanel(vg, 620, 100, kWidth - 620 - 48, 540);
+    DrawSpeedPanel(vg, 620, 96, kWidth - 620 - 48, 548);
 
     ui::HintBar(vg, t, nullptr,
                 {{ui::glyph::A, s.edit, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},
                  {ui::glyph::B, s.back, HidNpadButton_B}},
+                m_hint_rects);
+}
+
+void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    using State = Link::State;
+    const float top = 100, ph = 520;
+    const float lx = 48, lw = 560, rx = 640, rw = kWidth - 640 - 48;
+
+    // Reconnecting with a remembered library: just say so.
+    if (v.state == State::Reconnecting) {
+        ui::Spinner(vg, kWidth / 2, 330, 20, t.work, m_time);
+        ui::Text(vg, kWidth / 2, 384, 20, t.muted, s.reconnecting, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::HintBar(vg, t, nullptr, {{ui::glyph::Plus, s.exit, HidNpadButton_Plus}}, m_hint_rects);
+        return;
+    }
+
+    // Left: the libraries found, and typing an address.
+    Panel(vg, t, lx, top, lw, ph, 16);
+    ui::Text(vg, lx + 26, top + 36, 22, t.text, s.find_library);
+    TextBox(vg, lx + 26, top + 56, lw - 52, 15, t.muted, s.found_hint);
+    float y = top + 100;
+    const int rows = int(v.found.size()) + 1;
+    for (int i = 0; i < rows; i++) {
+        const bool typed = i == int(v.found.size());
+        const float rh = 64;
+        ui::FillRound(vg, lx + 22, y, lw - 44, rh, 12, t.panel2);
+        ui::StrokeRound(vg, lx + 22.5f, y + .5f, lw - 45, rh - 1, 12, t.line, 1);
+        if (i == m_pair_focus) {
+            ui::Focus(vg, t, lx + 22, y, lw - 44, rh, 12, m_time);
+        }
+        AddHit(lx + 22, y, lw - 44, rh, HitKind::PairRow, i);
+        if (typed) {
+            ui::Text(vg, lx + 44, y + 24, 17, t.text, s.type_address);
+            ui::Text(vg, lx + 44, y + 46, 14, t.muted, s.type_address_hint);
+        } else {
+            const auto& lib = v.found[i];
+            ui::Text(vg, lx + 44, y + 24, 17, t.text, lib.name.c_str());
+            const size_t scheme = lib.url.find("://");
+            const std::string where = lib.url.substr(scheme == std::string::npos ? 0 : scheme + 3) + "  ·  " + lib.version;
+            ui::Text(vg, lx + 44, y + 46, 14, t.muted, where.c_str());
+            if (i == v.chosen) {
+                const float cw = ui::TextWidth(vg, 14, s.chosen);
+                ui::Text(vg, lx + lw - 44, y + rh / 2, 14, t.ok, s.chosen, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                nvgBeginPath(vg);
+                nvgCircle(vg, lx + lw - 44 - cw - 14, y + rh / 2, 9);
+                nvgFillColor(vg, t.ok);
+                nvgFill(vg);
+                ui::CheckMark(vg, lx + lw - 44 - cw - 14, y + rh / 2, 10, t.panel, 2.2f);
+            }
+        }
+        y += rh + 10;
+    }
+    if (v.state == State::Searching) {
+        ui::Spinner(vg, lx + 36, y + 18, 8, t.work, m_time);
+        ui::Text(vg, lx + 54, y + 18, 15, t.muted, s.searching);
+        ui::Progress(vg, t, lx + 26, y + 40, lw - 52, 5, v.progress, t.work, m_time);
+    } else if (v.state == State::Choose && v.found.empty()) {
+        TextBox(vg, lx + 26, y + 6, lw - 52, 15, t.warn, s.none_found);
+    } else if (v.state == State::Offline) {
+        TextBox(vg, lx + 26, y + 6, lw - 52, 15, t.warn, v.error.c_str());
+    }
+
+    // Right: the code and what to do with it.
+    Panel(vg, t, rx, top, rw, ph, 16);
+    ui::Text(vg, rx + 26, top + 36, 22, t.text, s.approve_title);
+    TextBox(vg, rx + 26, top + 56, rw - 52, 15, t.muted, s.approve_hint);
+
+    const float cy = top + 150;
+    const bool has_code = v.state == State::Waiting && !v.code.empty();
+    // eight boxes in two groups, as the app shows the code
+    const float bw = 50, bh = 66, bg = 8, dash = 22;
+    const float total = 8 * bw + 6 * bg + dash + 2 * bg;
+    float bx = rx + (rw - total) / 2;
+    size_t ci = 0;
+    for (int i = 0; i < 8; i++) {
+        if (i == 4) {
+            ui::Text(vg, bx + dash / 2, cy + bh / 2, 30, t.muted, "–", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            bx += dash + bg;
+        }
+        ui::FillRound(vg, bx, cy, bw, bh, 10, t.panel2);
+        ui::StrokeRound(vg, bx + .5f, cy + .5f, bw - 1, bh - 1, 10, has_code ? t.work : t.line, has_code ? 1.5f : 1);
+        if (has_code) {
+            while (ci < v.code.size() && v.code[ci] == '-') ci++;
+            if (ci < v.code.size()) {
+                const char c[2] = {v.code[ci++], 0};
+                ui::Text(vg, bx + bw / 2, cy + bh / 2 + 2, 34, t.text, c, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            }
+        }
+        bx += bw + bg;
+    }
+
+    // What happens now.
+    const float sy = cy + bh + 40;
+    if (v.state == State::Waiting) {
+        char line[160];
+        std::snprintf(line, sizeof(line), s.waiting_accept, v.seconds_left / 60, v.seconds_left % 60);
+        ui::Spinner(vg, rx + 36, sy, 8, t.work, m_time);
+        ui::Text(vg, rx + 54, sy, 16, t.work, line);
+    } else if (v.state == State::Asking) {
+        ui::Spinner(vg, rx + 36, sy, 8, t.work, m_time);
+    } else if (!v.error.empty() && v.state != State::Offline) {
+        TextBox(vg, rx + 26, sy - 10, rw - 52, 15, v.state == State::Failed ? t.err : t.warn, v.error.c_str());
+    }
+
+    // Remember: on by default; off, the link lasts until NXDock closes.
+    const float my = top + ph - 70;
+    AddHit(rx + 16, my - 8, rw - 32, 52, HitKind::Remember);
+    ui::FillRound(vg, rx + 26, my, 30, 30, 8, v.remember ? t.work : t.panel2);
+    if (!v.remember) {
+        ui::StrokeRound(vg, rx + 26.5f, my + .5f, 29, 29, 8, t.muted, 1.5f);
+    } else {
+        ui::CheckMark(vg, rx + 41, my + 15, 16, nvgRGB(255, 255, 255), 2.6f);
+    }
+    ui::Text(vg, rx + 68, my + 15, 17, t.text, s.remember);
+    ui::Text(vg, rx + rw - 26, my + 16, 22, t.muted, ui::glyph::Y, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+
+    const bool code_shown = v.state == State::Waiting || v.state == State::Expired || v.state == State::Refused;
+    ui::HintBar(vg, t, nullptr,
+                {{ui::glyph::A, s.choose, HidNpadButton_A},
+                 {ui::glyph::X, code_shown ? s.new_code : s.search_again, HidNpadButton_X},
+                 {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
                 m_hint_rects);
 }
 

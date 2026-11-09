@@ -9,3 +9,10 @@
 - Touch: tabs, filters, covers (tap to select, tap again to open), the queue
   strip and every button of the bottom bar can be tapped; drag to scroll the
   library.
+- Network speed test in Settings: the network with 1, 2 and 4 connections at
+  once and the SD card apart, without installing anything.
+- Connecting without addresses or keys: NXDock finds the library app on the
+  local network by itself, shows a code, and once the code is accepted in the
+  app it is paired. With "Remember this library" on, the next times it
+  connects by itself, also when the address of the app changes. The address
+  and the key can still be typed by hand in Settings.

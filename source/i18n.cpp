@@ -31,6 +31,21 @@ constexpr Strings kEnglish{
     "Could not reach the library app",
     "Could not write to the SD card.",
     "Edit",
+    "1. Choose your library", "Switch Library Manager Web apps found on your network.", "Looking on your network…",
+    "Type the address", "For an app outside home or behind a proxy", "Chosen",
+    "2. Accept it in the app",
+    "Open the app on your phone or computer: a notice with this code shows on any page. Check that it matches and press Accept.",
+    "Waiting for Accept · the code runs out in %d:%02d", "Remember this library", "Search again", "New code",
+    "Connecting to your library…", "Not linked", "Forget this library",
+    "Install over the network is off in the app: an administrator has to turn it on.", "Choose",
+    "No library found. Check that the app is open and on the same network, or type its address.",
+    "That address is not a Switch Library Manager Web app.",
+    "Your library does not answer. Check that the app is open and on the same network.",
+    "Too many consoles are waiting in the app. Try again in a few minutes.",
+    "Nobody accepted the code in time.",
+    "The console was refused in the app.",
+    "Connected to %s",
+    "Address by hand", "Key by hand",
 };
 
 constexpr Strings kSpanish{
@@ -57,6 +72,21 @@ constexpr Strings kSpanish{
     "No se ha podido conectar con la app de la biblioteca",
     "No se ha podido escribir en la SD.",
     "Editar",
+    "1. Elige tu biblioteca", "Apps de Switch Library Manager Web encontradas en tu red.", "Buscando en la red…",
+    "Escribir la dirección", "Para una app fuera de casa o detrás de un proxy", "Elegida",
+    "2. Acéptala en la app",
+    "Abre la app en el móvil o el ordenador: sale un aviso con este código en cualquier página. Comprueba que coincide y pulsa Aceptar.",
+    "Esperando a que aceptes · el código caduca en %d:%02d", "Recordar esta biblioteca", "Buscar otra vez", "Código nuevo",
+    "Conectando con tu biblioteca…", "Sin vincular", "Olvidar esta biblioteca",
+    "«Instalar por red» está apagado en la app: un administrador tiene que encenderlo.", "Elegir",
+    "No se ha encontrado ninguna biblioteca. Comprueba que la app está abierta y en la misma red, o escribe su dirección.",
+    "Esa dirección no es una app de Switch Library Manager Web.",
+    "Tu biblioteca no responde. Comprueba que la app está abierta y en la misma red.",
+    "Hay demasiadas consolas esperando en la app. Prueba otra vez dentro de unos minutos.",
+    "Nadie ha aceptado el código a tiempo.",
+    "La consola se ha rechazado en la app.",
+    "Conectada a %s",
+    "Dirección a mano", "Llave a mano",
 };
 
 const Strings* g_strings = &kEnglish;

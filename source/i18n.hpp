@@ -21,6 +21,12 @@ struct Strings {
     const char *applet_warning, *app_mode, *need_config, *test_note, *best;
     const char *err_key, *err_off, *err_forbidden, *err_connect, *err_sd;
     const char *edit;
+    // finding the app and pairing
+    const char *find_library, *found_hint, *searching, *type_address, *type_address_hint, *chosen;
+    const char *approve_title, *approve_hint, *waiting_accept, *remember, *search_again, *new_code;
+    const char *reconnecting, *not_linked, *forget, *link_off_warning, *choose, *none_found;
+    const char *link_not_app, *link_offline, *link_busy, *link_expired, *link_refused, *connected_to;
+    const char *manual_address, *manual_key;
 };
 
 // Picks English or Spanish from the console language; more languages later.

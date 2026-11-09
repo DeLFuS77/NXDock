@@ -6,6 +6,7 @@
 #include <vector>
 #include "config.hpp"
 #include "gfx.hpp"
+#include "link.hpp"
 #include "speedtest.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
@@ -23,7 +24,7 @@ public:
 
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
-    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow };
+    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -35,6 +36,9 @@ private:
     void Update(u64 down, u64 held);
     void Draw(NVGcontext* vg);
     void DrawLibrary(NVGcontext* vg);
+    void DrawPairing(NVGcontext* vg, const Link::View& v);
+    void UpdatePairing(u64 down, u64 held, const Link::View& v);
+    void ActivatePairRow(int row, const Link::View& v);
     void DrawQueue(NVGcontext* vg);
     void DrawSettings(NVGcontext* vg);
     void DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h);
@@ -60,7 +64,9 @@ private:
     int m_focus = 0;
     int m_filter = 0;
     int m_setting = 0; // row in focus in Settings
-    Config m_config;
+    Link m_link;
+    int m_pair_focus = 0; // row in focus on the pairing screen
+    std::string m_manual_url; // typed in Settings, until the key is typed too
     SpeedTest m_speed;
     double m_time = 0;
     double m_next_repeat = 0;
