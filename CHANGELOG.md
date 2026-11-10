@@ -167,3 +167,12 @@
   (SendObjectPropList).
 - The planner of the queue marks the games played least lately first; the
   page of an installed game opens its cheats and mods with X.
+- More movement and the controller's own symbols: the hint bar and the
+  buttons of questions show A, B, X and Y as the diamond with the button lit,
+  L, R, ZL and ZR as shoulders, and pulse when pressed; the tiles of More
+  come in with a bounce, the one in focus lifts with a gleam and every icon
+  moves; list rows slide in and the focus glides; questions grow out of the
+  middle; switches and ticks spring; notices rise; bars carry a light at
+  their head; the console is drawn with what arrives over MTP or the cable
+  flying into it; the screen-off count drains a ring; soft lights move
+  behind everything. Settings › Animations: full, gentle or none.

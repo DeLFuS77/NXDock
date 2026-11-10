@@ -5,8 +5,10 @@
 // Small drawing helpers shared by the screens of the More tab (more.cpp, vault.cpp, space.cpp…).
 #include "gfx.hpp"
 #include "theme.hpp"
+#include "motion.hpp"
 #include "ui.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -72,23 +74,31 @@ inline void FileIcon(NVGcontext* vg, const Theme& t, float x, float cy) {
     ui::FillRound(vg, x + 6, cy + 2, 10, 1.6f, 0.8f, t.muted);
 }
 
-// A tick box, filled in the blue of work when marked.
-inline void TickBox(NVGcontext* vg, const Theme& t, float x, float cy, bool on) {
-    if (on) {
-        ui::FillRound(vg, x, cy - 12, 24, 24, 6, t.work);
-        ui::CheckMark(vg, x + 12, cy, 12, t.on_work, 2.4f);
-    } else {
-        ui::StrokeRound(vg, x + 1, cy - 11, 22, 22, 6, t.muted, 2);
-    }
+// A tick box, filled in the blue of work when marked; with a key, it pops and its tick is drawn.
+inline void TickBox(NVGcontext* vg, const Theme& t, float x, float cy, bool on, const std::string& key = {}) {
+    const float k = key.empty() ? (on ? 1.f : 0.f) : ui::Spring(key, on);
+    ui::StrokeRound(vg, x + 1, cy - 11, 22, 22, 6, t.muted, 2);
+    if (k <= 0.01f) return;
+    const float s = 24 * std::max(0.f, k);
+    ui::FillRound(vg, x + 12 - s / 2, cy - s / 2, s, s, 6, t.work);
+    nvgSave(vg);
+    nvgGlobalAlpha(vg, std::min(1.f, k));
+    ui::CheckMark(vg, x + 12, cy, 12 * std::min(1.2f, k), t.on_work, 2.4f);
+    nvgRestore(vg);
 }
 
-// An on/off switch (10A).
-inline void Toggle(NVGcontext* vg, const Theme& t, float x, float cy, bool on) {
-    ui::FillRound(vg, x, cy - 15, 52, 30, 15, on ? t.work : t.panel2);
-    if (!on) ui::StrokeRound(vg, x + .5f, cy - 14.5f, 51, 29, 15, t.line, 1);
+// An on/off switch (10A); with a key its knob jumps over with a spring (4A).
+inline void Toggle(NVGcontext* vg, const Theme& t, float x, float cy, bool on, const std::string& key = {}) {
+    const float k = key.empty() ? (on ? 1.f : 0.f) : ui::Spring(key, on);
+    const float f = std::clamp(k, 0.f, 1.f);
+    ui::FillRound(vg, x, cy - 15, 52, 30, 15, t.panel2);
+    ui::StrokeRound(vg, x + .5f, cy - 14.5f, 51, 29, 15, t.line, 1);
+    NVGcolor fill = t.work;
+    fill.a = f;
+    ui::FillRound(vg, x, cy - 15, 52, 30, 15, fill);
     nvgBeginPath(vg);
-    nvgCircle(vg, on ? x + 37 : x + 15, cy, 10);
-    nvgFillColor(vg, on ? t.on_work : t.muted);
+    nvgCircle(vg, x + 15 + 22 * k, cy, 10);
+    nvgFillColor(vg, nvgLerpRGBA(t.muted, t.on_work, f));
     nvgFill(vg);
 }
 

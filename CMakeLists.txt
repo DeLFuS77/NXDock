@@ -115,6 +115,7 @@ add_executable(nxdock
     source/i18n.cpp
     source/i18n_more.cpp
     source/file_source.cpp
+    source/motion.cpp
     source/more.cpp
     source/more_vault.cpp
     source/more_space.cpp

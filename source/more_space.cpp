@@ -67,6 +67,8 @@ void App::OpenPicker(int kind) {
     }
     m_pick_marks.assign(m_pick_rows.size(), 0);
     m_pick_focus = m_pick_first = 0;
+    m_list_at = m_time;
+    m_glide_list = {};
     m_plan_head.clear();
     m_space_mode = 1;
 }
@@ -216,18 +218,19 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
     if (m_pick_focus < m_pick_first) m_pick_first = m_pick_focus;
     if (m_pick_focus >= m_pick_first + rows) m_pick_first = m_pick_focus - rows + 1;
     unsigned long long marked = 0;
+    if (!m_pick_rows.empty()) {
+        const float fy = m_glide_list.Step(top + (m_pick_focus - m_pick_first) * pitch);
+        ui::FillRound(vg, 40, fy, kWidth - 80, 46, 10, t.panel2);
+        ui::Focus(vg, t, 40, fy, kWidth - 80, 46, 10, m_time);
+    }
     for (int r = 0; r < rows && m_pick_first + r < int(m_pick_rows.size()); r++) {
         const int i = m_pick_first + r;
         const auto& a = v.apps[size_t(m_pick_rows[size_t(i)].first)];
         const float y = top + r * pitch, cy = y + 23;
-        if (i == m_pick_focus) {
-            ui::FillRound(vg, 40, y, kWidth - 80, 46, 10, t.panel2);
-            ui::Focus(vg, t, 40, y, kWidth - 80, 46, 10, m_time);
-        }
         AddHit(40, y, kWidth - 80, 46, HitKind::PickRow, i);
         float x = 56;
         if (m_pick_kind == 0) {
-            draw::TickBox(vg, t, x, cy, m_pick_marks[size_t(i)]);
+            draw::TickBox(vg, t, x, cy, m_pick_marks[size_t(i)], "pick:" + std::to_string(a.app_id));
             x += 40;
         }
         std::string name = a.name, where, size;

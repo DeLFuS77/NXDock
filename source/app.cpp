@@ -180,7 +180,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -300,6 +300,7 @@ bool App::Init() {
     m_link.Start(config);
     m_prefs = InstallPrefs::Load();
     m_ui = UiPrefs::Load();
+    ui::SetMotion(m_ui.anim);
     if (m_ui.language >= 0) {
         UseLanguage(m_ui.language); // chosen in the wizard; else the console's
     }
@@ -390,6 +391,11 @@ void App::ActivateSetting(int row) {
             break;
         case kRowScreenOff:
             m_ui.screen_off_auto = !m_ui.screen_off_auto;
+            m_ui.Save();
+            break;
+        case kRowAnim:
+            m_ui.anim = (m_ui.anim + 1) % 3;
+            ui::SetMotion(m_ui.anim);
             m_ui.Save();
             break;
         case kRowLibrary:
@@ -829,6 +835,13 @@ bool App::Frame() {
     padUpdate(&m_pad);
     u64 down = padGetButtonsDown(&m_pad);
     const u64 held = padGetButtons(&m_pad);
+    // the clock of the animations, and the buttons whose symbols pulse
+    ui::Tick(m_time);
+    ui::NotePress(down);
+    if (m_dialog.kind != m_dialog_drawn) {
+        m_dialog_drawn = m_dialog.kind;
+        m_dialog_at = m_time;
+    }
     HidTouchScreenState touch{};
     hidGetTouchScreenStates(&touch, 1);
     const bool new_touch = touch.count > 0 && !m_touching && !m_wake_touch;
@@ -927,6 +940,8 @@ void App::Draw(NVGcontext* vg) {
     m_hits.clear();
     m_hint_rects.clear();
     Background(vg, m_theme);
+    // the slow lights behind, paused while installing on little battery
+    if (!(m_queue && m_queue->Busy() && m_battery >= 0 && m_battery < 20 && !m_charging)) ui::Aurora(vg, m_theme);
     if (m_wizard) {
         DrawWizard(vg);
         AddHints(m_hint_rects);
@@ -975,7 +990,7 @@ void App::Draw(NVGcontext* vg) {
     }
     const float tab_e = float(std::min(1.0, (m_time - m_tab_at) / 0.22));
     nvgSave(vg);
-    if (tab_e < 1) {
+    if (tab_e < 1 && !ui::Still()) {
         const float k = 1 - tab_e;
         nvgTranslate(vg, 30 * m_tab_dir * k * k, 0);
     }
@@ -1011,8 +1026,10 @@ void App::Draw(NVGcontext* vg) {
     if (m_time < m_notice_until && !m_notice.empty()) {
         // a short notice above the hint bar
         const float w = ui::TextWidth(vg, 16, m_notice.c_str()) + 48;
-        const float x = (kWidth - w) / 2, y = 600;
-        nvgGlobalAlpha(vg, float(std::min(1.0, (m_notice_until - m_time) * 3)));
+        // it comes up from below with a little spring
+        const float rise = ui::EaseOutBack(ui::Appear(m_notice_at, 0.35f));
+        const float x = (kWidth - w) / 2, y = 600 + (1 - rise) * 34;
+        nvgGlobalAlpha(vg, float(std::min(1.0, (m_notice_until - m_time) * 3)) * std::min(1.f, rise * 1.5f));
         ui::FillRound(vg, x, y, w, 44, 22, m_theme.panel2);
         ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, 43, 22, m_theme.work, 1.5f);
         ui::Text(vg, x + w / 2, y + 22, 16, m_theme.text, m_notice.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -1197,6 +1214,7 @@ void App::DrawTouchFeedback(NVGcontext* vg) {
 
 void App::Notice(const std::string& text) {
     m_notice = text;
+    m_notice_at = m_time;
     m_notice_until = m_time + 3.5;
 }
 
@@ -2656,6 +2674,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.share_row, m_prefs.share_installed == 1 ? s.yes_word : s.no_word, m_prefs.share_installed == 1},
         {s.wiz_row, s.wiz_repeat, true},
         {TrM().so_auto_row, m_ui.screen_off_auto ? s.yes_word : s.no_word, m_ui.screen_off_auto},
+        {TrM().anim_row, m_ui.anim == 2 ? TrM().anim_none : m_ui.anim == 1 ? TrM().anim_soft : TrM().anim_full, m_ui.anim != 2},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
@@ -3304,7 +3323,7 @@ void App::DrawDialog(NVGcontext* vg) {
     // everything behind goes dark; a tap there is Cancel
     nvgBeginPath(vg);
     nvgRect(vg, 0, 0, kWidth, kHeight);
-    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.55f));
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.55f * ui::EaseOut(ui::Appear(m_dialog_at, 0.2f))));
     nvgFill(vg);
     AddHit(0, 0, kWidth, kHeight, HitKind::DialogBack);
 
@@ -3561,6 +3580,13 @@ void App::DrawDialog(NVGcontext* vg) {
     const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
     h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + 60 + pad - 8;
     const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
+    // it grows out of the middle with a soft spring
+    const float pop = ui::EaseOutBack(ui::Appear(m_dialog_at, 0.32f));
+    nvgSave(vg);
+    nvgTranslate(vg, x + w / 2, y + h / 2);
+    nvgScale(vg, 0.88f + 0.12f * pop, 0.88f + 0.12f * pop);
+    nvgTranslate(vg, -(x + w / 2), -(y + h / 2));
+    nvgGlobalAlpha(vg, std::min(1.f, pop * 1.4f));
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x - 10, y + 6, w + 20, h + 20, 22);
     nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 10, w, h, 18, 40, nvgRGBAf(0, 0, 0, 0.5f), nvgRGBAf(0, 0, 0, 0)));
@@ -3707,7 +3733,7 @@ void App::DrawDialog(NVGcontext* vg) {
         const float bw = ui::TextWidth(vg, 18, it->label.c_str()) + 78;
         bx -= bw;
         const bool enabled = !it->primary || can;
-        nvgGlobalAlpha(vg, enabled ? 1.f : 0.4f);
+        nvgGlobalAlpha(vg, (enabled ? 1.f : 0.4f) * std::min(1.f, pop * 1.4f));
         if (m_dialog.focus == it->index) {
             ui::Focus(vg, t, bx, by, bw, bh, 12, m_time);
         }
@@ -3718,7 +3744,7 @@ void App::DrawDialog(NVGcontext* vg) {
             ui::StrokeRound(vg, bx + 1, by + 1, bw - 2, bh - 2, 12, t.line, 2);
         }
         const NVGcolor fg = it->primary ? t.on_work : t.text;
-        ui::Text(vg, bx + 22, by + bh / 2 + 1, 24, fg, it->glyph, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        ui::Symbol(vg, t, bx + 34, by + bh / 2, 24, it->glyph, fg, it->primary ? HidNpadButton_A : HidNpadButton_B);
         ui::Text(vg, bx + 56, by + bh / 2, 18, fg, it->label.c_str());
         nvgGlobalAlpha(vg, 1.f);
         if (enabled) {
@@ -3727,6 +3753,8 @@ void App::DrawDialog(NVGcontext* vg) {
         bx -= 14;
     }
 
+    nvgGlobalAlpha(vg, 1.f);
+    nvgRestore(vg);
     // its own hint bar, over the one of the screen
     std::vector<ui::HitRect> rects;
     ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.choose, HidNpadButton_A}, {ui::glyph::B, info ? s.close : cancel_label.c_str(), HidNpadButton_B}}, rects);

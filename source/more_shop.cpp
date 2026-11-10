@@ -142,7 +142,7 @@ void App::DrawShops(NVGcontext* vg) {
     for (int i = 0; i < rows && i < 8; i++) {
         const float y = 160 + i * 64;
         draw::Panel(vg, t, 48, y, kWidth - 96, 56, 12);
-        if (i == m_shop_focus) ui::Focus(vg, t, 48, y, kWidth - 96, 56, 12, m_time);
+
         AddHit(48, y, kWidth - 96, 56, HitKind::ShopRow, i);
         if (i == int(m_shops.size())) {
             ui::Text(vg, 76, y + 28, 22, t.work, "+", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -159,6 +159,8 @@ void App::DrawShops(NVGcontext* vg) {
             ui::Text(vg, kWidth - 110, y + 28, 14, t.muted, m.sh_loading, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         }
     }
+    // the focus glides over the rows
+    ui::Focus(vg, t, 48, m_glide_list.Step(160 + m_shop_focus * 64.f), kWidth - 96, 56, 12, m_time);
     if (m_shops.empty()) draw::Box(vg, 48, 240, kWidth - 96, 15, t.muted, m.sh_none);
     std::vector<ui::Hint> hints;
     if (m_shop_focus < int(m_shops.size())) {

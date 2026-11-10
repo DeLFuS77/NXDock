@@ -9,6 +9,7 @@
 #include "gfx.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "motion.hpp"
 
 extern "C" {
 #include <qrcodegen.h>
@@ -99,6 +100,18 @@ void Progress(NVGcontext* vg, const Theme& t, float x, float y, float w, float h
     nvgFillColor(vg, nvgRGBAf(1, 1, 1, 0.22f));
     nvgFill(vg);
     nvgRestore(vg);
+    if (moving && fw < w && !Still()) {
+        // a soft light at the head of the bar
+        NVGcolor glow = color;
+        glow.a = 0.55f + 0.2f * float(std::sin(time * 4));
+        NVGcolor clear = color;
+        clear.a = 0;
+        const float r = h * 1.6f;
+        nvgBeginPath(vg);
+        nvgCircle(vg, x + fw, y + h / 2, r);
+        nvgFillPaint(vg, nvgRadialGradient(vg, x + fw, y + h / 2, h * 0.2f, r, glow, clear));
+        nvgFill(vg);
+    }
 }
 
 void CheckMark(NVGcontext* vg, float cx, float cy, float s, NVGcolor c, float width) {
@@ -350,9 +363,9 @@ void HintBar(NVGcontext* vg, const Theme& t, const char* left, const std::vector
         const float right = x;
         const float lw = TextWidth(vg, 16, it->label);
         Text(vg, x, 692, 16, t.muted, it->label, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        x -= lw + 8;
-        const float gw = TextWidth(vg, 24, it->glyph);
-        Text(vg, x, 693, 24, t.text, it->glyph, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        x -= lw + 10;
+        const float gw = SymbolWidth(vg, 24, it->glyph);
+        Symbol(vg, t, x - gw / 2, 692, 24, it->glyph, t.text, it->button);
         x -= gw;
         hits.push_back({x - 12, 664, right - x + 24, 56, it->button});
         x -= 26;

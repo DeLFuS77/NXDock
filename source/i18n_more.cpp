@@ -272,6 +272,10 @@ constexpr More kEnglish{
     .idle_today = "played today",
     .idle_never = "never played",
     .no_installed = "No games are installed on the console.",
+    .anim_row = "Animations",
+    .anim_full = "Full",
+    .anim_soft = "Gentle",
+    .anim_none = "None",
 };
 
 constexpr More kSpanish{
@@ -537,6 +541,10 @@ constexpr More kSpanish{
     .idle_today = "jugado hoy",
     .idle_never = "nunca jugado",
     .no_installed = "No hay juegos instalados en la consola.",
+    .anim_row = "Animaciones",
+    .anim_full = "Completas",
+    .anim_soft = "Suaves",
+    .anim_none = "Ninguna",
 };
 
 constexpr More kFrench{
@@ -802,6 +810,10 @@ constexpr More kFrench{
     .idle_today = "joué aujourd'hui",
     .idle_never = "jamais joué",
     .no_installed = "Aucun jeu n'est installé sur la console.",
+    .anim_row = "Animations",
+    .anim_full = "Complètes",
+    .anim_soft = "Douces",
+    .anim_none = "Aucune",
 };
 
 constexpr More kGerman{
@@ -1067,6 +1079,10 @@ constexpr More kGerman{
     .idle_today = "heute gespielt",
     .idle_never = "nie gespielt",
     .no_installed = "Auf der Konsole sind keine Spiele installiert.",
+    .anim_row = "Animationen",
+    .anim_full = "Voll",
+    .anim_soft = "Sanft",
+    .anim_none = "Keine",
 };
 
 constexpr More kItalian{
@@ -1332,6 +1348,10 @@ constexpr More kItalian{
     .idle_today = "giocato oggi",
     .idle_never = "mai giocato",
     .no_installed = "Nessun gioco installato sulla console.",
+    .anim_row = "Animazioni",
+    .anim_full = "Complete",
+    .anim_soft = "Leggere",
+    .anim_none = "Nessuna",
 };
 
 constexpr More kPortuguese{
@@ -1597,6 +1617,10 @@ constexpr More kPortuguese{
     .idle_today = "jogado hoje",
     .idle_never = "nunca jogado",
     .no_installed = "Não há jogos instalados no console.",
+    .anim_row = "Animações",
+    .anim_full = "Completas",
+    .anim_soft = "Suaves",
+    .anim_none = "Nenhuma",
 };
 
 constexpr More kDutch{
@@ -1862,6 +1886,10 @@ constexpr More kDutch{
     .idle_today = "vandaag gespeeld",
     .idle_never = "nooit gespeeld",
     .no_installed = "Er zijn geen spellen op de console geïnstalleerd.",
+    .anim_row = "Animaties",
+    .anim_full = "Volledig",
+    .anim_soft = "Rustig",
+    .anim_none = "Geen",
 };
 
 constexpr More kRussian{
@@ -2127,6 +2155,10 @@ constexpr More kRussian{
     .idle_today = "играли сегодня",
     .idle_never = "не запускалась",
     .no_installed = "На консоли нет установленных игр.",
+    .anim_row = "Анимации",
+    .anim_full = "Полные",
+    .anim_soft = "Мягкие",
+    .anim_none = "Нет",
 };
 
 constexpr More kJapanese{
@@ -2392,6 +2424,10 @@ constexpr More kJapanese{
     .idle_today = "今日遊んだ",
     .idle_never = "未プレイ",
     .no_installed = "本体にインストールされたゲームはありません。",
+    .anim_row = "アニメーション",
+    .anim_full = "すべて",
+    .anim_soft = "控えめ",
+    .anim_none = "なし",
 };
 
 constexpr More kKorean{
@@ -2657,6 +2693,10 @@ constexpr More kKorean{
     .idle_today = "오늘 플레이",
     .idle_never = "플레이한 적 없음",
     .no_installed = "본체에 설치된 게임이 없습니다.",
+    .anim_row = "애니메이션",
+    .anim_full = "전체",
+    .anim_soft = "부드럽게",
+    .anim_none = "없음",
 };
 
 constexpr More kChinese{
@@ -2922,6 +2962,10 @@ constexpr More kChinese{
     .idle_today = "今天玩过",
     .idle_never = "从未玩过",
     .no_installed = "主机上没有已安装的游戏。",
+    .anim_row = "动画",
+    .anim_full = "完整",
+    .anim_soft = "柔和",
+    .anim_none = "无",
 };
 
 // In the order of LanguageName in i18n.cpp.

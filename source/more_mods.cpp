@@ -129,13 +129,14 @@ void App::DrawMods(NVGcontext* vg) {
         else if (rows.empty()) ui::Text(vg, 48, 140, 15, t.muted, m.no_installed);
         m_mods_pick = std::clamp(m_mods_pick, 0, std::max(0, int(rows.size()) - 1));
         const int first = std::max(0, m_mods_pick - 8);
+        if (!rows.empty()) {
+            const float fy = m_glide_list.Step(130 + (m_mods_pick - first) * 52.f);
+            ui::FillRound(vg, 40, fy, kWidth - 80, 46, 10, t.panel2);
+            ui::Focus(vg, t, 40, fy, kWidth - 80, 46, 10, m_time);
+        }
         for (int r = 0; r < 9 && first + r < int(rows.size()); r++) {
             const auto& a = v.apps[size_t(rows[size_t(first + r)])];
             const float y = 130 + r * 52;
-            if (first + r == m_mods_pick) {
-                ui::FillRound(vg, 40, y, kWidth - 80, 46, 10, t.panel2);
-                ui::Focus(vg, t, 40, y, kWidth - 80, 46, 10, m_time);
-            }
             AddHit(40, y, kWidth - 80, 46, HitKind::PickRow, first + r);
             const bool cheats = Exists(ContentsDir(a.app_id) + "/cheats");
             ui::Text(vg, 60, y + 23, 16, t.text, a.name.c_str());
@@ -175,7 +176,7 @@ void App::DrawMods(NVGcontext* vg) {
         else if (!found) std::snprintf(sub, sizeof(sub), "%s", m.cm_no_cheats);
         else std::snprintf(sub, sizeof(sub), m.cm_cheats_count_fmt, count);
         ui::Text(vg, lx + 18, y + 44, 13, t.muted, sub);
-        if (found) draw::Toggle(vg, t, lx + cw - 72, y + 32, Exists(CheatFile(m_mods_app, build)));
+        if (found) draw::Toggle(vg, t, lx + cw - 72, y + 32, Exists(CheatFile(m_mods_app, build)), "cheats");
         if (found) {
             std::lock_guard lock(m_cheats.mutex);
             for (int i = 0; i < int(m_cheats.names.size()) && i < 7; i++) {
@@ -199,7 +200,7 @@ void App::DrawMods(NVGcontext* vg) {
         std::snprintf(sub, sizeof(sub), m.cm_mod_files_fmt, p.files, draw::Size(p.bytes).c_str());
         ui::Text(vg, rx + 18, y + 44, 13, t.muted, sub);
         nvgRestore(vg);
-        draw::Toggle(vg, t, rx + cw - 72, y + 32, p.on);
+        draw::Toggle(vg, t, rx + cw - 72, y + 32, p.on, "mod:" + p.name);
     }
     draw::Box(vg, lx, 600, kWidth - 96, 14, t.muted, m.cm_note);
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.cm_toggle, HidNpadButton_A}, {ui::glyph::B, s.back, HidNpadButton_B}};

@@ -59,6 +59,7 @@ struct More {
     // when a game was last played (the planner)
     const char *idle_days_fmt, *idle_today, *idle_never;
     const char *no_installed;
+    const char *anim_row, *anim_full, *anim_soft, *anim_none;
 };
 
 const More& TrM();

@@ -22,6 +22,7 @@
 #include "sound.hpp"
 #include "safety.hpp"
 #include "speedtest.hpp"
+#include "motion.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
 
@@ -180,6 +181,11 @@ private:
     bool FollowScreenOff(u64& down, bool new_touch);
     void DrawScreenOff(NVGcontext* vg);
     double m_screen_off_at = -100; // the countdown started
+    // the animation pass: when the dialog, the notice, a list or a screen of More appeared
+    double m_dialog_at = -100, m_notice_at = -100, m_more_at = -100, m_list_at = -100;
+    ui::Glide m_glide_list, m_glide_side;
+    int m_more_seen = -1; // the screen of More last drawn, to start its entrance
+    std::vector<float> m_tile_lift; // how much each tile of More is lifted
     bool m_screen_off = false, m_lbl = false, m_screen_busy_before = false;
     unsigned m_mods_version = 0;
     int m_mods_game = -1, m_mods_pick = 0, m_mods_side = 0, m_mods_focus = 0;
@@ -378,6 +384,7 @@ private:
     bool m_risk_ok = false;
     std::string m_update_hint;
     Dialog m_dialog;
+    DialogKind m_dialog_drawn = DialogKind::None; // to start its entrance
     double m_time = 0;
     double m_next_repeat = 0;
     double m_held_since = 0;

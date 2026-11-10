@@ -111,6 +111,13 @@ void App::LeaveMoreScreen() {
 }
 
 void App::DrawMore(NVGcontext* vg) {
+    // a screen of More shown anew (or the tab just opened): its entrance starts
+    if (int(m_more) != m_more_seen || m_tab_at > m_more_at) {
+        m_more_seen = int(m_more);
+        m_more_at = m_list_at = m_time;
+        m_glide_list = {};
+        m_glide_side = {};
+    }
     switch (m_more) {
         case MoreScreen::Tiles: DrawTiles(vg); break;
         case MoreScreen::Files: DrawFiles(vg); break;
@@ -144,17 +151,54 @@ void App::DrawTiles(NVGcontext* vg) {
     const char* titles[kTiles] = {m.t_files, m.t_mtp, m.t_usb, m.t_shops, m.t_saves, m.t_space, m.t_mods, m.t_screen};
     const char* subs[kTiles] = {m.t_files_sub, m.t_mtp_sub, m.t_usb_sub, m.t_shops_sub, m.t_saves_sub, m.t_space_sub, m.t_mods_sub, m.t_screen_sub};
     m_tile = std::clamp(m_tile, 0, kTiles - 1);
+    m_tile_lift.resize(kTiles, 0.f);
     for (int i = 0; i < kTiles; i++) {
         const int row = i / 4, col = i % 4;
         const float y0 = 100 + row * (kTileH + 64);
         if (col == 0) draw::Section(vg, t, 50, y0, row == 0 ? m.sect_noserver : m.sect_console);
         const float x = 48 + col * (kTileW + kTileGap), y = y0 + 20;
-        draw::Panel(vg, t, x, y, kTileW, kTileH, 16);
-        if (i == m_tile) ui::Focus(vg, t, x, y, kTileW, kTileH, 16, m_time);
         AddHit(x, y, kTileW, kTileH, HitKind::MoreTile, i);
+        // in one after another with a little bounce (2A); the one in focus lifted and leaning
+        const float in = ui::EaseOutBack(ui::Appear(m_more_at + 0.05 * i, 0.45f));
+        float& lift = m_tile_lift[size_t(i)];
+        const float want = i == m_tile ? 1.f : 0.f;
+        lift = ui::Still() ? want : lift + (want - lift) * 0.25f;
+        const float cx = x + kTileW / 2, cy = y + kTileH / 2;
+        nvgSave(vg);
+        nvgTranslate(vg, cx, cy + (1 - in) * 18 - lift * 6);
+        if (ui::Lively()) nvgRotate(vg, -0.012f * lift);
+        const float sc = (0.94f + 0.06f * in) * (1 + 0.03f * lift);
+        nvgScale(vg, sc, sc);
+        nvgTranslate(vg, -cx, -cy);
+        nvgGlobalAlpha(vg, std::min(1.f, ui::Appear(m_more_at + 0.05 * i, 0.3f) * 1.2f));
+        draw::Panel(vg, t, x, y, kTileW, kTileH, 16);
+        if (i == m_tile) {
+            ui::Focus(vg, t, x, y, kTileW, kTileH, 16, m_time);
+            if (ui::Lively()) {
+                // a gleam crossing it now and then
+                const float p = float(std::fmod(m_time * 0.45, 1.6)) - 0.3f;
+                const float gx = x + p * kTileW;
+                nvgSave(vg);
+                nvgIntersectScissor(vg, x, y, kTileW, kTileH);
+                nvgBeginPath(vg);
+                nvgRect(vg, x, y, kTileW, kTileH);
+                nvgFillPaint(vg, nvgLinearGradient(vg, gx - 60, y, gx + 60, y + kTileH * 0.4f, nvgRGBAf(1, 1, 1, 0), nvgRGBAf(1, 1, 1, 0)));
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, gx - 30, y);
+                nvgLineTo(vg, gx + 10, y);
+                nvgLineTo(vg, gx - 50, y + kTileH);
+                nvgLineTo(vg, gx - 90, y + kTileH);
+                nvgClosePath(vg);
+                nvgFillColor(vg, nvgRGBAf(1, 1, 1, t.dark ? 0.07f : 0.18f));
+                nvgFill(vg);
+                nvgRestore(vg);
+            }
+        }
         DrawTileIcon(vg, i, x + 22, y + 40);
         ui::Text(vg, x + 20, y + 84, 19, t.text, titles[i]);
         draw::Box(vg, x + 20, y + 104, kTileW - 40, 14, t.muted, subs[i]);
+        nvgRestore(vg);
     }
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}, {ui::glyph::Plus, Tr().exit, HidNpadButton_Plus}};
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
@@ -165,6 +209,52 @@ void App::DrawTiles(NVGcontext* vg) {
 void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy) {
     const Theme& t = m_theme;
     const NVGcolor c = t.work;
+    // each picture moves a little in its own way (2A)
+    nvgSave(vg);
+    if (ui::Lively()) {
+        const float tt = float(m_time) + float(tile) * 0.7f;
+        const float px = x + 16, py = cy;
+        switch (tile) {
+            case 0: nvgTranslate(vg, 0, -3 * std::fabs(std::sin(tt * 1.6f))); break;              // the card hops
+            case 2: {                                                                                // the plug beats
+                const float k = 1 + 0.08f * std::max(0.f, std::sin(tt * 4.f));
+                nvgTranslate(vg, px, py);
+                nvgScale(vg, k, k);
+                nvgTranslate(vg, -px, -py);
+                break;
+            }
+            case 3:                                                                                  // the shop sways
+                nvgTranslate(vg, px, py - 16);
+                nvgRotate(vg, 0.07f * std::sin(tt * 1.5f));
+                nvgTranslate(vg, -px, -(py - 16));
+                break;
+            case 5:
+            case 4: {                                                                                // pie and safe breathe
+                const float k = 1 + 0.05f * std::sin(tt * 2.f);
+                nvgTranslate(vg, px, py);
+                nvgScale(vg, k, k);
+                nvgTranslate(vg, -px, -py);
+                break;
+            }
+            case 6:                                                                                  // the wand waves
+                nvgTranslate(vg, x + 2, cy + 14);
+                nvgRotate(vg, -0.22f * (0.5f + 0.5f * std::sin(tt * 3.f)));
+                nvgTranslate(vg, -(x + 2), -(cy + 14));
+                break;
+            default: break;
+        }
+        if (tile == 1 && std::fmod(tt, 1.8f) > 1.2f) nvgGlobalAlpha(vg, 0.55f); // the screen blinks
+        if (tile == 7) {                                                         // the moon glows
+            NVGcolor glow = c;
+            glow.a = 0.25f + 0.2f * std::sin(tt * 2.f);
+            NVGcolor clear = c;
+            clear.a = 0;
+            nvgBeginPath(vg);
+            nvgCircle(vg, x + 16, cy, 26);
+            nvgFillPaint(vg, nvgRadialGradient(vg, x + 16, cy, 8, 26, glow, clear));
+            nvgFill(vg);
+        }
+    }
     nvgStrokeColor(vg, c);
     nvgFillColor(vg, c);
     nvgStrokeWidth(vg, 2.6f);
@@ -242,6 +332,7 @@ void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy) {
             nvgFill(vg);
             break;
     }
+    nvgRestore(vg);
 }
 
 void App::UpdateTiles(u64 down, u64 held) {
@@ -285,6 +376,7 @@ void App::OpenFolder(const std::string& folder, bool root) {
     m_marked.assign(m_entries.size(), 0);
     m_file_focus = 0;
     m_file_first = 0;
+    m_list_at = m_time;
 }
 
 void App::InstallMarkedFiles() {
@@ -342,15 +434,17 @@ void App::DrawFiles(NVGcontext* vg) {
     nvgFillColor(vg, t.line);
     nvgFill(vg);
     draw::Section(vg, t, 28, 100, m.places);
+    {
+        // the chosen place glides there
+        NVGcolor bg = t.work;
+        bg.a = 0.16f;
+        const float py = m_glide_side.Step(118 + m_place * 50.f);
+        ui::FillRound(vg, 14, py, kSideW - 28, 42, 10, bg);
+        if (m_files_side) ui::Focus(vg, t, 14, py, kSideW - 28, 42, 10, m_time);
+    }
     for (int i = 0; i < int(m_place_roots.size()); i++) {
         const float y = 118 + i * 50;
         const bool on = i == m_place;
-        if (on) {
-            NVGcolor bg = t.work;
-            bg.a = 0.16f;
-            ui::FillRound(vg, 14, y, kSideW - 28, 42, 10, bg);
-        }
-        if (m_files_side && on) ui::Focus(vg, t, 14, y, kSideW - 28, 42, 10, m_time);
         AddHit(14, y, kSideW - 28, 42, HitKind::MorePlace, i);
         nvgSave(vg);
         nvgScissor(vg, 24, y, kSideW - 48, 42);
@@ -373,17 +467,24 @@ void App::DrawFiles(NVGcontext* vg) {
     m_file_focus = std::clamp(m_file_focus, 0, std::max(0, int(m_entries.size()) - 1));
     if (m_file_focus < m_file_first) m_file_first = m_file_focus;
     if (m_file_focus >= m_file_first + kVisibleRows) m_file_first = m_file_focus - kVisibleRows + 1;
+    if (!m_entries.empty()) {
+        // the focus glides from row to row (3A)
+        const float fy = m_glide_list.Step(kRowTop + (m_file_focus - m_file_first) * kRowPitch);
+        ui::FillRound(vg, lx, fy, lw, 44, 10, t.panel2);
+        if (!m_files_side) ui::Focus(vg, t, lx, fy, lw, 44, 10, m_time);
+    }
     for (int r = 0; r < kVisibleRows && m_file_first + r < int(m_entries.size()); r++) {
         const int i = m_file_first + r;
         const auto& e = m_entries[i];
         const float y = kRowTop + r * kRowPitch, cy = y + 22;
-        if (i == m_file_focus && !m_files_side) {
-            ui::FillRound(vg, lx, y, lw, 44, 10, t.panel2);
-            ui::Focus(vg, t, lx, y, lw, 44, 10, m_time);
-        }
+        // the rows come in one after another
+        const float in = ui::EaseOut(ui::Appear(m_list_at + 0.04 * r, 0.3f));
+        nvgSave(vg);
+        nvgTranslate(vg, -(1 - in) * 24, 0);
+        nvgGlobalAlpha(vg, in);
         AddHit(lx + 50, y, lw - 50, 44, HitKind::MoreRow, i);
         if (!e.dir) {
-            draw::TickBox(vg, t, lx + 14, cy, m_marked[i]);
+            draw::TickBox(vg, t, lx + 14, cy, m_marked[i], "file:" + e.path);
             AddHit(lx, y, 50, 44, HitKind::MoreMark, i);
         }
         if (e.dir) draw::FolderIcon(vg, t, lx + 54, cy);
@@ -404,6 +505,7 @@ void App::DrawFiles(NVGcontext* vg) {
             ui::Text(vg, lx + lw - 120, cy, 15, t.muted, fmt.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
             ui::Text(vg, lx + lw - 14, cy, 15, t.muted, draw::Size(e.size).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         }
+        nvgRestore(vg);
     }
 
     // what is marked, where it goes, and what is left after
@@ -602,6 +704,40 @@ void App::DrawArrival(NVGcontext* vg) {
         char line[96];
         std::snprintf(line, sizeof(line), m.count_fmt, done, failed);
         ui::Text(vg, rx + 26, cy + 10, 15, t.muted, line);
+    }
+    {
+        // the console, with what arrives flying into its screen (its Joy-Con in their own colours)
+        const float ccx = rx + pw / 2 + 60, ccy = py + ph - 110, sw = 150, sh = 84, jw = 30;
+        const float sx = ccx - sw / 2, sy = ccy - sh / 2;
+        nvgBeginPath(vg);
+        nvgRoundedRectVarying(vg, sx - jw, sy, jw, sh, sh / 2.6f, 0, 0, sh / 2.6f);
+        nvgFillColor(vg, nvgRGB(0x0a, 0xb9, 0xe6));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgRoundedRectVarying(vg, sx + sw, sy, jw, sh, 0, sh / 2.6f, sh / 2.6f, 0);
+        nvgFillColor(vg, nvgRGB(0xff, 0x3c, 0x28));
+        nvgFill(vg);
+        ui::FillRound(vg, sx, sy, sw, sh, 3, nvgRGB(0x2b, 0x2f, 0x36));
+        ui::FillRound(vg, sx + 7, sy + 7, sw - 14, sh - 14, 2, nvgRGB(0x11, 0x13, 0x17));
+        NVGcolor glow = t.work;
+        glow.a = current ? 0.35f + 0.15f * float(std::sin(m_time * 3)) : 0.12f;
+        NVGcolor clear = t.work;
+        clear.a = 0;
+        nvgBeginPath(vg);
+        nvgRect(vg, sx + 7, sy + 7, sw - 14, sh - 14);
+        nvgFillPaint(vg, nvgRadialGradient(vg, ccx, ccy, 4, sw / 2, glow, clear));
+        nvgFill(vg);
+        if (current && ui::Lively()) {
+            for (int k = 0; k < 3; k++) {
+                const float p = float(std::fmod(m_time * 0.45 + k / 3.0, 1.0));
+                const float fx = rx + 40 + (ccx - rx - 40) * p, fy = ccy + 30 - 60 * p + 70 * p * (1 - p);
+                const float s = 22 * (1 - 0.6f * p * p);
+                nvgGlobalAlpha(vg, std::min(1.f, p * 5) * (1 - p * p));
+                ui::FillRound(vg, fx - s / 2, fy - s * 0.6f, s, s * 1.2f, 3, t.work);
+                ui::FillRound(vg, fx - s / 4, fy - s * 0.2f, s / 2, 2, 1, t.on_work);
+                nvgGlobalAlpha(vg, 1.f);
+            }
+        }
     }
 
     std::vector<ui::Hint> hints;

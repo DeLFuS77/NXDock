@@ -110,14 +110,15 @@ void App::DrawVault(NVGcontext* vg) {
     const int rows = 8;
     m_vault_focus = std::clamp(m_vault_focus, 0, std::max(0, int(m_vault_saves.size()) - 1));
     const int first = std::max(0, m_vault_focus - rows + 1);
+    if (!m_vault_saves.empty()) {
+        const float fy = m_glide_list.Step(118 + (m_vault_focus - first) * 64.f);
+        ui::FillRound(vg, 14, fy, kLeftW - 28, 58, 10, t.panel2);
+        if (m_vault_side == 0) ui::Focus(vg, t, 14, fy, kLeftW - 28, 58, 10, m_time);
+    }
     for (int r = 0; r < rows && first + r < int(m_vault_saves.size()); r++) {
         const int i = first + r;
         const auto& sv = m_vault_saves[i];
         const float y = 118 + r * 64;
-        if (i == m_vault_focus) {
-            ui::FillRound(vg, 14, y, kLeftW - 28, 58, 10, t.panel2);
-            if (m_vault_side == 0) ui::Focus(vg, t, 14, y, kLeftW - 28, 58, 10, m_time);
-        }
         AddHit(14, y, kLeftW - 28, 58, HitKind::VaultGame, i);
         // the cover of the library when the game is there
         int image = 0;
@@ -157,7 +158,7 @@ void App::DrawVault(NVGcontext* vg) {
         const auto& c = copies[i];
         const float y = 118 + i * 66;
         draw::Panel(vg, t, rx, y, rw, 58, 10);
-        if (i == m_vault_copy && m_vault_side == 1) ui::Focus(vg, t, rx, y, rw, 58, 10, m_time);
+
         AddHit(rx, y, rw, 58, HitKind::VaultCopy, i);
         // a little clock
         nvgBeginPath(vg);
@@ -178,6 +179,7 @@ void App::DrawVault(NVGcontext* vg) {
         ui::Text(vg, rx + rw - 120, y + 29, 14, t.muted, ver, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         ui::Text(vg, rx + rw - 18, y + 29, 14, t.muted, draw::Size(c.size).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     }
+    if (m_vault_side == 1 && !copies.empty()) ui::Focus(vg, t, rx, m_glide_side.Step(118 + m_vault_copy * 66.f), rw, 58, 10, m_time);
     draw::Box(vg, rx, 520, rw, 14, t.muted, m.restore_note);
 
     // the work going on
