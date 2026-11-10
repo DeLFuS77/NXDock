@@ -419,6 +419,7 @@ constexpr More kEnglish{
     .cz_why_missing = "Not found on the console",
     .sp_reading_fmt = "Reading the console… %d of %d",
     .sp_names_fmt = "Reading the names… %d of %d",
+    .jump_letters = "By letter",
 };
 
 constexpr More kSpanish{
@@ -831,6 +832,7 @@ constexpr More kSpanish{
     .cz_why_missing = "No está en la consola",
     .sp_reading_fmt = "Leyendo la consola… %d de %d",
     .sp_names_fmt = "Leyendo los nombres… %d de %d",
+    .jump_letters = "Por letra",
 };
 
 constexpr More kFrench{
@@ -1243,6 +1245,7 @@ constexpr More kFrench{
     .cz_why_missing = "Introuvable sur la console",
     .sp_reading_fmt = "Lecture de la console… %d sur %d",
     .sp_names_fmt = "Lecture des noms… %d sur %d",
+    .jump_letters = "Par lettre",
 };
 
 constexpr More kGerman{
@@ -1655,6 +1658,7 @@ constexpr More kGerman{
     .cz_why_missing = "Nicht auf der Konsole",
     .sp_reading_fmt = "Konsole wird gelesen… %d von %d",
     .sp_names_fmt = "Namen werden gelesen… %d von %d",
+    .jump_letters = "Nach Buchstabe",
 };
 
 constexpr More kItalian{
@@ -2067,6 +2071,7 @@ constexpr More kItalian{
     .cz_why_missing = "Non è sulla console",
     .sp_reading_fmt = "Lettura della console… %d di %d",
     .sp_names_fmt = "Lettura dei nomi… %d di %d",
+    .jump_letters = "Per lettera",
 };
 
 constexpr More kPortuguese{
@@ -2479,6 +2484,7 @@ constexpr More kPortuguese{
     .cz_why_missing = "Não está no console",
     .sp_reading_fmt = "Lendo o console… %d de %d",
     .sp_names_fmt = "Lendo os nomes… %d de %d",
+    .jump_letters = "Por letra",
 };
 
 constexpr More kDutch{
@@ -2891,6 +2897,7 @@ constexpr More kDutch{
     .cz_why_missing = "Niet op de console",
     .sp_reading_fmt = "Console lezen… %d van %d",
     .sp_names_fmt = "Namen lezen… %d van %d",
+    .jump_letters = "Per letter",
 };
 
 constexpr More kRussian{
@@ -3303,6 +3310,7 @@ constexpr More kRussian{
     .cz_why_missing = "Не найдено на консоли",
     .sp_reading_fmt = "Чтение консоли… %d из %d",
     .sp_names_fmt = "Чтение названий… %d из %d",
+    .jump_letters = "По буквам",
 };
 
 constexpr More kJapanese{
@@ -3715,6 +3723,7 @@ constexpr More kJapanese{
     .cz_why_missing = "本体に見つかりません",
     .sp_reading_fmt = "本体を読み込み中… %d / %d",
     .sp_names_fmt = "名前を読み込み中… %d / %d",
+    .jump_letters = "頭文字で移動",
 };
 
 constexpr More kKorean{
@@ -4127,6 +4136,7 @@ constexpr More kKorean{
     .cz_why_missing = "본체에 없음",
     .sp_reading_fmt = "본체 읽는 중… %d / %d",
     .sp_names_fmt = "이름 읽는 중… %d / %d",
+    .jump_letters = "글자별 이동",
 };
 
 constexpr More kChinese{
@@ -4539,6 +4549,7 @@ constexpr More kChinese{
     .cz_why_missing = "主机上找不到",
     .sp_reading_fmt = "正在读取主机… %d / %d",
     .sp_names_fmt = "正在读取名称… %d / %d",
+    .jump_letters = "按首字母",
 };
 
 // In the order of LanguageName in i18n.cpp.

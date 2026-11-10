@@ -12,6 +12,7 @@
 #include "sdcheck_nx.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <ctime>
 
 namespace nxdock {
@@ -36,6 +37,54 @@ void Bar(NVGcontext* vg, const Theme& t, float x, float y, float w, long long fr
 }
 
 } // namespace
+
+namespace {
+
+std::string FirstLetter(const std::string& name) {
+    for (unsigned char c : name) {
+        if (std::isalpha(c)) return std::string(1, char(std::toupper(c)));
+        if (std::isdigit(c)) return "#";
+        if (c >= 0x80) return std::string(1, char(c)); // a name in another script: its own group
+    }
+    return "#";
+}
+
+} // namespace
+
+int App::ListJump(const std::vector<std::string>& names, int focus, int dir) {
+    if (names.empty()) return focus;
+    focus = std::clamp(focus, 0, int(names.size()) - 1);
+    const std::string here = FirstLetter(names[size_t(focus)]);
+    int i = focus;
+    if (dir > 0) {
+        while (i < int(names.size()) - 1 && FirstLetter(names[size_t(i)]) == here) i++;
+    } else {
+        // to the start of this letter, or of the one before when at its start already
+        while (i > 0 && FirstLetter(names[size_t(i - 1)]) == here) i--;
+        if (i == focus && i > 0) {
+            const std::string before = FirstLetter(names[size_t(i - 1)]);
+            i--;
+            while (i > 0 && FirstLetter(names[size_t(i - 1)]) == before) i--;
+        }
+    }
+    m_list_letter = FirstLetter(names[size_t(i)]);
+    m_list_letter_at = m_time;
+    return i;
+}
+
+void App::DrawListLetter(NVGcontext* vg, float cx, float cy) {
+    const double age = m_time - m_list_letter_at;
+    if (age > 0.7 || m_list_letter.empty()) return;
+    const Theme& t = m_theme;
+    const float a = float(age < 0.5 ? 1.0 : 1.0 - (age - 0.5) / 0.2);
+    const float k = ui::Still() ? 1.f : ui::EaseOutBack(std::min(1.f, float(age / 0.18)));
+    nvgSave(vg);
+    nvgGlobalAlpha(vg, a);
+    const float s = 120 * k;
+    ui::FillRound(vg, cx - s / 2, cy - s / 2, s, s, 24 * k, t.work);
+    ui::Text(vg, cx, cy + 2, 72 * k, t.on_work, m_list_letter.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgRestore(vg);
+}
 
 unsigned long long App::QueueNeedsOnSd() {
     if (!m_queue) return 0;
@@ -303,6 +352,7 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     char left[96];
     std::snprintf(left, sizeof(left), "%s", m_pick_kind == 0 ? draw::Size(marked).c_str() : "");
+    DrawListLetter(vg, kWidth / 2, 360);
     ui::HintBar(vg, t, m_pick_kind == 0 ? left : nullptr, hints, m_hint_rects);
 }
 
@@ -313,6 +363,13 @@ void App::UpdateSpace(u64 down, u64 held) {
     if (m_space_mode == 1) {
         if (Repeat(down, held, HidNpadButton_AnyUp) && m_pick_focus > 0) m_pick_focus--;
         if (Repeat(down, held, HidNpadButton_AnyDown) && m_pick_focus < int(m_pick_rows.size()) - 1) m_pick_focus++;
+        // by first letter, for long lists
+        const bool left = Repeat(down, held, HidNpadButton_AnyLeft), right = Repeat(down, held, HidNpadButton_AnyRight);
+        if (left || right) {
+            std::vector<std::string> names;
+            for (const auto& r : m_pick_rows) names.push_back(v.apps[size_t(r.first)].name);
+            m_pick_focus = ListJump(names, m_pick_focus, right ? 1 : -1);
+        }
         if (down & HidNpadButton_B) {
             m_space_mode = 0;
             return;

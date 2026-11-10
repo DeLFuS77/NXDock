@@ -191,10 +191,12 @@ void App::DrawCompress(NVGcontext* vg) {
         ui::Progress(vg, t, lx + 22, 614, kWidth - 140, 12, frac, t.work, m_time);
     }
 
+    DrawListLetter(vg, rx + rw / 2, 322);
     std::vector<ui::Hint> hints;
     if (c.running) {
         hints.push_back({ui::glyph::X, s.cancel, HidNpadButton_X});
     } else if (!rows.empty()) {
+        hints.push_back({ui::glyph::DPad, m.jump_letters, HidNpadButton_AnyRight});
         hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
     }
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
@@ -241,6 +243,13 @@ void App::UpdateCompress(u64 down, u64 held) {
     const auto rows = CompressRows(v);
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_compress_focus > 0) m_compress_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_compress_focus < int(rows.size()) - 1) m_compress_focus++;
+    // by first letter, for long lists
+    const bool left = Repeat(down, held, HidNpadButton_AnyLeft), right = Repeat(down, held, HidNpadButton_AnyRight);
+    if ((left || right) && !rows.empty()) {
+        std::vector<std::string> names;
+        for (int r : rows) names.push_back(v.apps[size_t(r)].name);
+        m_compress_focus = ListJump(names, m_compress_focus, right ? 1 : -1);
+    }
     if (down & HidNpadButton_B) {
         m_space_mode = 0; // a compression that runs goes on
         return;

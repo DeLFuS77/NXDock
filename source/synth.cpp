@@ -6,6 +6,8 @@
 #include <cmath>
 
 namespace nxdock::synth {
+
+constexpr float kMusicGain = 8.f;
 namespace {
 
 constexpr double kPi = 3.14159265358979323846;
@@ -247,9 +249,14 @@ void Synth::Render(float* out, int frames) {
             if (now < m_out_ramp_end) {
                 m_out *= m_out_step;
             }
-            music = (m_soft.Run(wet) + dry) * float(m_out);
+            // as the wizard of the library app makes it, it is too quiet for the console's speakers
+            // (peaks at -24 dBFS): raised to peaks of about -6 dBFS (24A)
+            music = (m_soft.Run(wet) + dry) * float(m_out) * kMusicGain;
         }
-        out[i] = fx + music;
+        float v = fx + music;
+        // a soft limit, never a hard clip: above 0.8 it bends gently towards 1
+        if (std::fabs(v) > 0.8f) v = std::copysign(0.8f + 0.2f * std::tanh((std::fabs(v) - 0.8f) / 0.2f), v);
+        out[i] = v;
     }
     m_now += frames;
     // what has ended goes; the music goes whole once faded

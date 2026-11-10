@@ -156,6 +156,12 @@ private:
     double m_sd_opened = 0, m_sd_result_at = -100;
     long long m_sdc_free = -1, m_sdc_total = -1;
     // compress games, experimental (phase 24), a screen of Space and dumps (m_space_mode 3)
+    // Long lists: left and right jump to the previous or next first letter; the letter shows big
+    // for a moment.
+    int ListJump(const std::vector<std::string>& names, int focus, int dir);
+    void DrawListLetter(NVGcontext* vg, float cx, float cy);
+    std::string m_list_letter;
+    double m_list_letter_at = -100;
     void OpenCompress();
     std::vector<int> CompressRows(const Space::View& v) const;
     void DrawCompress(NVGcontext* vg);
