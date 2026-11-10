@@ -117,3 +117,14 @@
   version of Atmosphère against what the queued games ask for. A window shows
   the three lines only when something does not fit, with "Install anyway";
   NXDock never installs firmware or sigpatches.
+- A More tab with a tile for each tool.
+- Installing without the library app:
+  - from the SD card or a USB disk (FAT32 or exFAT): a list of files with the
+    places on the left, several can be marked; split files (a folder of parts
+    00, 01… or name.nsp.00, .01…) show and install as one;
+  - from the computer over MTP: "Install to the SD card" installs a game as it
+    arrives, nothing is kept on the card; "Install to the internal memory"
+    only after the console says yes; "SD card" to copy files;
+  - from the computer over the USB cable with NS-USBloader (the Tinfoil
+    protocol).
+  Everything goes to the same queue, all or nothing.

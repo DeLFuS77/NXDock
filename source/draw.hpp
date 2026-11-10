@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 DeLFuS77
+#pragma once
+
+// Small drawing helpers shared by the screens of the More tab (more.cpp, vault.cpp, space.cpp…).
+#include "gfx.hpp"
+#include "theme.hpp"
+#include "ui.hpp"
+
+#include <cstdio>
+#include <string>
+
+namespace nxdock::draw {
+
+inline void Panel(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
+    ui::FillRound(vg, x, y, w, h, r, t.panel);
+    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, t.line, 1);
+}
+
+inline float BoxHeight(NVGcontext* vg, float w, float size, const char* str) {
+    nvgFontFace(vg, "ui");
+    nvgFontSize(vg, size);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgTextLineHeight(vg, 1.3f);
+    float b[4];
+    nvgTextBoxBounds(vg, 0, 0, w, str, nullptr, b);
+    return b[3] - b[1];
+}
+
+inline float Box(NVGcontext* vg, float x, float y, float w, float size, NVGcolor color, const char* str) {
+    nvgFontFace(vg, "ui");
+    nvgFontSize(vg, size);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgTextLineHeight(vg, 1.3f);
+    nvgFillColor(vg, color);
+    float b[4];
+    nvgTextBoxBounds(vg, x, y, w, str, nullptr, b);
+    nvgTextBox(vg, x, y, w, str, nullptr);
+    return b[3] - b[1];
+}
+
+inline std::string Size(unsigned long long bytes) {
+    char t[32];
+    if (bytes >= 1024ULL * 1024 * 1024) {
+        std::snprintf(t, sizeof(t), "%.1f GB", double(bytes) / (1024.0 * 1024 * 1024));
+    } else if (bytes >= 1024ULL * 1024) {
+        std::snprintf(t, sizeof(t), "%.0f MB", double(bytes) / (1024.0 * 1024));
+    } else {
+        std::snprintf(t, sizeof(t), "%.0f KB", double(bytes) / 1024.0);
+    }
+    return t;
+}
+
+// A section title, small and in capitals (as the visual tests show them).
+inline void Section(NVGcontext* vg, const Theme& t, float x, float y, const char* text) {
+    std::string up = text;
+    for (auto& c : up) {
+        if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
+    }
+    ui::Text(vg, x, y, 13, t.muted, up.c_str());
+}
+
+// A folder (orange) or a file (outline), small, for lists.
+inline void FolderIcon(NVGcontext* vg, const Theme& t, float x, float cy) {
+    ui::FillRound(vg, x, cy - 6, 10, 4, 1.5f, t.orange);
+    ui::FillRound(vg, x, cy - 4, 22, 14, 2.5f, t.orange);
+}
+
+inline void FileIcon(NVGcontext* vg, const Theme& t, float x, float cy) {
+    ui::StrokeRound(vg, x + 3, cy - 9, 16, 19, 2.5f, t.muted, 1.6f);
+    ui::FillRound(vg, x + 6, cy - 3, 10, 1.6f, 0.8f, t.muted);
+    ui::FillRound(vg, x + 6, cy + 2, 10, 1.6f, 0.8f, t.muted);
+}
+
+// A tick box, filled in the blue of work when marked.
+inline void TickBox(NVGcontext* vg, const Theme& t, float x, float cy, bool on) {
+    if (on) {
+        ui::FillRound(vg, x, cy - 12, 24, 24, 6, t.work);
+        ui::CheckMark(vg, x + 12, cy, 12, t.on_work, 2.4f);
+    } else {
+        ui::StrokeRound(vg, x + 1, cy - 11, 22, 22, 6, t.muted, 2);
+    }
+}
+
+// An on/off switch (10A).
+inline void Toggle(NVGcontext* vg, const Theme& t, float x, float cy, bool on) {
+    ui::FillRound(vg, x, cy - 15, 52, 30, 15, on ? t.work : t.panel2);
+    if (!on) ui::StrokeRound(vg, x + .5f, cy - 14.5f, 51, 29, 15, t.line, 1);
+    nvgBeginPath(vg);
+    nvgCircle(vg, on ? x + 37 : x + 15, cy, 10);
+    nvgFillColor(vg, on ? t.on_work : t.muted);
+    nvgFill(vg);
+}
+
+} // namespace nxdock::draw

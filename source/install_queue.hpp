@@ -24,11 +24,16 @@ namespace nxdock {
 // One file of the library to install: a game, an update or a DLC.
 struct InstallJob {
     enum class State { Waiting, Running, Done, Failed, Cancelled };
+    // where the file comes from: the library app, the SD card or a USB disk, the computer over
+    // the USB cable (NS-USBloader), or the computer over MTP
+    enum class Origin { Library, File, Usb, Mtp };
 
     int id = 0;
     std::string game, label, cover, color_key; // as shown: the game, what of it, its picture
     std::string file_id, url, key;             // where it comes from (url is the whole address)
     std::string format;
+    Origin origin = Origin::Library;
+    std::vector<std::string> parts; // File: the parts of the file in order; Usb and Mtp: its name
     CatalogFile::Kind kind = CatalogFile::Kind::Game;
     u64 title_id = 0;
     u64 size = 0;

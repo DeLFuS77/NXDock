@@ -383,7 +383,7 @@ struct Yati {
     Result RemoveInstalledNcas(const CnmtCollection& cnmt);
     Result RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_version_num);
     // NXDock: before the download, and undoing a commit that did not finish.
-    Result CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span<const char> skip);
+    Result CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span<const char> skip, bool check_space = true);
     void UndoRegister(const CnmtCollection& cnmt);
 
 
@@ -1859,7 +1859,7 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
 
 // NXDock: the space the install takes and the firmware it needs, checked once every cnmt is read
 // (they are small) and before any large NCA is downloaded.
-Result Yati::CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span<const char> skip) {
+Result Yati::CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span<const char> skip, bool check_space) {
     u64 needed{};
     u32 ncas{};
     u32 firmware{};
@@ -1902,6 +1902,9 @@ Result Yati::CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span
         R_THROW(Result_FirmwareTooOld);
     }
 
+    if (!check_space) {
+        R_SUCCEED(); // a stream: the parts are written already
+    }
     s64 free_space{};
     R_TRY(ncmContentStorageGetFreeSpaceSize(std::addressof(cs), std::addressof(free_space)));
     // a margin for the file system and the record.
@@ -2028,6 +2031,115 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
     R_SUCCEED();
 }
 
+// NXDock: the stream install (MTP), from Sphaira's, kept all or nothing: the parts come in the
+// order of the file and each goes to a placeholder as it arrives, with its SHA-256 checked;
+// the firmware is checked once every cnmt is known, and only then is anything registered.
+Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, container::Collections collections, const ConfigOverride& override) {
+    auto yati = std::make_unique<Yati>(pbox, source);
+    R_TRY(yati->Setup(override));
+
+    pbox->SetPhase(ui::ProgressBox::Phase::Reading);
+    std::vector<NcaCollection> ncas{};
+    std::vector<CnmtCollection> cnmts{};
+    std::vector<TikCollection> tickets{};
+    ON_SCOPE_EXIT(
+        for (auto& cnmt : cnmts) {
+            ncmContentStorageDeletePlaceHolder(std::addressof(yati->cs), std::addressof(cnmt.placeholder_id));
+        }
+        for (auto& nca : ncas) {
+            ncmContentStorageDeletePlaceHolder(std::addressof(yati->cs), std::addressof(nca.placeholder_id));
+        }
+    );
+
+    // the tickets are known by name; their bytes come in their turn
+    R_TRY(yati->ParseTicketsIntoCollection(tickets, collections, false));
+
+    // a first look at the room: the parts as they come (a compressed one takes more)
+    u64 needed = 0;
+    for (const auto& c : collections) {
+        if (c.name.ends_with(".nca") || c.name.ends_with(".ncz")) needed += u64(c.size);
+    }
+    s64 free_space{};
+    if (R_SUCCEEDED(ncmContentStorageGetFreeSpaceSize(std::addressof(yati->cs), std::addressof(free_space))) &&
+        needed + 64ull * 1024 * 1024 > u64(free_space)) {
+        pbox->SetNeeded(needed, 0);
+        R_THROW(Result_NotEnoughSpace);
+    }
+    pbox->SetPlan(needed, 0);
+
+    std::ranges::sort(collections, [](const auto& a, const auto& b) { return a.offset < b.offset; });
+    pbox->SetPhase(ui::ProgressBox::Phase::Installing);
+    for (const auto& collection : collections) {
+        if (collection.name.ends_with(".nca") || collection.name.ends_with(".ncz")) {
+            if (collection.name.ends_with(".cnmt.nca") || collection.name.ends_with(".cnmt.ncz")) {
+                auto& cnmt = cnmts.emplace_back(NcaCollection{collection});
+                cnmt.type = NcmContentType_Meta;
+                R_TRY(yati->InstallCnmtNca(tickets, cnmt, collections));
+            } else {
+                auto& nca = ncas.emplace_back(NcaCollection{collection});
+                R_TRY(yati->InstallNca(tickets, nca));
+            }
+        } else if (collection.name.ends_with(".tik") || collection.name.ends_with(".cert")) {
+            FsRightsId rights_id{};
+            keys::parse_hex_key(rights_id.c, collection.name.c_str());
+            auto entry = std::ranges::find_if(tickets, [&rights_id](auto& e) { return !std::memcmp(&rights_id, &e.rights_id, sizeof(rights_id)); });
+            R_UNLESS(entry != tickets.end(), Result_YatiCertNotFound);
+            u64 bytes_read;
+            auto& data = collection.name.ends_with(".tik") ? entry->ticket : entry->cert;
+            R_TRY(source->Read(data.data(), collection.offset, data.size(), &bytes_read));
+        }
+    }
+    R_UNLESS(!cnmts.empty(), Result_YatiNcaNotFound);
+
+    std::vector<u32> latest(cnmts.size());
+    std::vector<char> skips(cnmts.size());
+    for (size_t i = 0; i < cnmts.size(); i++) {
+        auto& cnmt = cnmts[i];
+        // the parts of each cnmt, as they were written
+        for (auto& cnmt_nca : cnmt.ncas) {
+            auto it = std::ranges::find_if(ncas, [&cnmt_nca](auto& e) { return e.name == cnmt_nca.name; });
+            R_UNLESS(it != ncas.end(), Result_YatiNcaNotFound);
+            const auto type = cnmt_nca.type;
+            cnmt_nca = *it;
+            cnmt_nca.type = type;
+        }
+        bool skip = false;
+        R_TRY(yati->GetLatestVersion(cnmt, latest[i], skip));
+        R_TRY(yati->ShouldSkip(cnmt, skip));
+        skips[i] = skip;
+    }
+    R_UNLESS(std::ranges::count(skips, 0) > 0, Result_YatiNcaNotFound);
+    // the firmware (the room was used already)
+    R_TRY(yati->CheckBeforeInstall(cnmts, skips, false));
+
+    pbox->SetPhase(ui::ProgressBox::Phase::Registering);
+    R_TRY(yati->ImportTickets(tickets));
+    std::vector<size_t> done{};
+    for (size_t i = 0; i < cnmts.size(); i++) {
+        if (skips[i]) {
+            continue;
+        }
+        auto rc = yati->RemoveInstalledNcas(cnmts[i]);
+        if (R_SUCCEEDED(rc)) {
+            rc = yati->RegisterNcasAndPushRecord(cnmts[i], latest[i]);
+        }
+        if (R_FAILED(rc)) {
+            log_write("[NXDock] register failed: 0x%X\n", rc);
+            yati->UndoRegister(cnmts[i]);
+            for (const auto j : done) {
+                yati->UndoRegister(cnmts[j]);
+            }
+            return rc;
+        }
+        done.push_back(i);
+    }
+    for (const auto i : done) {
+        pbox->AddRegistered(cnmts[i].key);
+    }
+    log_write("success!\n");
+    R_SUCCEED();
+}
+
 } // namespace
 
 Result InstallFromContainer(ui::ProgressBox* pbox, container::Base* container, const ConfigOverride& override) {
@@ -2037,9 +2149,10 @@ Result InstallFromContainer(ui::ProgressBox* pbox, container::Base* container, c
 }
 
 Result InstallFromCollections(ui::ProgressBox* pbox, source::Base* source, const container::Collections& collections, const ConfigOverride& override) {
-    // NXDock: every source of NXDock can seek; the stream install (which registers as it goes)
-    // is left out so that installs stay all or nothing.
-    R_UNLESS(!source->IsStream(), Result_StreamBadSeek);
+    // NXDock: a stream (MTP) is read once, in order.
+    if (source->IsStream()) {
+        return InstallInternalStream(pbox, source, collections, override);
+    }
     return InstallInternal(pbox, source, collections, override);
 }
 

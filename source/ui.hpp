@@ -69,7 +69,7 @@ void CheckMark(NVGcontext* vg, float cx, float cy, float s, NVGcolor c, float wi
 void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text);
 
 // battery: the charge in %, -1 when unknown (then nothing is drawn).
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[4], const char* sd_free,
+void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[5], const char* sd_free,
             int battery = -1, bool charging = false);
 
 // The battery with its %: filled by the level, amber below 20 %, red only below 10 %, a bolt

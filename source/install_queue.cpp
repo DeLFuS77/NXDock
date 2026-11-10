@@ -4,7 +4,10 @@
 
 #include "errors.hpp"
 #include "history.hpp"
+#include "file_source.hpp"
 #include "http_source.hpp"
+#include "mtp.hpp"
+#include "usb_tinfoil.hpp"
 #include "i18n.hpp"
 #include "uninstall.hpp"
 #include "net.hpp"
@@ -35,7 +38,7 @@ double Now() {
 // The download-only check, for an emulator that cannot install: every NCA of the NSP is read
 // through the same source and its SHA-256 compared with the content id in its name. Nothing is
 // written. Turned on with download_test=1 in config.ini.
-Result DownloadCheck(HttpSource& source, sphaira::yati::container::Base& container, ProgressBox& box) {
+Result DownloadCheck(sphaira::yati::source::Base& source, sphaira::yati::container::Base& container, ProgressBox& box) {
     sphaira::yati::container::Collections collections;
     R_TRY(container.GetCollections(collections));
     u64 total = 0;
@@ -86,7 +89,7 @@ Result DownloadCheck(HttpSource& source, sphaira::yati::container::Base& contain
 }
 
 // The container of the file, from its first bytes.
-Result OpenContainer(HttpSource& source, std::unique_ptr<sphaira::yati::container::Base>& out, const char*& kind) {
+Result OpenContainer(sphaira::yati::source::Base& source, std::unique_ptr<sphaira::yati::container::Base>& out, const char*& kind) {
     std::vector<unsigned char> head(kContainerHeadSize);
     u64 got = 0;
     R_TRY(source.Read(head.data(), 0, s64(head.size()), &got));
@@ -448,15 +451,42 @@ void InstallQueue::RunJob(InstallJob& job) {
     options.connections = ConnectionsFor(connections, applet);
     options.piece = applet ? 1024 * 1024 : 8 * 1024 * 1024;
     options.ahead = 2;
-    Result rc;
+    Result rc = 0;
     {
-        HttpSource source(job.url, job.key, options, &box);
-        rc = source.Open();
+        // the source of the file, from where it comes
+        std::unique_ptr<sphaira::yati::source::Base> holder;
+        s64 size = 0;
+        switch (job.origin) {
+            case InstallJob::Origin::Library: {
+                auto http = std::make_unique<HttpSource>(job.url, job.key, options, &box);
+                rc = http->Open();
+                size = http->Size();
+                holder = std::move(http);
+                break;
+            }
+            case InstallJob::Origin::File: {
+                auto file = std::make_unique<FileSource>(job.parts);
+                rc = file->GetOpenResult();
+                size = file->Size();
+                holder = std::move(file);
+                break;
+            }
+            case InstallJob::Origin::Usb:
+                holder = std::make_unique<TinfoilSource>(UsbLink(), job.parts.empty() ? std::string{} : job.parts.front());
+                size = s64(job.size);
+                break;
+            case InstallJob::Origin::Mtp:
+                holder = MtpStreamSource(&box);
+                size = s64(job.size);
+                if (!holder) rc = Result_TransferCancelled;
+                break;
+        }
         {
             std::lock_guard lock(m_mutex);
-            m_source_size = u64(std::max<s64>(0, source.Size()));
+            m_source_size = u64(std::max<s64>(0, size));
         }
-        if (R_SUCCEEDED(rc)) {
+        if (R_SUCCEEDED(rc) && holder) {
+            auto& source = *holder;
             std::unique_ptr<sphaira::yati::container::Base> container;
             const char* kind = "";
             rc = OpenContainer(source, container, kind);
@@ -479,7 +509,9 @@ void InstallQueue::RunJob(InstallJob& job) {
                 }
             }
         }
-        source.SignalCancel();
+        if (holder) {
+            holder->SignalCancel();
+        }
     }
     log_write("[NXDock] result 0x%X\n", rc);
     nxdock_log_close();
@@ -493,6 +525,9 @@ void InstallQueue::RunJob(InstallJob& job) {
                                                                                                                  : InstallJob::State::Failed;
         const s64 free_bytes = StorageFreeSpace(job.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
         job.error = InstallErrorText(rc, box.NeededBytes(), box.NeededFirmware(), free_bytes, job.nand);
+    }
+    if (job.origin == InstallJob::Origin::Mtp) {
+        MtpJobEnded(job.state == InstallJob::State::Done, job.error);
     }
     auto installed = ReadInstalled();
 

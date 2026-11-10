@@ -44,6 +44,29 @@ add_library(qrcodegen STATIC ${qrcodegen_SOURCE_DIR}/c/qrcodegen.c)
 target_include_directories(qrcodegen PUBLIC ${qrcodegen_SOURCE_DIR}/c)
 target_compile_options(qrcodegen PRIVATE -O2)
 
+# USB disks (FAT32 and exFAT) with libusbhsfs (ISC licence), the revision Sphaira uses; NTFS
+# and EXT4 (GPL) are left out.
+set(USBHSFS_GPL OFF)
+set(USBHSFS_NTFS OFF)
+set(USBHSFS_EXT4 OFF)
+set(USBHSFS_SXOS_DISABLE ON)
+FetchContent_Declare(libusbhsfs
+    GIT_REPOSITORY https://github.com/ITotalJustice/libusbhsfs.git
+    GIT_TAG 625269b
+)
+FetchContent_MakeAvailable(libusbhsfs)
+
+# MTP with libhaze (GPL-2.0, from Atmosphère's haze), the revision Sphaira uses. Its licence is
+# GPL-2.0 only, see NOTICE: NXDOCK_MTP=OFF builds NXDock without it.
+option(NXDOCK_MTP "Install by dragging files from the computer (MTP, libhaze)" ON)
+if (NXDOCK_MTP)
+    FetchContent_Declare(libhaze
+        GIT_REPOSITORY https://github.com/R-YaTian/libhaze.git
+        GIT_TAG 9f5467c
+    )
+    FetchContent_MakeAvailable(libhaze)
+endif()
+
 # The install core "yati" from Sphaira (GPL-3.0), with NXDock's layer in place of Sphaira's
 # app, settings, translations and log (compat/). See NOTICE.
 add_library(yati STATIC
@@ -102,6 +125,11 @@ add_executable(nxdock
     source/gfx.cpp
     source/i18n.cpp
     source/i18n_more.cpp
+    source/file_source.cpp
+    source/more.cpp
+    source/mtp.cpp
+    source/usb_disks.cpp
+    source/usb_tinfoil.cpp
     source/errors.cpp
     source/precheck.cpp
     source/system_info.cpp
@@ -120,7 +148,11 @@ find_path(curl_inc curl/curl.h REQUIRED)
 find_library(curl_lib curl REQUIRED)
 find_library(z_lib z REQUIRED)
 target_include_directories(nxdock PRIVATE ${curl_inc})
-target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
+target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg libusbhsfs ${deko3d_lib} ${curl_lib} ${z_lib})
+if (NXDOCK_MTP)
+    target_compile_definitions(nxdock PRIVATE NXDOCK_MTP)
+    target_link_libraries(nxdock PRIVATE haze)
+endif()
 
 nx_generate_nacp(
     OUTPUT nxdock.nacp

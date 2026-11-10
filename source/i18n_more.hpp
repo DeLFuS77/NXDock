@@ -33,6 +33,16 @@ struct More {
     const char *pc_title, *pc_firmware, *pc_keys, *pc_ams;
     const char *pc_fw_ok, *pc_fw_low, *pc_keys_ok, *pc_keys_low, *pc_ams_ok, *pc_ams_low, *pc_ams_none, *pc_unknown;
     const char *pc_note, *pc_go, *pc_and_more;
+    // the More tab and installing without a server (phase 10)
+    const char *more_tab, *sect_noserver, *sect_console, *open;
+    const char *t_files, *t_files_sub, *t_mtp, *t_mtp_sub, *t_usb, *t_usb_sub, *t_shops, *t_shops_sub;
+    const char *t_saves, *t_saves_sub, *t_space, *t_space_sub, *t_mods, *t_mods_sub, *t_screen, *t_screen_sub;
+    const char *places, *usb_disk, *no_usb, *mark, *install_marked, *sd_or_internal, *marked_fmt, *left_after_fmt;
+    const char *empty_folder, *split_fmt;
+    const char *mtp_title, *mtp_hint, *mtp_install_sd, *mtp_install_sd_sub, *mtp_install_nand, *mtp_install_nand_sub;
+    const char *mtp_sd_card, *mtp_sd_card_sub, *arriving, *connected_usb, *not_connected, *waiting_files, *stop_back;
+    const char *allow_nand, *nand_allowed, *mtp_failed, *mtp_to_sd, *mtp_to_nand, *count_fmt, *nand_q_title, *nand_q_body;
+    const char *usb_title, *usb_steps, *usb_from, *usb_failed, *wait_usb;
 };
 
 const More& TrM();

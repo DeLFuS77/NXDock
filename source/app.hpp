@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include "catalog.hpp"
+#include "file_source.hpp"
 #include "config.hpp"
 #include "covers.hpp"
 #include "gfx.hpp"
@@ -22,7 +23,12 @@
 
 namespace nxdock {
 
-enum class Tab { Library, Queue, Installed, Settings };
+// The colour of a cover without a picture and its initial (app.cpp).
+unsigned PlaceholderColor(const std::string& key);
+std::string Initial(const std::string& name);
+
+enum class Tab { Library, Queue, Installed, More, Settings };
+inline constexpr int kTabs = 5;
 
 class App {
 public:
@@ -34,7 +40,8 @@ public:
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
-                         InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic };
+                         InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -70,7 +77,44 @@ private:
     int m_wiz_step = 0, m_wiz_group = 0, m_wiz_item = 0;
     double m_wiz_step_at = 0;
     double m_tour_at = -100;
-    ui::HitRect m_tab_rects[4]{};
+    ui::HitRect m_tab_rects[kTabs]{};
+
+    // The More tab (3A, more.cpp): a tile for each tool and their screens.
+    enum class MoreScreen { Tiles, Files, Mtp, Usb, Shops, Saves, Space, Mods };
+    void OpenMoreTile(int tile);
+    void OpenMoreScreen(MoreScreen screen);
+    void LeaveMoreScreen();
+    void DrawMore(NVGcontext* vg);
+    void UpdateMore(u64 down, u64 held);
+    void DrawTiles(NVGcontext* vg);
+    void DrawTileIcon(NVGcontext* vg, int tile, float x, float cy);
+    void UpdateTiles(u64 down, u64 held);
+    // the SD card and USB disks (4A)
+    void FollowPlaces();
+    void OpenFolder(const std::string& folder, bool root);
+    void InstallMarkedFiles();
+    void QueueLocal(std::vector<InstallJob> jobs);
+    void DrawFiles(NVGcontext* vg);
+    void UpdateFiles(u64 down, u64 held);
+    // MTP and NS-USBloader (5A)
+    void FollowUsb();
+    void DrawArrival(NVGcontext* vg);
+    void UpdateArrival(u64 down, u64 held);
+    MoreScreen m_more = MoreScreen::Tiles;
+    MoreScreen m_after_risk = MoreScreen::Tiles; // a screen to open once the warning is accepted
+    int m_tile = 0;
+    std::vector<std::string> m_place_roots, m_place_names;
+    int m_place = 0;
+    bool m_files_side = false;       // the focus on the places
+    std::string m_folder;
+    bool m_folder_root = true;
+    std::vector<LocalEntry> m_entries;
+    std::vector<char> m_marked;
+    int m_file_focus = 0, m_file_first = 0;
+    bool m_files_nand = false;       // where files go: R
+    double m_places_checked = -100;
+    bool m_usb_active = false;       // a list of the computer is being installed
+    std::string m_more_error;
     // saver mode: dark after a minute without input while installing
     void DrawSaver(NVGcontext* vg);
     double m_last_input = 0;
@@ -235,7 +279,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

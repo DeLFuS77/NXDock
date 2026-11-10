@@ -3,6 +3,9 @@
 #include "app.hpp"
 
 #include "errors.hpp"
+#include "mtp.hpp"
+#include "usb_disks.hpp"
+#include "usb_tinfoil.hpp"
 #include "i18n_more.hpp"
 
 #include <algorithm>
@@ -39,6 +42,8 @@ std::string FirmwareText(u32 version) {
     return text;
 }
 
+} // namespace
+
 // The first letter of a name (one UTF-8 character), for a cover not loaded yet.
 std::string Initial(const std::string& name) {
     if (name.empty()) {
@@ -58,6 +63,8 @@ unsigned PlaceholderColor(const std::string& key) {
                                            0x9a3a3a, 0x4a7a3a, 0x7a4ab0, 0x2f8a8a, 0x8a5a3a};
     return kColors[std::hash<std::string>{}(key) % (sizeof(kColors) / sizeof(kColors[0]))];
 }
+
+namespace {
 
 std::string Lower(std::string text) {
     for (auto& c : text) {
@@ -328,8 +335,13 @@ void App::Exit() {
         m_ui.focus = focused;
         m_ui.Save();
     }
+    // what arrives from the computer stops first, so a job reading it ends
+    MtpStop();
+    UsbLink().Cancel();
     // a job running is cancelled and cleaned up before the network goes
     m_queue.reset();
+    UsbLink().Stop();
+    UsbDisksStop();
     m_push.reset();
     m_sound.Stop();
     m_speed.Cancel();
@@ -627,6 +639,36 @@ void App::Tap(float x, float y, u64& down) {
                 m_menu_focus = it->index;
                 ActivateMenu(it->index);
                 break;
+            case HitKind::MoreTile:
+                if (m_tile == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_tile = it->index;
+                }
+                break;
+            case HitKind::MorePlace:
+                m_files_side = true;
+                if (m_place == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_place = it->index;
+                }
+                break;
+            case HitKind::MoreRow:
+                m_files_side = false;
+                if (m_file_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_file_focus = it->index;
+                }
+                break;
+            case HitKind::MoreMark:
+                m_files_side = false;
+                m_file_focus = it->index;
+                down |= HidNpadButton_Y;
+                break;
+            case HitKind::MoreSide:
+                break;
             case HitKind::DialogBack: down |= HidNpadButton_B; break; // as B: each question answers its own way
             case HitKind::DialogButton:
                 // a button of the question acts at once: tapping it is the choice
@@ -672,11 +714,13 @@ void App::Update(u64 down, u64 held) {
         }
         m_menu = false;
     }
-    if (down & HidNpadButton_L) {
-        m_tab = Tab((int(m_tab) + 3) % 4);
+    // inside a tool of the More tab the shoulders are its own; B leaves the tool first
+    const bool in_tool = m_tab == Tab::More && m_more != MoreScreen::Tiles;
+    if ((down & HidNpadButton_L) && !in_tool) {
+        m_tab = Tab((int(m_tab) + kTabs - 1) % kTabs);
     }
-    if (down & HidNpadButton_R) {
-        m_tab = Tab((int(m_tab) + 1) % 4);
+    if ((down & HidNpadButton_R) && !in_tool) {
+        m_tab = Tab((int(m_tab) + 1) % kTabs);
     }
 
     const u64 up = HidNpadButton_AnyUp, dn = HidNpadButton_AnyDown;
@@ -697,6 +741,9 @@ void App::Update(u64 down, u64 held) {
         case Tab::Installed:
             UpdateInstalled(down, held);
             break;
+        case Tab::More:
+            UpdateMore(down, held);
+            break;
         case Tab::Settings:
             if (Repeat(down, held, up) && m_setting > 0) m_setting--;
             if (Repeat(down, held, dn) && m_setting < kSettingRows - 1) m_setting++;
@@ -706,7 +753,7 @@ void App::Update(u64 down, u64 held) {
         default:
             break;
     }
-    if ((down & HidNpadButton_B) && m_tab != Tab::Library) {
+    if ((down & HidNpadButton_B) && m_tab != Tab::Library && !in_tool) {
         m_tab = Tab::Library;
     }
 }
@@ -749,6 +796,7 @@ bool App::Frame() {
     FollowLink();
     FollowQueue();
     FollowFinish();
+    FollowUsb();
     FollowPush();
     CheckSdSpace();
     CheckBattery();
@@ -828,20 +876,20 @@ void App::Draw(NVGcontext* vg) {
         DrawTouchFeedback(vg);
         return;
     }
-    ui::HitRect tabs[4];
+    ui::HitRect tabs[kTabs];
     int queued = 0;
     if (m_queue) {
         queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
     }
     ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging);
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < kTabs; i++) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
         m_tab_rects[i] = tabs[i];
     }
     if (m_tab != m_shown_tab) {
         // the content comes in from the side of the new tab (L wraps from the first to the last)
         const int from = int(m_shown_tab), to = int(m_tab);
-        m_tab_dir = ((to - from + 4) % 4) <= 2 ? 1.f : -1.f;
+        m_tab_dir = ((to - from + kTabs) % kTabs) <= 2 ? 1.f : -1.f;
         m_shown_tab = m_tab;
         m_tab_at = m_time;
     }
@@ -871,6 +919,7 @@ void App::Draw(NVGcontext* vg) {
         }
         case Tab::Queue: DrawQueue(vg); break;
         case Tab::Installed: DrawInstalled(vg); break;
+        case Tab::More: DrawMore(vg); break;
         case Tab::Settings: DrawSettings(vg); break;
     }
     nvgRestore(vg);
@@ -3303,6 +3352,13 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = s.risk_go;
             break;
         }
+        case DialogKind::MtpNand: {
+            const More& m = TrM();
+            title = m.nand_q_title;
+            body = m.nand_q_body;
+            primary = m.allow_nand;
+            break;
+        }
         case DialogKind::PreCheck: {
             const More& m = TrM();
             title = m.pc_title;
@@ -3624,6 +3680,15 @@ void App::ConfirmDialog() {
         case DialogKind::Risk:
             m_risk_ok = true;
             AddJobs(std::move(m_dialog.jobs));
+            if (m_after_risk != MoreScreen::Tiles) {
+                const MoreScreen screen = m_after_risk;
+                m_after_risk = MoreScreen::Tiles;
+                if (m_dialog.kind == DialogKind::Risk) m_dialog.kind = DialogKind::None;
+                OpenMoreScreen(screen);
+            }
+            break;
+        case DialogKind::MtpNand:
+            MtpAllowNand(true);
             break;
         case DialogKind::PreCheck:
             // the user goes on: what needs a newer firmware is installed all the same
