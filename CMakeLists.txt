@@ -129,6 +129,10 @@ add_executable(nxdock
     source/sdcheck.cpp
     source/queue_report.cpp
     source/resume.cpp
+    source/romfs_lz4.cpp
+    source/compress_meta.cpp
+    source/cnmt_patch.cpp
+    source/compress_nx.cpp
     source/sdcheck_nx.cpp
     source/more_sdcheck.cpp
     source/space_plan.cpp
