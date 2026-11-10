@@ -32,12 +32,50 @@ public:
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
-                         InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack };
+                         InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
         int index;
     };
+
+    // The first-run wizard (wizard.cpp) and the walk through the tabs after it.
+    enum class WizKind { Choice, Toggle, Action, Button };
+    struct WizItem {
+        std::string label, sub;
+        bool on;
+        WizKind kind;
+    };
+    struct WizGroup {
+        std::string title;
+        std::vector<WizItem> items;
+        int cols;
+        bool small = false; // short tiles after their title, on one line
+    };
+    void OpenWizard();
+    void CloseWizard(bool tour);
+    void ApplyTheme(int mode); // 0 light, 1 dark, 2 as the console
+    std::vector<WizGroup> WizardGroups();
+    void WizardGo(int step);
+    void ActivateWizard(int group, int item);
+    void UpdateWizard(u64 down, u64 held);
+    void DrawWizard(NVGcontext* vg);
+    bool TourActive() const;
+    void FollowTour();
+    void EndTour();
+    void DrawTour(NVGcontext* vg);
+    bool m_wizard = false;
+    int m_wiz_step = 0, m_wiz_group = 0, m_wiz_item = 0;
+    double m_wiz_step_at = 0;
+    double m_tour_at = -100;
+    ui::HitRect m_tab_rects[4]{};
+    // saver mode: dark after a minute without input while installing
+    void DrawSaver(NVGcontext* vg);
+    double m_last_input = 0;
+    bool m_saver_on = false;
+    bool m_wake_touch = false;  // the touch that woke the screen does nothing until lifted
+    bool m_updates_told = false;
+    bool m_dest_touched = false; // the destination was chosen on the page, so "ask each time" does not ask
 
     void ReadTouch(u64& down);
     void Tap(float x, float y, u64& down);
@@ -195,7 +233,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

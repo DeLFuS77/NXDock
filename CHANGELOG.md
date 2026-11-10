@@ -84,3 +84,17 @@
   as fast after a second. − opens Options: the order (A–Z, size, or not
   installed first) and Update all when there is something to update. The
   order and the game in focus are remembered for the next time.
+- A first-run wizard, only the first time and repeated from Settings, with
+  the soft bossa of the library app's wizard (turned off with −). Every step
+  can be skipped: the language (the console's or another one) and the theme
+  (light, dark or as the console); connecting to the library and whether to
+  share what is installed; where to install by default (SD card, internal
+  memory, which always asks first, or ask each time) and what a game's page
+  ticks (what is missing, the game only, or the game and its update); the
+  notices (end of the queue, sounds, little battery and from which %, updates
+  at start); saver mode and the speed test. It ends with a walk of ten
+  seconds through Library, Queue and Installed.
+- Saver mode: while installing, after a minute without touching anything the
+  screen goes dark; any button or a touch lights it again.
+- At start, a notice says how many updates the library has for what is
+  installed (− Options installs them).

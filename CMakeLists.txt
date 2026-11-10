@@ -91,6 +91,7 @@ add_executable(nxdock
     source/synth.cpp
     source/uninstall.cpp
     source/verify.cpp
+    source/wizard.cpp
     source/gfx.cpp
     source/i18n.cpp
     source/ui.cpp

@@ -167,7 +167,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -231,6 +231,18 @@ bool App::Init() {
     m_link.Start(config);
     m_prefs = InstallPrefs::Load();
     m_ui = UiPrefs::Load();
+    if (m_ui.language >= 0) {
+        UseLanguage(m_ui.language); // chosen in the wizard; else the console's
+    }
+    if (m_ui.theme_auto) {
+        // the theme follows the console's
+        ColorSetId color = ColorSetId_Light;
+        if (R_SUCCEEDED(setsysInitialize())) {
+            if (R_FAILED(setsysGetColorSetId(&color))) color = ColorSetId_Light;
+            setsysExit();
+        }
+        m_theme = color == ColorSetId_Dark ? DarkTheme() : LightTheme();
+    }
     m_psm = R_SUCCEEDED(psmInitialize());
     m_sound.Start();
     InitRumble();
@@ -238,6 +250,10 @@ bool App::Init() {
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_push = std::make_unique<Push>();
     m_time = Now();
+    m_last_input = m_time;
+    if (!m_ui.wizard_done) {
+        OpenWizard(); // only the first time; repeated from Settings
+    }
     return true;
 }
 
@@ -289,6 +305,9 @@ void App::ActivateSetting(int row) {
         case kRowSounds:
             m_ui.sounds = !m_ui.sounds;
             m_ui.Save();
+            break;
+        case kRowWizard:
+            OpenWizard();
             break;
         case kRowLibrary:
             // the pairing screen, or the library when linked
@@ -405,6 +424,11 @@ void App::KeepFocusVisible() {
 void App::ReadTouch(u64& down) {
     HidTouchScreenState state{};
     hidGetTouchScreenStates(&state, 1);
+    if (m_wake_touch) {
+        // the finger that woke the screen: nothing until it is lifted
+        if (state.count == 0) m_wake_touch = false;
+        return;
+    }
     if (state.count > 0) {
         const float x = state.touches[0].x, y = state.touches[0].y;
         if (!m_touching) {
@@ -491,7 +515,10 @@ void App::Tap(float x, float y, u64& down) {
                     m_detail_focus = it->index;
                 }
                 break;
-            case HitKind::Dest: m_to_nand = it->index == 1; break;
+            case HitKind::Dest:
+                m_to_nand = it->index == 1;
+                m_dest_touched = true;
+                break;
             case HitKind::QueueRow:
                 if (m_queue_focus == it->index) {
                     down |= HidNpadButton_A;
@@ -512,6 +539,24 @@ void App::Tap(float x, float y, u64& down) {
                     m_installed_focus = it->index;
                 }
                 break;
+            case HitKind::WizItem: {
+                // as everywhere: the first tap marks it, a second one uses it
+                const int group = it->index / 100, item = it->index % 100;
+                if (m_wiz_group == group && m_wiz_item == item) {
+                    ActivateWizard(group, item);
+                } else {
+                    m_wiz_group = group;
+                    m_wiz_item = item;
+                }
+                break;
+            }
+            case HitKind::WizButton:
+                // Back and Next act at once, as the buttons of a question
+                m_wiz_group = int(WizardGroups().size()) - 1;
+                m_wiz_item = it->index;
+                ActivateWizard(m_wiz_group, it->index);
+                break;
+            case HitKind::WizMusic: down |= HidNpadButton_Minus; break;
             case HitKind::MenuBack: m_menu = false; break;
             case HitKind::MenuRow:
                 // a row of the menu acts at once, as a button of a question does
@@ -542,6 +587,10 @@ void App::Update(u64 down, u64 held) {
             return;
         }
         m_quit = true;
+        return;
+    }
+    if (m_wizard) {
+        UpdateWizard(down, held);
         return;
     }
     if (m_detail && m_tab == Tab::Library) {
@@ -608,10 +657,31 @@ bool App::Frame() {
 
     padUpdate(&m_pad);
     u64 down = padGetButtonsDown(&m_pad);
+    const u64 held = padGetButtons(&m_pad);
+    HidTouchScreenState touch{};
+    hidGetTouchScreenStates(&touch, 1);
+    const bool new_touch = touch.count > 0 && !m_touching && !m_wake_touch;
+    if (down || held || touch.count > 0) {
+        m_last_input = m_time;
+    }
+    if ((m_saver_on || TourActive()) && (down || new_touch)) {
+        // the input that lights the screen again, or ends the walk, does nothing else
+        m_saver_on = false;
+        if (TourActive()) EndTour();
+        m_wake_touch = new_touch;
+        down = 0;
+    }
     const u64 focus_before = FocusSignature();
     ReadTouch(down);
-    Update(down, padGetButtons(&m_pad));
+    Update(down, held);
     PlaySounds(down, focus_before);
+    FollowTour();
+    // saver mode: dark after a minute without input while something installs
+    if (m_queue && !m_queue->Busy()) {
+        m_saver_on = false;
+    } else if (m_ui.saver && !m_wizard && m_time - m_last_input > 60) {
+        m_saver_on = true;
+    }
     FollowLink();
     FollowQueue();
     FollowFinish();
@@ -653,6 +723,10 @@ u64 App::FocusSignature() const {
     mix(m_menu);
     mix(m_menu_focus);
     mix(m_ui.sort);
+    mix(m_wizard);
+    mix(m_wiz_step);
+    mix(m_wiz_group);
+    mix(m_wiz_item);
     return h;
 }
 
@@ -679,6 +753,17 @@ void App::Draw(NVGcontext* vg) {
     m_hits.clear();
     m_hint_rects.clear();
     Background(vg, m_theme);
+    if (m_wizard) {
+        DrawWizard(vg);
+        AddHints(m_hint_rects);
+        if (m_time < m_notice_until && !m_notice.empty()) {
+            const float w = ui::TextWidth(vg, 16, m_notice.c_str()) + 48;
+            ui::FillRound(vg, (kWidth - w) / 2, 600, w, 44, 22, m_theme.panel2);
+            ui::Text(vg, kWidth / 2, 622, 16, m_theme.text, m_notice.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+        DrawTouchFeedback(vg);
+        return;
+    }
     ui::HitRect tabs[4];
     int queued = 0;
     if (m_queue) {
@@ -687,6 +772,7 @@ void App::Draw(NVGcontext* vg) {
     ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging);
     for (int i = 0; i < 4; i++) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
+        m_tab_rects[i] = tabs[i];
     }
     if (m_tab != m_shown_tab) {
         // the content comes in from the side of the new tab (L wraps from the first to the last)
@@ -744,7 +830,9 @@ void App::Draw(NVGcontext* vg) {
         nvgGlobalAlpha(vg, 1.f);
     }
     DrawFinish(vg);
+    DrawTour(vg);
     DrawTouchFeedback(vg);
+    DrawSaver(vg);
 }
 
 void App::DrawTransitions(NVGcontext* vg) {
@@ -962,6 +1050,18 @@ void App::FollowLink() {
             m_focus_restored = true;
         }
         RebuildView();
+    }
+    // once at start (the wizard's "look for updates"): how many updates the library has for what
+    // is installed; − Options installs them
+    if (!m_updates_told && m_focus_restored && !m_wizard && m_tab == Tab::Library) {
+        m_updates_told = true;
+        const size_t updates = m_ui.check_updates ? PendingUpdates().size() : 0;
+        if (updates > 0) {
+            char text[200];
+            std::snprintf(text, sizeof(text), Tr().updates_found, int(updates));
+            Notice(text);
+            m_notice_until = m_time + 6;
+        }
     }
 }
 
@@ -1296,8 +1396,11 @@ void App::OpenDetail(int view_index) {
     m_detail = true;
     m_detail_game = m_view[view_index];
     m_detail_focus = 0;
-    m_to_nand = false;
-    // what is missing is marked: the game if not installed, a newer update, the DLC not installed
+    // where, as chosen in the wizard: the internal memory still asks every time (EnqueuePicked)
+    m_to_nand = m_ui.dest == 1;
+    m_dest_touched = false;
+    // what is missing is marked: the game if not installed, a newer update, the DLC not installed;
+    // or, as chosen in the wizard, only the game, or the game and its update
     const Game& g = m_games[m_detail_game];
     m_detail_pick.assign(g.files.size(), 0);
     const CatalogFile* newest = g.NewestUpdate();
@@ -1305,8 +1408,8 @@ void App::OpenDetail(int view_index) {
         const CatalogFile& f = g.files[i];
         switch (f.kind) {
             case CatalogFile::Kind::Game: m_detail_pick[i] = !g.installed.base; break;
-            case CatalogFile::Kind::Update: m_detail_pick[i] = &f == newest && f.version > g.installed.patch; break;
-            case CatalogFile::Kind::Dlc: m_detail_pick[i] = !g.installed.dlc.count(f.title_id); break;
+            case CatalogFile::Kind::Update: m_detail_pick[i] = m_ui.pick != 1 && &f == newest && f.version > g.installed.patch; break;
+            case CatalogFile::Kind::Dlc: m_detail_pick[i] = m_ui.pick == 0 && !g.installed.dlc.count(f.title_id); break;
         }
     }
 }
@@ -1322,8 +1425,14 @@ void App::UpdateDetail(u64 down, u64 held) {
     const int count = int(rows.size()) + 1;
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_detail_focus > 0) m_detail_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_detail_focus < count - 1) m_detail_focus++;
-    if (down & (HidNpadButton_L | HidNpadButton_ZL)) m_to_nand = false;
-    if (down & (HidNpadButton_R | HidNpadButton_ZR)) m_to_nand = true;
+    if (down & (HidNpadButton_L | HidNpadButton_ZL)) {
+        m_to_nand = false;
+        m_dest_touched = true;
+    }
+    if (down & (HidNpadButton_R | HidNpadButton_ZR)) {
+        m_to_nand = true;
+        m_dest_touched = true;
+    }
     if (down & HidNpadButton_A) {
         if (m_detail_focus < int(rows.size())) {
             m_detail_pick[rows[m_detail_focus]] ^= 1;
@@ -1773,6 +1882,15 @@ void App::EnqueuePicked() {
     if (jobs.empty()) {
         return;
     }
+    if (m_ui.dest == 2 && !m_dest_touched) {
+        // "ask each time" (wizard): SD card or internal memory, and the internal memory asks again
+        m_sd_checked = -100;
+        CheckSdSpace();
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Where;
+        m_dialog.jobs = std::move(jobs);
+        return;
+    }
     if (m_to_nand) {
         // never to the internal memory without asking: the question (1A), Cancel in focus
         m_sd_checked = -100;
@@ -1890,8 +2008,8 @@ void App::FollowPush() {
     for (auto& item : m_push->Take()) {
         m_pushed.push_back(std::move(item));
     }
-    if (m_dialog.kind != DialogKind::None) {
-        return;
+    if (m_dialog.kind != DialogKind::None || m_wizard || TourActive()) {
+        return; // the wizard asks about sharing itself; what the web sent waits for it to end
     }
     // once, the first time a library is linked: share what is installed? (2A)
     if (m_prefs.share_installed < 0) {
@@ -2297,6 +2415,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.library, library, linked},
         {s.forget, "", false},
         {s.share_row, m_prefs.share_installed == 1 ? s.yes_word : s.no_word, m_prefs.share_installed == 1},
+        {s.wiz_row, s.wiz_repeat, true},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
@@ -3081,6 +3200,15 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = s.share_yes;
             cancel_label = s.no_word;
             break;
+        case DialogKind::Where:
+            title = s.where_title;
+            body = s.where_body;
+            for (const auto& j : m_dialog.jobs) {
+                size += j.size;
+                lines.push_back({j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+            }
+            primary = s.sd_card;
+            break;
         case DialogKind::ClearHistory:
             title = s.clear_title;
             body = s.clear_body;
@@ -3232,6 +3360,10 @@ void App::DrawDialog(NVGcontext* vg) {
     struct Button { const char* glyph; std::string label; bool primary; int index; };
     std::vector<Button> buttons;
     buttons.push_back({ui::glyph::B, info ? s.close : cancel_label, false, 0});
+    if (m_dialog.kind == DialogKind::Where) {
+        // the internal memory, which asks again with its own question
+        buttons.push_back({ui::glyph::X, s.internal, false, 2});
+    }
     if (!info) buttons.push_back({ui::glyph::A, primary, true, 1});
     for (auto it = buttons.rbegin(); it != buttons.rend(); ++it) {
         const float bw = ui::TextWidth(vg, 18, it->label.c_str()) + 78;
@@ -3271,7 +3403,22 @@ void App::UpdateDialog(u64 down, u64 held) {
         m_dialog.kind = DialogKind::None;
         return;
     }
-    if (!info) {
+    if (m_dialog.kind == DialogKind::Where) {
+        // Cancel, Internal memory, SD card, from left to right
+        static constexpr int kOrder[] = {0, 2, 1};
+        int pos = m_dialog.focus == 2 ? 1 : m_dialog.focus == 1 ? 2 : 0;
+        if (Repeat(down, held, HidNpadButton_AnyLeft) && pos > 0) pos--;
+        if (Repeat(down, held, HidNpadButton_AnyRight) && pos < 2) pos++;
+        m_dialog.focus = kOrder[pos];
+        if ((down & HidNpadButton_X) || ((down & HidNpadButton_A) && m_dialog.focus == 2)) {
+            auto jobs = std::move(m_dialog.jobs);
+            for (auto& j : jobs) j.nand = true;
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::Nand; // never to the internal memory without its question
+            m_dialog.jobs = std::move(jobs);
+            return;
+        }
+    } else if (!info) {
         if (Repeat(down, held, HidNpadButton_AnyLeft)) m_dialog.focus = 0;
         if (Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.focus = 1; // a disabled action falls back when drawn
     }
@@ -3309,6 +3456,10 @@ void App::ConfirmDialog() {
         case DialogKind::UpdateAll:
             AddJobs(std::move(m_dialog.jobs));
             break;
+        case DialogKind::Where:
+            for (auto& j : m_dialog.jobs) j.nand = false;
+            AddJobs(std::move(m_dialog.jobs));
+            break;
         case DialogKind::Push:
             for (const auto& id : m_dialog.push) m_push->Answer(id, true);
             AddJobs(std::move(m_dialog.jobs));
@@ -3338,6 +3489,24 @@ void App::ConfirmDialog() {
             break;
         default: break;
     }
+}
+
+void App::DrawSaver(NVGcontext* vg) {
+    if (!m_saver_on) {
+        return;
+    }
+    // the screen goes dark; only a thin line of the install and how to light it again remain
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.88f));
+    nvgFill(vg);
+    const auto live = m_queue->GetLive();
+    NVGcolor dim = m_theme.work;
+    dim.a = 0.6f;
+    if (live.running) {
+        ui::Progress(vg, m_theme, kWidth / 2 - 200, 352, 400, 6, JobFraction(live), dim, m_time);
+    }
+    ui::Text(vg, kWidth / 2, 384, 16, nvgRGBAf(1, 1, 1, 0.45f), Tr().saver_text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 }
 
 } // namespace nxdock

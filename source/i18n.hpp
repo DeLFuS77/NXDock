@@ -47,11 +47,19 @@ struct Strings {
     const char *sounds_row;
     const char *finish_all, *finish_some_failed;
     const char *options, *sort_az, *sort_size, *sort_missing;
+    const char *wiz_step, *wiz_welcome_title, *wiz_welcome_body, *wiz_language, *wiz_console_lang, *wiz_theme, *wiz_theme_auto, *wiz_connect_title, *wiz_connect_body, *wiz_connected, *wiz_share_q, *wiz_where_title, *wiz_where_body, *wiz_recommended, *wiz_asks_first, *wiz_ask_each, *wiz_pick_label, *wiz_pick_missing, *wiz_pick_missing_sub, *wiz_pick_base, *wiz_pick_base_update, *wiz_notices_title, *wiz_notices_body, *wiz_finish_toggle, *wiz_battery_toggle, *wiz_battery_from, *wiz_updates_toggle, *wiz_push_info, *wiz_saver_title, *wiz_saver_body, *wiz_saver_toggle, *wiz_speed_row, *wiz_speed_need, *wiz_done_title, *wiz_done_body, *wiz_next, *wiz_skip, *wiz_start, *wiz_music, *wiz_row, *wiz_repeat, *where_title, *where_body, *updates_found, *saver_text, *tour_library, *tour_queue, *tour_installed, *tour_count;
 };
 
 // Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,
 // Dutch, Russian, Japanese, Korean or Chinese, as the library app; English for any other.
 const Strings& Tr();
 void InitStrings();
+
+// The languages NXDock speaks, to choose another one than the console's (the first-run wizard).
+int LanguageCount();
+const char* LanguageName(int index); // in its own language: English, Español, …
+int ConsoleLanguage();               // the index the console's language gives
+int CurrentLanguage();
+void UseLanguage(int index);         // -1: the console's
 
 } // namespace nxdock
