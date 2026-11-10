@@ -54,6 +54,8 @@ struct More {
     const char *sh_add, *sh_add_sub, *sh_none, *sh_guide_url, *sh_guide_name, *sh_guide_user, *sh_guide_pass, *sh_remove, *sh_remove_title, *sh_remove_body, *sh_loading, *sh_badge, *sh_back, *sh_edit, *e_shop_enc_t, *e_shop_enc_w, *e_shop_enc_d, *e_shop_bad_t, *e_shop_bad_w, *e_shop_bad_d, *e_shop_auth_t, *e_shop_auth_d, *e_shop_empty, *sh_note;
     // cheats and mods (phase 14)
     const char *cm_pick, *cm_cheats_head_fmt, *cm_cheats_lib, *cm_cheats_count_fmt, *cm_no_cheats, *cm_loading, *cm_mods_head, *cm_no_mods, *cm_mod_files_fmt, *cm_note, *cm_toggle, *cm_conflict_t, *cm_conflict_d, *cm_failed_t, *cm_failed_d, *cm_put, *cm_removed;
+    // the screen off (phase 15)
+    const char *so_body, *so_button, *so_auto_row, *so_nothing;
 };
 
 const More& TrM();

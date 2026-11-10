@@ -157,3 +157,7 @@
   atmosphere/contents/<title ID>; what each package writes is written down
   and removing takes away only that. A file of another mod, or one that was
   there before, is never written over.
+- The screen off while installing: − on the queue or the tile in More counts
+  three seconds and turns the backlight off; any button or touch lights it,
+  and the end of the queue lights it by itself. In Settings, "Screen off for
+  long queues" (off by default) does it when a queue of 2 GB or more starts.

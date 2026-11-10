@@ -174,6 +174,13 @@ private:
     std::vector<ModPackage> m_mods;
     unsigned long long m_mods_app = 0;
     std::string m_mods_name;
+    // the screen off while installing (11A, screen_off.cpp)
+    void AskScreenOff();
+    void ScreenOn();
+    bool FollowScreenOff(u64& down, bool new_touch);
+    void DrawScreenOff(NVGcontext* vg);
+    double m_screen_off_at = -100; // the countdown started
+    bool m_screen_off = false, m_lbl = false, m_screen_busy_before = false;
     unsigned m_mods_version = 0;
     int m_mods_game = -1, m_mods_pick = 0, m_mods_side = 0, m_mods_focus = 0;
     // saver mode: dark after a minute without input while installing

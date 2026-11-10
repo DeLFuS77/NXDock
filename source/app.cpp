@@ -180,7 +180,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -335,6 +335,9 @@ void App::Exit() {
         m_ui.focus = focused;
         m_ui.Save();
     }
+    // the backlight on again before leaving
+    ScreenOn();
+    if (m_lbl) lblExit();
     // what arrives from the computer stops first, so a job reading it ends
     MtpStop();
     UsbLink().Cancel();
@@ -384,6 +387,10 @@ void App::ActivateSetting(int row) {
             break;
         case kRowWizard:
             OpenWizard();
+            break;
+        case kRowScreenOff:
+            m_ui.screen_off_auto = !m_ui.screen_off_auto;
+            m_ui.Save();
             break;
         case kRowLibrary:
             // the pairing screen, or the library when linked
@@ -461,6 +468,10 @@ void App::UpdatePairing(u64 down, u64 held, const Link::View& v) {
         } else {
             m_link.Search();
         }
+    }
+    if (down & HidNpadButton_Minus) {
+        AskScreenOff();
+        return;
     }
     if (down & HidNpadButton_Y) {
         m_link.SetRemember(!v.remember);
@@ -824,7 +835,9 @@ bool App::Frame() {
     if (down || held || touch.count > 0) {
         m_last_input = m_time;
     }
-    if ((m_saver_on || TourActive()) && (down || new_touch)) {
+    if (FollowScreenOff(down, new_touch)) {
+        // the input that lit the screen, or stopped the countdown, does nothing else
+    } else if ((m_saver_on || TourActive()) && (down || new_touch)) {
         // the input that lights the screen again, or ends the walk, does nothing else
         m_saver_on = false;
         if (TourActive()) EndTour();
@@ -1009,6 +1022,7 @@ void App::Draw(NVGcontext* vg) {
     DrawTour(vg);
     DrawTouchFeedback(vg);
     DrawSaver(vg);
+    DrawScreenOff(vg);
 }
 
 void App::DrawTransitions(NVGcontext* vg) {
@@ -2602,6 +2616,7 @@ void App::DrawQueue(NVGcontext* vg) {
     }
     hints.push_back({ui::glyph::X, f.state == InstallJob::State::Running ? s.cancel : s.remove, HidNpadButton_X});
     hints.push_back({ui::glyph::Y, s.clear_done, HidNpadButton_Y});
+    if (running) hints.push_back({ui::glyph::Minus, TrM().so_button, HidNpadButton_Minus}); // the screen off (11A)
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, m_prefs.download_test ? s.download_test : (running ? s.no_sleep : s.queue_done_hint), hints, m_hint_rects);
 }
@@ -2629,6 +2644,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.forget, "", false},
         {s.share_row, m_prefs.share_installed == 1 ? s.yes_word : s.no_word, m_prefs.share_installed == 1},
         {s.wiz_row, s.wiz_repeat, true},
+        {TrM().so_auto_row, m_ui.screen_off_auto ? s.yes_word : s.no_word, m_ui.screen_off_auto},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},

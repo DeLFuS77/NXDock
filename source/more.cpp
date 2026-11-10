@@ -47,6 +47,7 @@ void App::OpenMoreTile(int tile) {
         case 2: OpenMoreScreen(MoreScreen::Usb); break;
         case 3: OpenShops(); break;
         case 6: OpenMods(); break;
+        case 7: AskScreenOff(); break;
         case 5: OpenSpace(); break;
         case 4:
             OpenVault();

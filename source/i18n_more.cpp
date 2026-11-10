@@ -264,6 +264,10 @@ constexpr More kEnglish{
     .cm_failed_d = "Check the SD card and try again.",
     .cm_put = "Put in place",
     .cm_removed = "Removed",
+    .so_body = "The screen turns off. The install goes on.\nPress any button or touch the screen to turn it on. It turns on by itself at the end.",
+    .so_button = "Screen off",
+    .so_auto_row = "Screen off for long queues",
+    .so_nothing = "Nothing is installing.",
 };
 
 constexpr More kSpanish{
@@ -521,6 +525,10 @@ constexpr More kSpanish{
     .cm_failed_d = "Revisa la tarjeta SD y reintenta.",
     .cm_put = "Puesto",
     .cm_removed = "Quitado",
+    .so_body = "La pantalla se apaga. La instalación sigue.\nPulsa cualquier botón o toca la pantalla para encenderla. Al terminar se enciende sola.",
+    .so_button = "Apagar pantalla",
+    .so_auto_row = "Apagar la pantalla en colas largas",
+    .so_nothing = "No se está instalando nada.",
 };
 
 constexpr More kFrench{
@@ -778,6 +786,10 @@ constexpr More kFrench{
     .cm_failed_d = "Vérifie la carte SD et réessaie.",
     .cm_put = "Mis en place",
     .cm_removed = "Retiré",
+    .so_body = "L'écran s'éteint. L'installation continue.\nAppuie sur un bouton ou touche l'écran pour le rallumer. Il se rallume tout seul à la fin.",
+    .so_button = "Éteindre l'écran",
+    .so_auto_row = "Éteindre l'écran pour les longues files",
+    .so_nothing = "Rien ne s'installe.",
 };
 
 constexpr More kGerman{
@@ -1035,6 +1047,10 @@ constexpr More kGerman{
     .cm_failed_d = "Prüfe die SD-Karte und versuche es erneut.",
     .cm_put = "Eingesetzt",
     .cm_removed = "Entfernt",
+    .so_body = "Der Bildschirm geht aus. Die Installation läuft weiter.\nDrücke eine Taste oder tippe auf den Bildschirm, um ihn einzuschalten. Am Ende geht er von selbst an.",
+    .so_button = "Bildschirm aus",
+    .so_auto_row = "Bildschirm aus bei langen Warteschlangen",
+    .so_nothing = "Es wird nichts installiert.",
 };
 
 constexpr More kItalian{
@@ -1292,6 +1308,10 @@ constexpr More kItalian{
     .cm_failed_d = "Controlla la scheda SD e riprova.",
     .cm_put = "Messo",
     .cm_removed = "Tolto",
+    .so_body = "Lo schermo si spegne. L'installazione continua.\nPremi un tasto o tocca lo schermo per riaccenderlo. Alla fine si riaccende da solo.",
+    .so_button = "Spegni lo schermo",
+    .so_auto_row = "Spegni lo schermo con code lunghe",
+    .so_nothing = "Non si sta installando nulla.",
 };
 
 constexpr More kPortuguese{
@@ -1549,6 +1569,10 @@ constexpr More kPortuguese{
     .cm_failed_d = "Verifique o cartão SD e tente de novo.",
     .cm_put = "Colocado",
     .cm_removed = "Tirado",
+    .so_body = "A tela se apaga. A instalação continua.\nPressione um botão ou toque na tela para acendê-la. No fim ela acende sozinha.",
+    .so_button = "Desligar a tela",
+    .so_auto_row = "Desligar a tela em filas longas",
+    .so_nothing = "Nada está sendo instalado.",
 };
 
 constexpr More kDutch{
@@ -1806,6 +1830,10 @@ constexpr More kDutch{
     .cm_failed_d = "Controleer de SD-kaart en probeer opnieuw.",
     .cm_put = "Gezet",
     .cm_removed = "Weggehaald",
+    .so_body = "Het scherm gaat uit. De installatie gaat door.\nDruk op een knop of raak het scherm aan om het aan te zetten. Aan het eind gaat het vanzelf aan.",
+    .so_button = "Scherm uit",
+    .so_auto_row = "Scherm uit bij lange wachtrijen",
+    .so_nothing = "Er wordt niets geïnstalleerd.",
 };
 
 constexpr More kRussian{
@@ -2063,6 +2091,10 @@ constexpr More kRussian{
     .cm_failed_d = "Проверьте SD-карту и повторите.",
     .cm_put = "Поставлено",
     .cm_removed = "Убрано",
+    .so_body = "Экран выключится. Установка продолжится.\nНажмите любую кнопку или коснитесь экрана, чтобы включить его. В конце он включится сам.",
+    .so_button = "Выключить экран",
+    .so_auto_row = "Выключать экран при длинной очереди",
+    .so_nothing = "Сейчас ничего не устанавливается.",
 };
 
 constexpr More kJapanese{
@@ -2320,6 +2352,10 @@ constexpr More kJapanese{
     .cm_failed_d = "SD カードを確認して再試行してください。",
     .cm_put = "入れました",
     .cm_removed = "外しました",
+    .so_body = "画面を消します。インストールは続きます。\nボタンを押すか画面に触れると点きます。終わると自動で点きます。",
+    .so_button = "画面を消す",
+    .so_auto_row = "長いキューでは画面を消す",
+    .so_nothing = "インストール中のものはありません。",
 };
 
 constexpr More kKorean{
@@ -2577,6 +2613,10 @@ constexpr More kKorean{
     .cm_failed_d = "SD 카드를 확인하고 다시 시도하세요.",
     .cm_put = "넣음",
     .cm_removed = "뺌",
+    .so_body = "화면이 꺼집니다. 설치는 계속됩니다.\n아무 버튼이나 누르거나 화면을 터치하면 켜집니다. 끝나면 저절로 켜집니다.",
+    .so_button = "화면 끄기",
+    .so_auto_row = "긴 대기열에서 화면 끄기",
+    .so_nothing = "설치 중인 것이 없습니다.",
 };
 
 constexpr More kChinese{
@@ -2834,6 +2874,10 @@ constexpr More kChinese{
     .cm_failed_d = "请检查 SD 卡后重试。",
     .cm_put = "已放入",
     .cm_removed = "已移除",
+    .so_body = "屏幕将关闭，安装继续进行。\n按任意按钮或触摸屏幕即可点亮。完成时会自动点亮。",
+    .so_button = "关闭屏幕",
+    .so_auto_row = "长队列时关闭屏幕",
+    .so_nothing = "当前没有在安装。",
 };
 
 // In the order of LanguageName in i18n.cpp.
