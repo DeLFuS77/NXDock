@@ -1,13 +1,16 @@
 // The install core of Sphaira (https://github.com/NaGaa95/sphaira, commit 05bd057), GPL-3.0.
 // Changed for NXDock (see NOTICE): Sphaira's settings, menus, translations and USB/file sources
 // are replaced by NXDock's own layer; NCZBLOCK blocks are decompressed on three threads; the
-// install is all or nothing (nothing is registered until every NCA is written and its SHA-256
-// matches its content id), with the free space and the firmware checked before the download.
+// NCZSECT2 and NCZSECT3 of NXPress are read (nczsect.hpp), the LZ4 blocks of an NCZSECT3 made
+// again on the same three threads; the install is all or nothing (nothing is registered until
+// every NCA is written and its SHA-256 matches its content id), with the free space and the
+// firmware checked before the download.
 #include "yati/yati.hpp"
 #include "yati/container/nsp.hpp"
 #include "yati/container/xci.hpp"
 
 #include "yati/nx/ncz.hpp"
+#include "yati/nx/nczsect.hpp"
 #include "yati/nx/nca.hpp"
 #include "yati/nx/ncm.hpp"
 #include "yati/nx/ns.hpp"
@@ -21,6 +24,7 @@
 #include "ui/progress_box.hpp"
 #include "yati_env.hpp"
 #include "log.hpp"
+#include "lz4nintendo.h"
 
 #include <zstd.h>
 #include <algorithm>
@@ -153,6 +157,7 @@ struct ThreadData {
         sha256ContextCreate(&sha256);
         // this will be updated with the actual size from nca header.
         write_size = nca->size;
+        read_end = nca->size;
 
         // reduce buffer size to preve
         // NXDock: larger reads as an application, smaller as an applet (little memory there).
@@ -330,6 +335,12 @@ struct ThreadData {
     ncz::BlockHeader ncz_block_header{};
     std::vector<ncz::Section> ncz_sections{};
     std::vector<ncz::BlockInfo> ncz_blocks{};
+    // NXDock: the magic of the section table, and the LZ4 blocks of an NCZSECT3 to make again.
+    u64 ncz_magic{};
+    std::vector<ncz::Lz4Block> ncz_lz4{};
+    // NXDock: where the reading stops: the end of the NCA file, or the end of the stream of an
+    // NCZSECT3, whose table comes after it.
+    s64 read_end{};
 
     Sha256Context sha256{};
 
@@ -361,6 +372,7 @@ struct Yati {
     Result InstallCnmtNca(std::span<TikCollection> tickets, CnmtCollection& cnmt, const container::Collections& collections);
 
     Result readFuncInternal(ThreadData* t);
+    Result ReadLz4Table(ThreadData* t);
     Result decompressFuncInternal(ThreadData* t);
     Result writeFuncInternal(ThreadData* t);
 
@@ -422,7 +434,7 @@ void ThreadData::WakeAllThreads() {
 }
 
 Result ThreadData::Read(void* buf, s64 size, u64* bytes_read) {
-    size = std::min<s64>(size, nca->size - read_offset);
+    size = std::min<s64>(size, read_end - read_offset);
     const auto rc = yati->source->Read(buf, nca->offset + read_offset, size, bytes_read);
     R_TRY(rc);
 
@@ -463,6 +475,38 @@ Result HasRequiredTicket(const nca::Header& header, std::span<TikCollection> tik
     return HasRequiredTicket(header, ticket);
 }
 
+// NXDock: the LZ4 table of an NCZSECT3, at the end of the file, read before its stream; the
+// reading then stops where the stream ends.
+Result Yati::ReadLz4Table(ThreadData* t) {
+    const s64 size = t->nca->size;
+    const s64 here = t->read_offset;
+    // read apart from the range read ahead, which would drop what it fetched to go there
+    source->HintRange(t->nca->offset, 0);
+    u8 footer[ncz::LZ4_FOOTER_SIZE];
+    u64 bytes_read{};
+    R_UNLESS(size >= s64(ncz::LZ4_FOOTER_SIZE), Result_NczBadTable);
+    R_TRY(source->Read(footer, t->nca->offset + size - s64(ncz::LZ4_FOOTER_SIZE), s64(ncz::LZ4_FOOTER_SIZE), &bytes_read));
+    R_UNLESS(bytes_read == ncz::LZ4_FOOTER_SIZE, Result_YatiInvalidNcaReadSize);
+    u64 start{};
+    R_TRY(ncz::ParseLz4Footer(footer, u64(size), start));
+    R_UNLESS(start >= u64(here), Result_NczBadTable);
+
+    std::vector<u8> table;
+    try {
+        table.resize(size_t(u64(size) - ncz::LZ4_FOOTER_SIZE - start));
+    } catch (...) {
+        R_THROW(Result_OutOfMemory);
+    }
+    R_TRY(source->Read(table.data(), t->nca->offset + s64(start), s64(table.size()), &bytes_read));
+    R_UNLESS(bytes_read == table.size(), Result_YatiInvalidNcaReadSize);
+    R_TRY(ncz::ParseLz4Table(table, t->ncz_lz4));
+    log_write("[NCZ] NCZSECT3: %zu LZ4 blocks to make again, the stream ends at %llu\n", t->ncz_lz4.size(), (unsigned long long)start);
+
+    t->read_end = s64(start);
+    source->HintRange(t->nca->offset + here, s64(start) - here);
+    R_SUCCEED();
+}
+
 // read thread reads all data from the source, it also handles
 // parsing ncz headers, sections and reading ncz blocks
 Result Yati::readFuncInternal(ThreadData* t) {
@@ -480,7 +524,7 @@ Result Yati::readFuncInternal(ThreadData* t) {
     // NXDock: the whole NCA is read in order from here.
     t->yati->source->HintRange(t->nca->offset, t->nca->size);
 
-    while (t->read_offset < t->nca->size && R_SUCCEEDED(t->GetResults())) {
+    while (t->read_offset < t->read_end && R_SUCCEEDED(t->GetResults())) {
         const auto buffer_offset = t->read_offset.load();
 
         // read more data
@@ -510,19 +554,31 @@ Result Yati::readFuncInternal(ThreadData* t) {
             // check for ncz section header.
             ncz::Header header{};
             std::memcpy(std::addressof(header), buf.data() + 0x4000, sizeof(header));
-            // NXDock: say so clearly instead of failing on the SHA-256 after the download.
-            R_UNLESS(header.magic != NCZ_SECTION2_MAGIC && header.magic != NCZ_SECTION3_MAGIC, Result_NczExperimental);
-            if (header.magic == NCZ_SECTION_MAGIC) {
-                // validate section header.
+            // NXDock: a section format newer than NCZSECT3 is said so clearly instead of failing
+            // on the SHA-256 after the download.
+            R_UNLESS(!ncz::IsUnknownSectionMagic(header.magic), Result_NczExperimental);
+            if (header.magic == NCZ_SECTION_MAGIC || ncz::IsShifted(header.magic)) {
+                // validate section header. NXDock: no more sections than the file holds, before
+                // the memory for them is taken.
                 R_UNLESS(header.total_sections, Result_YatiInvalidNczSectionCount);
+                R_UNLESS(header.total_sections <= NCZ_MAX_SECTIONS && header.total_sections <= u64(t->nca->size) / sizeof(ncz::Section), Result_YatiInvalidNczSectionCount);
 
                 buf_size = 0x4000;
                 log_write("found ncz, total number of sections: %zu\n", header.total_sections);
                 t->ncz_sections.resize(header.total_sections);
                 R_TRY(t->Read(t->ncz_sections.data(), t->ncz_sections.size() * sizeof(ncz::Section), std::addressof(bytes_read)));
+                // NXDock: NCZSECT2/3 move the counter of a section; the sections are placed as
+                // the library app places them.
+                R_TRY(ncz::PrepareSections(header.magic, t->ncz_sections));
+                t->ncz_magic = header.magic;
+                if (header.magic == NCZ_SECTION3_MAGIC) {
+                    R_TRY(ReadLz4Table(t));
+                }
 
                 // check for ncz block header.
                 R_TRY(t->Read(std::addressof(t->ncz_block_header), sizeof(t->ncz_block_header), std::addressof(bytes_read)));
+                // NXDock: the stream of an NCZSECT3 is one zstd stream, never in blocks.
+                R_UNLESS(t->ncz_block_header.magic != NCZ_BLOCK_MAGIC || header.magic != NCZ_SECTION3_MAGIC, Result_NczBadTable);
                 if (t->ncz_block_header.magic != NCZ_BLOCK_MAGIC) {
                     // didn't find block, keep the data we just read in the temp buffer.
                     temp_buf.resize(sizeof(t->ncz_block_header));
@@ -561,6 +617,10 @@ constexpr u64 PARALLEL_BLOCK_MAX = 1024 * 1024 * 32;
 constexpr u64 PARALLEL_BATCH_BYTES = 1024 * 1024 * 16;
 constexpr u32 PARALLEL_BATCH_BLOCKS = 24;
 constexpr u32 PARALLEL_THREADS = 3;
+// NXDock: how much of the stream of an NCZSECT3 one round hands to the threads, which make its
+// LZ4 blocks again (a block takes them longer than zstd takes to give it).
+constexpr u64 LZ4_BATCH_BYTES = 1024 * 1024 * 8;
+constexpr size_t LZ4_BATCH_JOBS = 96;
 
 struct BlockJob {
     std::vector<u8> in{};
@@ -568,7 +628,19 @@ struct BlockJob {
     u64 out_size{};
     bool compressed{};
     Result rc{};
+    // NXDock: an LZ4 block of an NCZSECT3 made again from in, or bytes passed on as they are.
+    const ncz::Lz4Block* lz4{};
+    bool pass{};
 };
+
+// NXDock: does the work of one job of an NCZSECT3; work holds NX_LZ4_WORK_SIZE bytes.
+Result RebuildJob(BlockJob& job, void* work) {
+    if (job.pass) {
+        job.out = std::move(job.in);
+        R_SUCCEED();
+    }
+    return ncz::RebuildBlock(*job.lz4, job.in, job.out, work);
+}
 
 class BlockPool {
 public:
@@ -590,7 +662,17 @@ public:
         }
     }
 
-    Result Start() {
+    // NXDock: with lz4, each thread also has the work space of the compressors of Nintendo.
+    Result Start(bool lz4 = false) {
+        if (lz4) {
+            for (auto& work : m_lz4_work) {
+                try {
+                    work.resize(NX_LZ4_WORK_SIZE);
+                } catch (...) {
+                    R_THROW(Result_OutOfMemory);
+                }
+            }
+        }
         for (u32 i = 0; i < PARALLEL_THREADS; i++) {
             m_dctx[m_count] = ZSTD_createDCtx();
             R_UNLESS(m_dctx[m_count], Result_OutOfMemory);
@@ -657,7 +739,11 @@ private:
             }
             auto& job = (*m_jobs)[m_next++];
             mutexUnlock(&m_mutex);
-            Decompress(m_dctx[index], job);
+            if (job.lz4 || job.pass) {
+                job.rc = RebuildJob(job, m_lz4_work[index].data());
+            } else {
+                Decompress(m_dctx[index], job);
+            }
             mutexLock(&m_mutex);
             if (++m_finished == m_jobs->size()) {
                 condvarWakeAll(&m_done);
@@ -693,6 +779,7 @@ private:
     bool m_quit{};
     Thread m_threads[PARALLEL_THREADS]{};
     ZSTD_DCtx* m_dctx[PARALLEL_THREADS]{};
+    std::vector<u8> m_lz4_work[PARALLEL_THREADS]{};
     Arg m_args[PARALLEL_THREADS]{};
     u32 m_count{};
 };
@@ -727,6 +814,15 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
     u64 batch_bytes{};
     BlockJob current{};
 
+    // NXDock: an NCZSECT3: its stream is cut into bytes as they are and LZ4 blocks to make again,
+    // which are made on the threads a batch at a time.
+    std::unique_ptr<ncz::Lz4Rebuilder> rebuilder{};
+    std::vector<ncz::Lz4Rebuilder::Piece> pieces{};
+    std::vector<BlockJob> lz4_batch{};
+    u64 lz4_batch_bytes{};
+    std::vector<u8> lz4_work{};
+    std::vector<u8> stage{};
+
     // encrypts the nca and passes the buffer to the write thread.
     const auto ncz_flush = [&](s64 size) -> Result {
         if (!inflate_offset) {
@@ -756,10 +852,9 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                 log_write("[NCZ] found new section: %zu\n", written);
 
                 if (ncz_section->crypto_type >= nca::EncryptionType_AesCtr) {
-                    const auto swp = std::byteswap(u64(written) >> 4);
-                    u8 counter[0x16];
-                    std::memcpy(counter + 0x0, ncz_section->counter, 0x8);
-                    std::memcpy(counter + 0x8, &swp, 0x8);
+                    // NXDock: NCZSECT2/3 may move the counter of the section.
+                    u8 counter[0x10];
+                    ncz::CounterAt(*ncz_section, u64(written), counter);
                     aes128CtrContextCreate(&ctx, ncz_section->key, counter);
                 }
             }
@@ -808,6 +903,33 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
         R_SUCCEED();
     };
 
+    // NXDock: makes the LZ4 blocks of the batch again, then passes the NCA on in order.
+    const auto run_lz4 = [&]() -> Result {
+        if (lz4_batch.empty()) {
+            R_SUCCEED();
+        }
+        R_TRY(t->GetResults());
+        if (pool) {
+            R_TRY(pool->Run(lz4_batch));
+        } else {
+            for (auto& job : lz4_batch) {
+                R_TRY(RebuildJob(job, lz4_work.data()));
+            }
+        }
+        for (auto& job : lz4_batch) {
+            inflate_buf.resize(inflate_offset + job.out.size());
+            std::memcpy(inflate_buf.data() + inflate_offset, job.out.data(), job.out.size());
+            t->decompress_offset += job.out.size();
+            inflate_offset += job.out.size();
+            while (inflate_offset >= s64(INFLATE_BUFFER_MAX)) {
+                R_TRY(ncz_flush(INFLATE_BUFFER_MAX));
+            }
+        }
+        lz4_batch.clear();
+        lz4_batch_bytes = 0;
+        R_SUCCEED();
+    };
+
     while (t->decompress_offset < t->write_size && R_SUCCEEDED(t->GetResults())) {
         s64 decompress_buf_off{};
         R_TRY(t->GetDecompressBuf(buf, decompress_buf_off));
@@ -820,9 +942,24 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
             log_write("YES IT FOUND NCZ\n");
             is_ncz = true;
 
+            // NXDock: the LZ4 blocks of an NCZSECT3 are made again on the threads.
+            if (t->ncz_magic == NCZ_SECTION3_MAGIC) {
+                rebuilder = std::make_unique<ncz::Lz4Rebuilder>(std::move(t->ncz_lz4), NCZ_NORMAL_SIZE);
+                stage.resize(chunk_size);
+                pool = std::make_unique<BlockPool>();
+                if (R_SUCCEEDED(pool->Start(true))) {
+                    pbox->SetThreads(pool->Count());
+                    log_write("[NCZ] %u threads for the LZ4 blocks\n", pool->Count());
+                } else {
+                    pool.reset();
+                    lz4_work.resize(NX_LZ4_WORK_SIZE);
+                    pbox->SetThreads(1);
+                }
+            }
+
             // NXDock: blocks of a sane size go to the threads.
             const u64 block_size = 1ULL << t->ncz_block_header.block_size_exponent;
-            if (!t->ncz_blocks.empty() && block_size <= PARALLEL_BLOCK_MAX) {
+            if (!rebuilder && !t->ncz_blocks.empty() && block_size <= PARALLEL_BLOCK_MAX) {
                 pool = std::make_unique<BlockPool>();
                 if (R_SUCCEEDED(pool->Start())) {
                     parallel = true;
@@ -832,7 +969,7 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                     pool.reset();
                 }
             }
-            if (!parallel) {
+            if (!parallel && !rebuilder) {
                 pbox->SetThreads(1);
             }
         }
@@ -996,16 +1133,44 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                 if (compressed) {
                     log_write("[NCZ] COMPRESSED block\n");
                     ZSTD_inBuffer input = { buffer.data(), buffer.size(), 0 };
-                    while (input.pos < input.size) {
+                    // NXDock: a full output may leave more in the decoder: it is asked again.
+                    bool more = false;
+                    while (input.pos < input.size || more) {
                         R_TRY(t->GetResults());
 
-                        inflate_buf.resize(inflate_offset + chunk_size);
-                        ZSTD_outBuffer output = { inflate_buf.data() + inflate_offset, chunk_size, 0 };
+                        // NXDock: the stream of an NCZSECT3 goes to the rebuilder first.
+                        u8* into = stage.data();
+                        if (!rebuilder) {
+                            inflate_buf.resize(inflate_offset + chunk_size);
+                            into = inflate_buf.data() + inflate_offset;
+                        }
+                        ZSTD_outBuffer output = { into, chunk_size, 0 };
                         const auto res = ZSTD_decompressStream(dctx, std::addressof(output), std::addressof(input));
                         if (ZSTD_isError(res)) {
                             log_write("[NCZ] ZSTD_decompressStream() pos: %zu size: %zu res: %zd msg: %s\n", input.pos, input.size, res, ZSTD_getErrorName(res));
                         }
                         R_UNLESS(!ZSTD_isError(res), Result_YatiInvalidNczZstdError);
+                        more = output.pos == output.size;
+
+                        if (rebuilder) {
+                            pieces.clear();
+                            rebuilder->Feed(stage.data(), output.pos, pieces);
+                            for (auto& piece : pieces) {
+                                BlockJob job{};
+                                job.in = std::move(piece.data);
+                                if (piece.block >= 0) {
+                                    job.lz4 = &rebuilder->Block(piece.block);
+                                } else {
+                                    job.pass = true;
+                                }
+                                lz4_batch_bytes += job.in.size();
+                                lz4_batch.emplace_back(std::move(job));
+                            }
+                            if (lz4_batch_bytes >= LZ4_BATCH_BYTES || lz4_batch.size() >= LZ4_BATCH_JOBS) {
+                                R_TRY(run_lz4());
+                            }
+                            continue;
+                        }
 
                         t->decompress_offset += output.pos;
                         inflate_offset += output.pos;
@@ -1036,6 +1201,14 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
     // NXDock: the blocks still gathered.
     if (parallel) {
         R_TRY(run_batch());
+    }
+    // NXDock: the LZ4 blocks still to make, and every block of the table must have come.
+    if (rebuilder) {
+        R_TRY(run_lz4());
+        if (!rebuilder->Done()) {
+            log_write("[NCZ] the stream of the NCZSECT3 ends before its last LZ4 block\n");
+            R_THROW(Result_NczLz4Rebuild);
+        }
     }
 
     // flush remaining data.

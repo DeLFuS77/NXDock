@@ -151,7 +151,9 @@ std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned fi
             case NXDockResult::YatiInvalidNczBlockType:
             case NXDockResult::YatiInvalidNczBlockTotal:
             case NXDockResult::YatiInvalidNczBlockSizeExponent:
-            case NXDockResult::YatiInvalidNczZstdError: return s.err_ncz;
+            case NXDockResult::YatiInvalidNczZstdError:
+            case NXDockResult::NczBadTable:
+            case NXDockResult::NczLz4Rebuild: return s.err_ncz;
             case NXDockResult::YatiTicketNotFound:
             case NXDockResult::YatiCertNotFound: return s.err_ticket;
             case NXDockResult::OutOfMemory: return s.err_memory;

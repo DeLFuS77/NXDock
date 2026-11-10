@@ -11,10 +11,11 @@
 namespace sphaira::ncz {
 
 #define NCZ_SECTION_MAGIC 0x4E544345535A434EUL
-// NXDock: the experimental sections of NXPress (NCZSECT2, NCZSECT3). The library app sends
-// these as plain NCA; read natively in a later step.
+// NXDock: the experimental sections of NXPress (NCZSECT2, NCZSECT3), read in nczsect.hpp.
 #define NCZ_SECTION2_MAGIC 0x32544345535A434EUL
 #define NCZ_SECTION3_MAGIC 0x33544345535A434EUL
+// NXDock: more sections than an update ever has means a damaged table.
+#define NCZ_MAX_SECTIONS (1UL << 20)
 // todo: byteswap this
 #define NCZ_BLOCK_MAGIC std::byteswap(0x4E435A424C4F434BUL)
 

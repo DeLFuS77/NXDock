@@ -52,3 +52,8 @@
 - The history of installs, in the Installed tab and on the SD card: date,
   game, where, size, time, speed and result of each, with why a failed one
   failed, a summary on top, and a question before it is cleared.
+- NSZ and XCZ made with the extra compression of NXPress install as they
+  are, also when the library app sends them without turning them back into
+  plain NCA first: the parts kept decompressed are compressed again exactly
+  as they were, on three threads, and checked against their SHA-256 like
+  every other part.

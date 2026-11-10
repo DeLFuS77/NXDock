@@ -11,9 +11,16 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   g++ -std=c++20 -Wall -Wextra -O1 -Ibuild/_deps/yyjson-src/src -o /tmp/catalog_test tests/catalog_test.cpp source/catalog.cpp /tmp/yyjson.o && /tmp/catalog_test
   # game card images, which container a file is, and the install history
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -Wno-missing-field-initializers -o /tmp/xci_history_test tests/xci_history_test.cpp source/yati/container/xci.cpp source/history.cpp && /tmp/xci_history_test /tmp
-  # the network source, against a Range server that cuts answers on purpose; curl headers from
-  # the portlibs, the library of the container
-  mkdir -p /tmp/inc && cp -r /opt/devkitpro/portlibs/switch/include/curl /tmp/inc/
+  # the LZ4 compressors of Nintendo against the blocks the library app makes, and NCZSECT2/3
+  # against the NCA it gives of them; zstd and curl headers from the portlibs, the libraries of
+  # the container
+  mkdir -p /tmp/inc && cp -r /opt/devkitpro/portlibs/switch/include/curl /opt/devkitpro/portlibs/switch/include/zstd.h /opt/devkitpro/portlibs/switch/include/zstd_errors.h /tmp/inc/
+  gcc -std=c11 -Wall -Wextra -O2 -Iinclude -c -o /tmp/lz4nintendo.o source/lz4nintendo.c
+  g++ -std=c++20 -Wall -Wextra -O2 -Iinclude -o /tmp/lz4nintendo_test tests/lz4nintendo_test.cpp /tmp/lz4nintendo.o
+  /tmp/lz4nintendo_test tests/fixtures/lz4nintendo_golden.txt LICENSE assets/icon.jpg
+  g++ -std=c++23 -Wall -Wextra -O2 -Itests/shim -Iinclude -Icompat -I/tmp/inc -o /tmp/nczsect_test tests/nczsect_test.cpp source/yati/nx/nczsect.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libzstd.so.1
+  /tmp/nczsect_test tests/fixtures
+  # the network source, against a Range server that cuts answers on purpose
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -I/tmp/inc -DNXDOCK_VERSION=\"test\" -o /tmp/http_source_test tests/http_source_test.cpp source/http_source.cpp /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
   size=12595257
   python3 tests/range_server.py 18765 $size testkey &
