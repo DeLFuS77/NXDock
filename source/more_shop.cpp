@@ -165,6 +165,8 @@ void App::DrawShops(NVGcontext* vg) {
         hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
         hints.push_back({ui::glyph::Y, m.sh_edit, HidNpadButton_Y});
         hints.push_back({ui::glyph::Minus, m.sh_remove, HidNpadButton_Minus});
+    } else {
+        hints.push_back({ui::glyph::A, m.sh_add, HidNpadButton_A});
     }
     hints.push_back({ui::glyph::X, m.sh_add, HidNpadButton_X});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});

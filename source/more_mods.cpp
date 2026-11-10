@@ -126,6 +126,7 @@ void App::DrawMods(NVGcontext* vg) {
             if (!v.apps[size_t(i)].archived) rows.push_back(i);
         }
         if (!v.scanned) ui::Text(vg, 48, 140, 15, t.muted, m.scanning);
+        else if (rows.empty()) ui::Text(vg, 48, 140, 15, t.muted, m.no_installed);
         m_mods_pick = std::clamp(m_mods_pick, 0, std::max(0, int(rows.size()) - 1));
         const int first = std::max(0, m_mods_pick - 8);
         for (int r = 0; r < 9 && first + r < int(rows.size()); r++) {

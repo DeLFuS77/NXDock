@@ -209,6 +209,7 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
     const char* title = m_pick_kind == 0 ? m.a_archive : m_pick_kind == 1 ? m.a_move : m.a_dump;
     ui::Text(vg, 48, 104, 22, t.text, title);
     if (!m_plan_head.empty()) ui::Text(vg, 48, 134, 15, t.warn, m_plan_head.c_str());
+    if (m_pick_rows.empty()) ui::Text(vg, 48, 170, 15, t.muted, m.no_installed);
     const float top = 156, pitch = 52;
     const int rows = 8;
     m_pick_focus = std::clamp(m_pick_focus, 0, std::max(0, int(m_pick_rows.size()) - 1));

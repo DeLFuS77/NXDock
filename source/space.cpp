@@ -368,6 +368,27 @@ void Space::ScanNow() {
         }
         ncmExit();
     }
+    // the file systems, when the content storages do not say how much room there is
+    if (st.sd_free < 0 || st.sd_total <= 0) {
+        FsFileSystem fs;
+        if (R_SUCCEEDED(fsOpenSdCardFileSystem(&fs))) {
+            char root[FS_MAX_PATH] = "/";
+            s64 v = 0;
+            if (R_SUCCEEDED(fsFsGetFreeSpace(&fs, root, &v))) st.sd_free = v;
+            if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &v))) st.sd_total = v;
+            fsFsClose(&fs);
+        }
+    }
+    if (st.nand_free < 0 || st.nand_total <= 0) {
+        FsFileSystem fs;
+        if (R_SUCCEEDED(fsOpenBisFileSystem(&fs, FsBisPartitionId_User, ""))) {
+            char root[FS_MAX_PATH] = "/";
+            s64 v = 0;
+            if (R_SUCCEEDED(fsFsGetFreeSpace(&fs, root, &v))) st.nand_free = v;
+            if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &v))) st.nand_total = v;
+            fsFsClose(&fs);
+        }
+    }
     // archived games (a record without content) and the names
     if (R_SUCCEEDED(nsInitialize())) {
         for (const u64 app : RecordApps()) {

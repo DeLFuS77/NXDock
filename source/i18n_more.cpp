@@ -173,7 +173,7 @@ constexpr More kEnglish{
     .a_clean_sub_fmt = "%d contents without a game and %d tickets left over",
     .a_archive = "Archive games",
     .a_archive_sub = "frees the space; the icon stays",
-    .a_move = "Move SD ⇄ internal",
+    .a_move = "Move SD / internal",
     .a_move_sub = "the internal memory always asks first",
     .a_plan = "Plan the queue",
     .a_plan_sub_fmt = "the queue needs %s; %s missing",
@@ -271,6 +271,7 @@ constexpr More kEnglish{
     .idle_days_fmt = "played %d days ago",
     .idle_today = "played today",
     .idle_never = "never played",
+    .no_installed = "No games are installed on the console.",
 };
 
 constexpr More kSpanish{
@@ -437,7 +438,7 @@ constexpr More kSpanish{
     .a_clean_sub_fmt = "%d contenidos sin juego y %d tickets sobrantes",
     .a_archive = "Archivar juegos",
     .a_archive_sub = "libera el espacio; el icono se queda",
-    .a_move = "Mover SD ⇄ interna",
+    .a_move = "Mover SD / interna",
     .a_move_sub = "la interna siempre con confirmación",
     .a_plan = "Planificar la cola",
     .a_plan_sub_fmt = "la cola necesita %s; faltan %s",
@@ -535,6 +536,7 @@ constexpr More kSpanish{
     .idle_days_fmt = "jugado hace %d días",
     .idle_today = "jugado hoy",
     .idle_never = "nunca jugado",
+    .no_installed = "No hay juegos instalados en la consola.",
 };
 
 constexpr More kFrench{
@@ -701,7 +703,7 @@ constexpr More kFrench{
     .a_clean_sub_fmt = "%d contenus sans jeu et %d tickets en trop",
     .a_archive = "Archiver des jeux",
     .a_archive_sub = "libère l'espace ; l'icône reste",
-    .a_move = "Déplacer SD ⇄ interne",
+    .a_move = "Déplacer SD / interne",
     .a_move_sub = "la mémoire interne demande toujours",
     .a_plan = "Planifier la file",
     .a_plan_sub_fmt = "la file demande %s ; il manque %s",
@@ -799,6 +801,7 @@ constexpr More kFrench{
     .idle_days_fmt = "joué il y a %d jours",
     .idle_today = "joué aujourd'hui",
     .idle_never = "jamais joué",
+    .no_installed = "Aucun jeu n'est installé sur la console.",
 };
 
 constexpr More kGerman{
@@ -965,7 +968,7 @@ constexpr More kGerman{
     .a_clean_sub_fmt = "%d Inhalte ohne Spiel und %d übrige Tickets",
     .a_archive = "Spiele archivieren",
     .a_archive_sub = "gibt Platz frei; das Symbol bleibt",
-    .a_move = "SD ⇄ intern verschieben",
+    .a_move = "SD / intern verschieben",
     .a_move_sub = "der interne Speicher fragt immer",
     .a_plan = "Warteschlange planen",
     .a_plan_sub_fmt = "die Warteschlange braucht %s; es fehlen %s",
@@ -1063,6 +1066,7 @@ constexpr More kGerman{
     .idle_days_fmt = "vor %d Tagen gespielt",
     .idle_today = "heute gespielt",
     .idle_never = "nie gespielt",
+    .no_installed = "Auf der Konsole sind keine Spiele installiert.",
 };
 
 constexpr More kItalian{
@@ -1229,7 +1233,7 @@ constexpr More kItalian{
     .a_clean_sub_fmt = "%d contenuti senza gioco e %d ticket in più",
     .a_archive = "Archivia giochi",
     .a_archive_sub = "libera spazio; l'icona resta",
-    .a_move = "Sposta SD ⇄ interna",
+    .a_move = "Sposta SD / interna",
     .a_move_sub = "la memoria interna chiede sempre",
     .a_plan = "Pianifica la coda",
     .a_plan_sub_fmt = "la coda richiede %s; mancano %s",
@@ -1327,6 +1331,7 @@ constexpr More kItalian{
     .idle_days_fmt = "giocato %d giorni fa",
     .idle_today = "giocato oggi",
     .idle_never = "mai giocato",
+    .no_installed = "Nessun gioco installato sulla console.",
 };
 
 constexpr More kPortuguese{
@@ -1493,7 +1498,7 @@ constexpr More kPortuguese{
     .a_clean_sub_fmt = "%d conteúdos sem jogo e %d tickets sobrando",
     .a_archive = "Arquivar jogos",
     .a_archive_sub = "libera espaço; o ícone fica",
-    .a_move = "Mover SD ⇄ interna",
+    .a_move = "Mover SD / interna",
     .a_move_sub = "a memória interna sempre pergunta",
     .a_plan = "Planejar a fila",
     .a_plan_sub_fmt = "a fila precisa de %s; faltam %s",
@@ -1591,6 +1596,7 @@ constexpr More kPortuguese{
     .idle_days_fmt = "jogado há %d dias",
     .idle_today = "jogado hoje",
     .idle_never = "nunca jogado",
+    .no_installed = "Não há jogos instalados no console.",
 };
 
 constexpr More kDutch{
@@ -1757,7 +1763,7 @@ constexpr More kDutch{
     .a_clean_sub_fmt = "%d inhoud zonder spel en %d overbodige tickets",
     .a_archive = "Spellen archiveren",
     .a_archive_sub = "maakt ruimte vrij; het pictogram blijft",
-    .a_move = "Verplaatsen SD ⇄ intern",
+    .a_move = "Verplaatsen SD / intern",
     .a_move_sub = "het interne geheugen vraagt altijd",
     .a_plan = "Wachtrij plannen",
     .a_plan_sub_fmt = "de wachtrij heeft %s nodig; %s tekort",
@@ -1855,6 +1861,7 @@ constexpr More kDutch{
     .idle_days_fmt = "%d dagen geleden gespeeld",
     .idle_today = "vandaag gespeeld",
     .idle_never = "nooit gespeeld",
+    .no_installed = "Er zijn geen spellen op de console geïnstalleerd.",
 };
 
 constexpr More kRussian{
@@ -2021,7 +2028,7 @@ constexpr More kRussian{
     .a_clean_sub_fmt = "%d данных без игры и %d лишних тикетов",
     .a_archive = "Архивировать игры",
     .a_archive_sub = "освобождает место; значок остаётся",
-    .a_move = "Переместить SD ⇄ внутр.",
+    .a_move = "Переместить SD / внутр.",
     .a_move_sub = "внутренняя память всегда с подтверждением",
     .a_plan = "Спланировать очередь",
     .a_plan_sub_fmt = "очереди нужно %s; не хватает %s",
@@ -2119,6 +2126,7 @@ constexpr More kRussian{
     .idle_days_fmt = "играли %d дн. назад",
     .idle_today = "играли сегодня",
     .idle_never = "не запускалась",
+    .no_installed = "На консоли нет установленных игр.",
 };
 
 constexpr More kJapanese{
@@ -2285,7 +2293,7 @@ constexpr More kJapanese{
     .a_clean_sub_fmt = "ゲームのないデータ %d 件、不要なチケット %d 件",
     .a_archive = "ソフトを整理",
     .a_archive_sub = "容量を空け、アイコンは残ります",
-    .a_move = "SD ⇄ 本体へ移動",
+    .a_move = "SD / 本体へ移動",
     .a_move_sub = "本体保存メモリーは毎回確認",
     .a_plan = "キューを計画",
     .a_plan_sub_fmt = "キューに %s 必要、%s 不足",
@@ -2383,6 +2391,7 @@ constexpr More kJapanese{
     .idle_days_fmt = "%d 日前に遊んだ",
     .idle_today = "今日遊んだ",
     .idle_never = "未プレイ",
+    .no_installed = "本体にインストールされたゲームはありません。",
 };
 
 constexpr More kKorean{
@@ -2549,7 +2558,7 @@ constexpr More kKorean{
     .a_clean_sub_fmt = "게임 없는 데이터 %d개, 남는 티켓 %d개",
     .a_archive = "게임 보관",
     .a_archive_sub = "공간을 비우고 아이콘은 남김",
-    .a_move = "SD ⇄ 본체 이동",
+    .a_move = "SD / 본체 이동",
     .a_move_sub = "본체 저장 메모리는 항상 확인",
     .a_plan = "대기열 계획",
     .a_plan_sub_fmt = "대기열에 %s 필요, %s 부족",
@@ -2647,6 +2656,7 @@ constexpr More kKorean{
     .idle_days_fmt = "%d일 전에 플레이",
     .idle_today = "오늘 플레이",
     .idle_never = "플레이한 적 없음",
+    .no_installed = "본체에 설치된 게임이 없습니다.",
 };
 
 constexpr More kChinese{
@@ -2813,7 +2823,7 @@ constexpr More kChinese{
     .a_clean_sub_fmt = "%d 个无主内容和 %d 个多余票据",
     .a_archive = "归档游戏",
     .a_archive_sub = "释放空间，保留图标",
-    .a_move = "移动 SD ⇄ 内存",
+    .a_move = "移动 SD / 内存",
     .a_move_sub = "主机内存总会先确认",
     .a_plan = "规划队列",
     .a_plan_sub_fmt = "队列需要 %s，还缺 %s",
@@ -2911,6 +2921,7 @@ constexpr More kChinese{
     .idle_days_fmt = "%d 天前玩过",
     .idle_today = "今天玩过",
     .idle_never = "从未玩过",
+    .no_installed = "主机上没有已安装的游戏。",
 };
 
 // In the order of LanguageName in i18n.cpp.

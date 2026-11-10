@@ -203,7 +203,8 @@ Vault::~Vault() {
 
 std::vector<Vault::User> Vault::Users() {
     std::vector<User> out;
-    if (R_FAILED(accountInitialize(AccountServiceType_Application))) return out;
+    // the application service; some systems answer only to the system one
+    if (R_FAILED(accountInitialize(AccountServiceType_Application)) && R_FAILED(accountInitialize(AccountServiceType_System))) return out;
     AccountUid uids[ACC_USER_LIST_SIZE];
     s32 n = 0;
     if (R_SUCCEEDED(accountListAllUsers(uids, ACC_USER_LIST_SIZE, &n))) {
@@ -217,6 +218,24 @@ std::vector<Vault::User> Vault::Users() {
                 accountProfileClose(&profile);
             }
             out.push_back(u);
+        }
+    }
+    if (out.empty()) {
+        accountExit();
+        if (R_SUCCEEDED(accountInitialize(AccountServiceType_System))) {
+            if (R_SUCCEEDED(accountListAllUsers(uids, ACC_USER_LIST_SIZE, &n))) {
+                for (s32 i = 0; i < n; i++) {
+                    User u;
+                    std::memcpy(u.uid, &uids[i], sizeof(u.uid));
+                    AccountProfile profile;
+                    AccountProfileBase base{};
+                    if (R_SUCCEEDED(accountGetProfile(&profile, uids[i]))) {
+                        if (R_SUCCEEDED(accountProfileGet(&profile, nullptr, &base))) u.name = base.nickname;
+                        accountProfileClose(&profile);
+                    }
+                    out.push_back(u);
+                }
+            }
         }
     }
     accountExit();
