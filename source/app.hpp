@@ -17,6 +17,7 @@
 #include "mods.hpp"
 #include "shop.hpp"
 #include "space.hpp"
+#include "sdcheck_nx.hpp"
 #include "vault.hpp"
 #include "push.hpp"
 #include "sound.hpp"
@@ -46,7 +47,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -142,6 +143,15 @@ private:
     void SpaceDialogText(std::string& title, std::string& body, std::string& primary);
     void ConfirmSpaceDialog();
     std::unique_ptr<Space> m_space;
+    // the check of the SD card (phase 17), a screen of Space and dumps (m_space_mode 2)
+    void OpenSdCheck();
+    void DrawSdCheck(NVGcontext* vg);
+    void UpdateSdCheck(u64 down, u64 held);
+    std::unique_ptr<SdChecker> m_sdcheck;
+    int m_sd_choice = 0;
+    bool m_sd_seen_done = true;
+    double m_sd_opened = 0, m_sd_result_at = -100;
+    long long m_sdc_free = -1, m_sdc_total = -1;
     int m_space_focus = 0, m_space_mode = 0, m_pick_kind = 0, m_pick_focus = 0, m_pick_first = 0, m_space_finished = 0;
     std::vector<std::pair<int, int>> m_pick_rows; // the game, and its content (dump) or -1
     std::vector<char> m_pick_marks;

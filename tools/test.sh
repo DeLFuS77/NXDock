@@ -25,6 +25,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # the MTP responder of NXDock, with a fake cable
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/mtp_test tests/mtp_test.cpp source/mtp_proto.cpp source/mtp_storage.cpp
   /tmp/mtp_test /tmp
+  # the check of the SD card, against fake cards made up here
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -o /tmp/sdcheck_test tests/sdcheck_test.cpp source/sdcheck.cpp
+  /tmp/sdcheck_test
   # clear errors and the check before installing, in every language
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp
   /tmp/errors_test

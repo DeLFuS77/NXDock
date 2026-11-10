@@ -126,6 +126,9 @@ add_executable(nxdock
     source/shop.cpp
     source/shop_load.cpp
     source/space.cpp
+    source/sdcheck.cpp
+    source/sdcheck_nx.cpp
+    source/more_sdcheck.cpp
     source/space_plan.cpp
     source/vault.cpp
     source/vault_json.cpp

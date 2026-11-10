@@ -703,6 +703,13 @@ void App::Tap(float x, float y, u64& down) {
                     m_shop_focus = it->index;
                 }
                 break;
+            case HitKind::SdChoice:
+                if (it->index >= 2 || m_sd_choice == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_sd_choice = it->index;
+                }
+                break;
             case HitKind::SpaceAction:
                 if (m_space_focus == it->index) {
                     down |= HidNpadButton_A;

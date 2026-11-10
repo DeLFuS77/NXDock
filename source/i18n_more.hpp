@@ -64,6 +64,12 @@ struct More {
     const char *wiz_screen_off, *wiz_no_app, *tour_more, *tour_count4;
     // only what is missing is installed (phase 16)
     const char *saved_fmt;
+    // the check of the SD card (phase 17)
+    const char *sd_action, *sd_action_sub, *sd_running_fmt, *sd_title, *sd_explain, *sd_risk, *sd_quick, *sd_quick_sub, *sd_full,
+        *sd_full_sub, *sd_start, *sd_stop, *sd_again, *sd_writing, *sd_reading, *sd_deleting, *sd_write_speed, *sd_read_speed,
+        *sd_left, *sd_keep_on, *sd_free_fmt, *sd_key_free, *sd_key_written, *sd_key_ok, *sd_key_bad, *sd_good_t, *sd_good_d,
+        *sd_fake_t, *sd_fake_d, *sd_bad_t, *sd_bad_d, *sd_full_t, *sd_full_d, *sd_failed_t, *sd_failed_d, *sd_stopped_t,
+        *sd_stopped, *sd_speeds_fmt;
 };
 
 const More& TrM();
