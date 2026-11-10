@@ -20,6 +20,7 @@
 #include "sdcheck_nx.hpp"
 #include "queue_report.hpp"
 #include "resume.hpp"
+#include "compress_nx.hpp"
 #include "vault.hpp"
 #include "push.hpp"
 #include "sound.hpp"
@@ -49,7 +50,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -154,6 +155,20 @@ private:
     bool m_sd_seen_done = true;
     double m_sd_opened = 0, m_sd_result_at = -100;
     long long m_sdc_free = -1, m_sdc_total = -1;
+    // compress games, experimental (phase 24), a screen of Space and dumps (m_space_mode 3)
+    void OpenCompress();
+    std::vector<int> CompressRows(const Space::View& v) const;
+    void DrawCompress(NVGcontext* vg);
+    void UpdateCompress(u64 down, u64 held);
+    void FollowCompress(const Compressor::View& c);
+    void CompressDialogText(std::string& title, std::string& body, std::string& note, std::string& primary);
+    void ConfirmCompressDialog();
+    std::unique_ptr<Compressor> m_compress;
+    Sigpatches m_sigpatches;
+    double m_compress_opened = 0;
+    int m_compress_focus = 0, m_compress_finished = 0;
+    std::vector<CompressedGame> m_compressed_marks;
+    bool m_marks_read = false;
     int m_space_focus = 0, m_space_mode = 0, m_pick_kind = 0, m_pick_focus = 0, m_pick_first = 0, m_space_finished = 0;
     std::vector<std::pair<int, int>> m_pick_rows; // the game, and its content (dump) or -1
     std::vector<char> m_pick_marks;
@@ -366,7 +381,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

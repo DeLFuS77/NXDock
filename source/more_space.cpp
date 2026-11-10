@@ -134,6 +134,10 @@ void App::DrawSpace(NVGcontext* vg) {
         DrawSdCheck(vg);
         return;
     }
+    if (m_space_mode == 3 && m_compress) {
+        DrawCompress(vg);
+        return;
+    }
     const float lx = 48, rx = 664, cw = 568;
     char line[200];
     std::snprintf(line, sizeof(line), m.sp_sd_fmt, v.storage.sd_free >= 0 ? draw::Size(u64(v.storage.sd_free)).c_str() : "?",
@@ -147,7 +151,7 @@ void App::DrawSpace(NVGcontext* vg) {
 
     // the six actions, each with what it frees or needs
     const unsigned long long need = QueueNeedsOnSd();
-    std::string sub[7], right[7];
+    std::string sub[8], right[8];
     char text[200];
     std::snprintf(text, sizeof(text), m.cl_sub_fmt, v.leftovers.contents, v.leftovers.placeholders, v.leftovers.addons, v.leftovers.tickets);
     sub[0] = v.scanned ? text : m.scanning;
@@ -173,17 +177,20 @@ void App::DrawSpace(NVGcontext* vg) {
     } else {
         sub[6] = m.sd_action_sub;
     }
-    const char* titles[7] = {m.a_clean, m.a_archive, m.a_move, m.a_plan, m.a_card, m.a_dump, m.sd_action};
-    m_space_focus = std::clamp(m_space_focus, 0, 6);
-    for (int i = 0; i < 7; i++) {
-        const bool left = i < 3;
-        const float x = left ? lx : rx, y = left ? 222 + i * 78 : 100 + (i - 3) * 78;
+    sub[7] = m.cz_action_sub;
+    right[7] = m.cz_tag;
+    const char* titles[8] = {m.a_clean, m.a_archive, m.a_move, m.a_plan, m.a_card, m.a_dump, m.sd_action, m.cz_action};
+    m_space_focus = std::clamp(m_space_focus, 0, 7);
+    for (int i = 0; i < 8; i++) {
+        // three and "Compress games" on the left, four on the right
+        const bool left = i < 3 || i == 7;
+        const float x = left ? lx : rx, y = left ? 222 + (i == 7 ? 3 : i) * 78 : 100 + (i - 3) * 78;
         draw::Panel(vg, t, x, y, cw, 66, 12);
         if (i == m_space_focus) ui::Focus(vg, t, x, y, cw, 66, 12, m_time);
         AddHit(x, y, cw, 66, HitKind::SpaceAction, i);
         const bool off = (i == 4 && !v.card) || (i == 0 && v.scanned && !v.leftovers.Any());
         nvgGlobalAlpha(vg, off ? 0.5f : 1.f);
-        DrawTileIcon(vg, i == 0 ? 6 : i == 1 ? 4 : i == 2 ? 5 : i == 3 ? 5 : i == 4 ? 0 : i == 5 ? 1 : 0, x + 18, y + 33);
+        DrawTileIcon(vg, i == 0 ? 6 : i == 1 ? 4 : i == 2 ? 5 : i == 3 ? 5 : i == 4 ? 0 : i == 5 ? 1 : i == 6 ? 0 : 5, x + 18, y + 33);
         ui::Text(vg, x + 70, y + 24, 17, t.text, titles[i]);
         nvgSave(vg);
         nvgScissor(vg, x + 70, y + 34, cw - 190, 30);
@@ -192,7 +199,7 @@ void App::DrawSpace(NVGcontext* vg) {
         ui::Text(vg, x + cw - 18, y + 33, 15, t.muted, right[i].c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         nvgGlobalAlpha(vg, 1.f);
     }
-    draw::Box(vg, lx, 456, cw, 14, t.muted, m.dumps_note);
+    draw::Box(vg, rx, 412, cw, 14, t.muted, m.dumps_note);
 
     // the work going on
     if (v.task != Space::Task::None && v.task != Space::Task::Scan) {
@@ -200,14 +207,14 @@ void App::DrawSpace(NVGcontext* vg) {
                            : v.task == Space::Task::Archive ? m.st_archiving
                            : v.task == Space::Task::Move    ? m.st_moving
                                                             : m.st_dumping;
-        draw::Panel(vg, t, lx, 500, kWidth - 96, 120, 12);
-        ui::Text(vg, lx + 22, 528, 17, t.text, what);
-        if (!v.current.empty()) ui::Text(vg, lx + 22, 554, 14, t.muted, v.current.c_str());
+        draw::Panel(vg, t, lx, 548, kWidth - 96, 104, 12);
+        ui::Text(vg, lx + 22, 570, 17, t.text, what);
+        if (!v.current.empty()) ui::Text(vg, lx + 22, 594, 14, t.muted, v.current.c_str());
         const float frac = v.total ? float(double(v.done) / double(v.total)) : 0.f;
-        ui::Progress(vg, t, lx + 22, 576, kWidth - 140, 12, frac, t.work, m_time);
+        ui::Progress(vg, t, lx + 22, 612, kWidth - 140, 12, frac, t.work, m_time);
         if (v.total) {
             std::snprintf(text, sizeof(text), "%s / %s", draw::Size(v.done).c_str(), draw::Size(v.total).c_str());
-            ui::Text(vg, kWidth - 70, 604, 14, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            ui::Text(vg, kWidth - 70, 640, 14, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         }
     }
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}};
@@ -347,15 +354,23 @@ void App::UpdateSpace(u64 down, u64 held) {
         UpdateSdCheck(down, held);
         return;
     }
-    // the actions: three on the left, four on the right
+    if (m_space_mode == 3 && m_compress) {
+        UpdateCompress(down, held);
+        return;
+    }
+    // the actions: four on the left (0, 1, 2, 7), four on the right (3 to 6)
     {
-        const bool right_col = m_space_focus >= 3;
-        const int row = right_col ? m_space_focus - 3 : m_space_focus;
-        const int rows = right_col ? 4 : 3;
-        if (Repeat(down, held, HidNpadButton_AnyUp) && row > 0) m_space_focus--;
-        if (Repeat(down, held, HidNpadButton_AnyDown) && row < rows - 1) m_space_focus++;
-        if (Repeat(down, held, HidNpadButton_AnyLeft) && right_col) m_space_focus = std::min(2, row) ;
-        if (Repeat(down, held, HidNpadButton_AnyRight) && !right_col) m_space_focus = 3 + row;
+        static constexpr int kLeft[] = {0, 1, 2, 7}, kRight[] = {3, 4, 5, 6};
+        const bool right_col = m_space_focus >= 3 && m_space_focus <= 6;
+        const int* col = right_col ? kRight : kLeft;
+        int row = 0;
+        for (int k = 0; k < 4; k++) {
+            if (col[k] == m_space_focus) row = k;
+        }
+        if (Repeat(down, held, HidNpadButton_AnyUp) && row > 0) m_space_focus = col[row - 1];
+        if (Repeat(down, held, HidNpadButton_AnyDown) && row < 3) m_space_focus = col[row + 1];
+        if (Repeat(down, held, HidNpadButton_AnyLeft) && right_col) m_space_focus = kLeft[row];
+        if (Repeat(down, held, HidNpadButton_AnyRight) && !right_col) m_space_focus = kRight[row];
     }
     if (down & HidNpadButton_B) {
         m_more = MoreScreen::Tiles;
@@ -367,6 +382,11 @@ void App::UpdateSpace(u64 down, u64 held) {
     }
     if ((down & HidNpadButton_A) && m_space_focus == 6) {
         OpenSdCheck();
+        return;
+    }
+    if ((down & HidNpadButton_A) && m_space_focus == 7) {
+        if (!v.scanned) return;
+        OpenCompress();
         return;
     }
     if (!(down & HidNpadButton_A) || !v.scanned) return;

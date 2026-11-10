@@ -8,6 +8,7 @@
 #include "errors.hpp"
 #include "i18n_more.hpp"
 #include "log.hpp"
+#include "net.hpp"
 #include "romfs_lz4.hpp"
 #include "yati/nx/crypto.hpp"
 #include "yati/nx/es.hpp"
@@ -365,6 +366,7 @@ bool Compressor::StartCompress(unsigned long long app) {
     Join();
     m_stop = false;
     m_thread = std::thread([this, app] {
+        net::Boost awake; // the console stays awake while a game is written again
         const More& m = TrM();
         std::string error;
         u64 saved = 0;

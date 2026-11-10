@@ -184,7 +184,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowSaveCopy, kRowNotifyDone, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowSaveCopy, kRowNotifyDone, kRowCompress, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -456,6 +456,16 @@ void App::ActivateSetting(int row) {
         case kRowNotifyDone:
             m_ui.notify_done = !m_ui.notify_done;
             m_ui.Save();
+            break;
+        case kRowCompress:
+            // turned on only after its window (24A); off at once
+            if (m_ui.compress_on) {
+                m_ui.compress_on = false;
+                m_ui.Save();
+            } else {
+                m_dialog = Dialog{};
+                m_dialog.kind = DialogKind::CompressIntro;
+            }
             break;
         case kRowAnim:
             m_ui.anim = (m_ui.anim + 1) % 3;
@@ -765,6 +775,13 @@ void App::Tap(float x, float y, u64& down) {
                     down |= HidNpadButton_A;
                 } else {
                     m_shop_focus = it->index;
+                }
+                break;
+            case HitKind::CompressRow:
+                if (m_compress_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_compress_focus = it->index;
                 }
                 break;
             case HitKind::VersionChip:
@@ -1988,11 +2005,19 @@ void App::DrawDetail(NVGcontext* vg) {
     facts.push_back({s.will_take, SizeText(picked_size), t.text});
     if (firmware) facts.push_back({s.firmware, FirmwareText(firmware) + " " + s.or_newer, t.text});
     const bool versions = g.installed.base && !m_shop_active && !VersionRows(g).empty();
+    if (!m_marks_read) {
+        m_marks_read = true;
+        m_compressed_marks = Compressor::Marks();
+    }
+    const bool compressed = std::any_of(m_compressed_marks.begin(), m_compressed_marks.end(), [&g](const CompressedGame& c) {
+        return c.app_id == g.title_id;
+    });
     if (g.installed.base) {
         facts.push_back({s.on_console, g.installed.patch ? "v" + std::to_string(g.installed.patch) : std::string("v0"), t.ok});
     } else {
         facts.push_back({s.on_console, "—", t.muted});
     }
+    if (compressed && g.installed.base) facts.insert(facts.end() - 1, {TrM().cz_badge, "LZ4", t.work}); // 24A
     float fx = rx;
     const float fy = cy + 62;
     for (size_t i = 0; i < facts.size(); i++) {
@@ -2968,6 +2993,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {TrM().anim_row, m_ui.anim == 2 ? TrM().anim_none : m_ui.anim == 1 ? TrM().anim_soft : TrM().anim_full, m_ui.anim != 2},
         {TrM().sc_row, m_ui.save_copy ? s.yes_word : s.no_word, m_ui.save_copy},
         {TrM().qw_notify_row, m_ui.notify_done ? s.yes_word : s.no_word, m_ui.notify_done},
+        {TrM().cz_row, m_ui.compress_on ? s.yes_word : s.no_word, m_ui.compress_on},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
@@ -3794,6 +3820,12 @@ void App::DrawDialog(NVGcontext* vg) {
             title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             error = m_dialog.from;
             break;
+        case DialogKind::CompressIntro:
+        case DialogKind::CompressGo:
+        case DialogKind::CompressUndo:
+        case DialogKind::CompressInfo:
+            CompressDialogText(title, body, note, primary);
+            break;
         case DialogKind::Versions: {
             const More& m = TrM();
             const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
@@ -4271,6 +4303,11 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::WebCancel:
             m_queue->Remove(m_dialog.entry); // a waiting one goes; the one installing is cancelled
+            break;
+        case DialogKind::CompressIntro:
+        case DialogKind::CompressGo:
+        case DialogKind::CompressUndo:
+            ConfirmCompressDialog();
             break;
         case DialogKind::Resume:
             if (m_resume) AddJobs(ResumeJobs(*m_resume, m_link.CurrentConfig().key));

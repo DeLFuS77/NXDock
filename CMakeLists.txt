@@ -135,6 +135,7 @@ add_executable(nxdock
     source/compress_nx.cpp
     source/sdcheck_nx.cpp
     source/more_sdcheck.cpp
+    source/more_compress.cpp
     source/space_plan.cpp
     source/vault.cpp
     source/vault_json.cpp
