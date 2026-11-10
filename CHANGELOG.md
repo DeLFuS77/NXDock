@@ -78,3 +78,9 @@
 - The cover in focus lifts a little, leans for a moment toward where the
   focus came from and a light passes over it once. Tabs slide in from their
   side, and the page of a game grows out of its cover (and goes back into it).
+- Moving fast in a long library: an A–Z bar on the right edge (tap it or drag
+  a finger along it), the right stick jumps to the letter before or after, and
+  a big letter in the middle says where you are. Holding up or down goes twice
+  as fast after a second. − opens Options: the order (A–Z, size, or not
+  installed first) and Update all when there is something to update. The
+  order and the game in focus are remembered for the next time.

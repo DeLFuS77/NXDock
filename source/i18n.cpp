@@ -154,6 +154,10 @@ constexpr Strings kEnglish{
     "Sounds",
     "All installed · %d · %s",
     "%d installed · %d with an error",
+    "Options",
+    "Order: A–Z",
+    "Order: size",
+    "Order: not installed first",
 };
 
 constexpr Strings kSpanish{
@@ -303,6 +307,10 @@ constexpr Strings kSpanish{
     "Sonidos",
     "Todo instalado · %d · %s",
     "%d instalados · %d con error",
+    "Opciones",
+    "Orden: A–Z",
+    "Orden: tamaño",
+    "Orden: sin instalar primero",
 };
 
 constexpr Strings kFrench{
@@ -533,6 +541,10 @@ constexpr Strings kFrench{
     "Sons",
     "Tout est installé · %d · %s",
     "%d installés · %d en erreur",
+    "Options",
+    "Ordre : A–Z",
+    "Ordre : taille",
+    "Ordre : non installés d'abord",
 };
 
 constexpr Strings kGerman{
@@ -763,6 +775,10 @@ constexpr Strings kGerman{
     "Töne",
     "Alles installiert · %d · %s",
     "%d installiert · %d mit Fehler",
+    "Optionen",
+    "Reihenfolge: A–Z",
+    "Reihenfolge: Größe",
+    "Reihenfolge: nicht installiert zuerst",
 };
 
 constexpr Strings kItalian{
@@ -993,6 +1009,10 @@ constexpr Strings kItalian{
     "Suoni",
     "Tutto installato · %d · %s",
     "%d installati · %d con errore",
+    "Opzioni",
+    "Ordine: A–Z",
+    "Ordine: dimensione",
+    "Ordine: prima i non installati",
 };
 
 constexpr Strings kPortuguese{
@@ -1223,6 +1243,10 @@ constexpr Strings kPortuguese{
     "Sons",
     "Tudo instalado · %d · %s",
     "%d instalados · %d com erro",
+    "Opções",
+    "Ordem: A–Z",
+    "Ordem: tamanho",
+    "Ordem: por instalar primeiro",
 };
 
 constexpr Strings kDutch{
@@ -1453,6 +1477,10 @@ constexpr Strings kDutch{
     "Geluiden",
     "Alles geïnstalleerd · %d · %s",
     "%d geïnstalleerd · %d met een fout",
+    "Opties",
+    "Volgorde: A–Z",
+    "Volgorde: grootte",
+    "Volgorde: niet geïnstalleerd eerst",
 };
 
 constexpr Strings kRussian{
@@ -1683,6 +1711,10 @@ constexpr Strings kRussian{
     "Звуки",
     "Всё установлено · %d · %s",
     "Установлено: %d · с ошибкой: %d",
+    "Параметры",
+    "Порядок: A–Z",
+    "Порядок: размер",
+    "Порядок: сначала неустановленные",
 };
 
 constexpr Strings kJapanese{
@@ -1913,6 +1945,10 @@ constexpr Strings kJapanese{
     "効果音",
     "すべてインストールしました · %d · %s",
     "%d 件インストール · %d 件エラー",
+    "オプション",
+    "並び順：A–Z",
+    "並び順：サイズ",
+    "並び順：未インストールを先に",
 };
 
 constexpr Strings kKorean{
@@ -2143,6 +2179,10 @@ constexpr Strings kKorean{
     "효과음",
     "모두 설치됨 · %d · %s",
     "%d개 설치됨 · %d개 오류",
+    "옵션",
+    "정렬: A–Z",
+    "정렬: 크기",
+    "정렬: 미설치 먼저",
 };
 
 constexpr Strings kChinese{
@@ -2373,6 +2413,10 @@ constexpr Strings kChinese{
     "音效",
     "全部已安装 · %d · %s",
     "已安装 %d 个 · %d 个出错",
+    "选项",
+    "排序：A–Z",
+    "排序：大小",
+    "排序：未安装优先",
 };
 
 const Strings* g_strings = &kEnglish;

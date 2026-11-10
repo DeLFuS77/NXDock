@@ -32,7 +32,7 @@ public:
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
-                         InstalledView, InstalledRow, DialogBack, DialogButton };
+                         InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -49,6 +49,24 @@ private:
     void UpdateDetail(u64 down, u64 held);
     void OpenDetail(int view_index);
     void RebuildView();
+    std::string FocusedKey() const;
+    // moving fast in a long library (5A): the A-Z bar, the right stick by letter, a big letter
+    // while jumping, and the Options menu on − (the order, Update all)
+    bool AzBarShown() const;
+    void JumpToLetter(int slot, int dir); // dir 0: to `slot`; -1 / 1: the letter before / after
+    void DrawAzBar(NVGcontext* vg);
+    void DrawJumpLetter(NVGcontext* vg);
+    void DrawMenu(NVGcontext* vg);
+    void UpdateMenu(u64 down, u64 held);
+    void ActivateMenu(int row);
+    void AskUpdateAll();
+    bool m_menu = false;
+    int m_menu_focus = 0;
+    bool m_az_touch = false;
+    int m_jump_letter = -1;
+    double m_jump_at = -100;
+    std::string m_keep_key;      // the game to keep in focus when the view is rebuilt
+    bool m_focus_restored = false;
     void FollowLink();
     void CheckSdSpace();
     void Notice(const std::string& text);
@@ -199,6 +217,7 @@ private:
     Dialog m_dialog;
     double m_time = 0;
     double m_next_repeat = 0;
+    double m_held_since = 0;
     u64 m_held_dir = 0;
     bool m_quit = false;
 

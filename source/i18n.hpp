@@ -46,6 +46,7 @@ struct Strings {
     const char *qr_scan, *qr_notice;
     const char *sounds_row;
     const char *finish_all, *finish_some_failed;
+    const char *options, *sort_az, *sort_size, *sort_missing;
 };
 
 // Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,
