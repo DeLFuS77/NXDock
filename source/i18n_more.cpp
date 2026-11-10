@@ -187,7 +187,7 @@ constexpr More kEnglish{
     .dumps_note = "Dumps go to the uploads folder of the library app and show in the library when they end.",
     .scanning = "Reading what is installed…",
     .clean_title = "Clean leftovers?",
-    .clean_body_fmt = "%d contents no game uses (%s) and %d tickets of games that are not on the console go. Games, updates, DLC and archived games are not touched.",
+    .clean_body_fmt = "%d contents no game uses (%s) and %d tickets of games that are not on the console are removed. Games, updates, DLC and archived games are not touched.",
     .clean_go = "Clean",
     .archive_title_fmt = "Archive %d games?",
     .archive_body_fmt = "Their content goes and frees %s; the icons stay on the HOME menu, and a game comes back from your library when you want it. Saves are not touched.",
