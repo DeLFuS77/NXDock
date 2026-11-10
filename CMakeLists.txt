@@ -128,6 +128,7 @@ add_executable(nxdock
     source/space.cpp
     source/sdcheck.cpp
     source/queue_report.cpp
+    source/resume.cpp
     source/sdcheck_nx.cpp
     source/more_sdcheck.cpp
     source/space_plan.cpp

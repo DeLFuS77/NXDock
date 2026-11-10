@@ -393,6 +393,7 @@ void App::InstallMarkedFiles() {
         job.label = e.parts.size() > 1 ? std::string(m.t_files) + " · " + std::to_string(e.parts.size()) : m.t_files;
         job.format = e.format;
         job.origin = InstallJob::Origin::File;
+        job.resumable = true; // a journal while it installs (23A)
         job.parts = e.parts;
         job.file_id = "file:" + e.path;
         job.size = e.size;

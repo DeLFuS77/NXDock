@@ -8,6 +8,7 @@
 #include "usb_tinfoil.hpp"
 #include "i18n_more.hpp"
 #include "mods.hpp"
+#include "resume.hpp"
 #include "http.hpp"
 #include <yyjson.h>
 
@@ -2252,6 +2253,7 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
         case CatalogFile::Kind::Dlc: job.label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
     }
     job.version = f.version;
+    job.resumable = !m_shop_active; // a journal while it installs (23A); a shop's key is not written down
     job.cover = g.cover;
     job.color_key = g.key;
     job.file_id = f.id;
@@ -2436,8 +2438,22 @@ void App::FollowQueueWeb() {
     }
 }
 
+void App::CheckResume() {
+    m_resume_checked = true;
+    auto state = std::make_unique<ResumeState>();
+    if (!LoadResume(kResumeDir, *state)) return;
+    m_resume = std::move(state);
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::Resume;
+    m_dialog.focus = 1;
+}
+
 void App::FollowQueueAsk() {
     if (!m_queue || m_dialog.kind != DialogKind::None || m_wizard) return;
+    if (!m_resume_checked && !TourActive()) {
+        CheckResume();
+        if (m_dialog.kind != DialogKind::None) return;
+    }
     if (m_mods_after) {
         // the update asked about ended: Cheats and mods of the game, for the new version (19A)
         bool pending = false;
@@ -3823,6 +3839,31 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = m.dg_go;
             break;
         }
+        case DialogKind::Resume: {
+            const More& m = TrM();
+            title = m.rs_title;
+            if (m_resume) {
+                const auto& f = m_resume->job.fields;
+                const auto get = [&f](const char* k) {
+                    auto it = f.find(k);
+                    return it == f.end() ? std::string() : it->second;
+                };
+                body = get("game") + (get("label").empty() ? "" : " \xC2\xB7 " + get("label"));
+                long long bytes = 0;
+                const int parts = ResumeChecked(*m_resume, &bytes);
+                char text[300];
+                std::snprintf(text, sizeof(text), m.rs_parts_fmt, parts, SizeText(u64(bytes)).c_str());
+                body += std::string("\n") + text;
+                if (!m_resume->waiting.empty()) {
+                    std::snprintf(text, sizeof(text), m.rs_waiting_fmt, int(m_resume->waiting.size()));
+                    body += std::string("\n") + text;
+                }
+            }
+            note = m.rs_note;
+            primary = m.rs_go;
+            cancel_label = m.rs_discard;
+            break;
+        }
         case DialogKind::WebCancel: {
             const More& m = TrM();
             char text[300];
@@ -4159,7 +4200,12 @@ void App::UpdateDialog(u64 down, u64 held) {
     }
     const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
     if (declined) {
-        if (m_dialog.kind == DialogKind::SaveCopyAsk || m_dialog.kind == DialogKind::ModsAsk) {
+        if (m_dialog.kind == DialogKind::Resume) {
+            // discarded: every placeholder of the journal goes, and the journal
+            if (m_resume) DiscardResume(*m_resume);
+            m_resume.reset();
+            Notice(TrM().rs_discarded);
+        } else if (m_dialog.kind == DialogKind::SaveCopyAsk || m_dialog.kind == DialogKind::ModsAsk) {
             m_queue->Answer(false);
         } else if (m_dialog.kind == DialogKind::Push) {
             for (const auto& id : m_dialog.push) m_push->Answer(id, false);
@@ -4225,6 +4271,10 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::WebCancel:
             m_queue->Remove(m_dialog.entry); // a waiting one goes; the one installing is cancelled
+            break;
+        case DialogKind::Resume:
+            if (m_resume) AddJobs(ResumeJobs(*m_resume, m_link.CurrentConfig().key));
+            m_resume.reset();
             break;
         case DialogKind::ModsAsk:
             // the update goes on; when it ends, Cheats and mods opens for the new version

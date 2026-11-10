@@ -80,6 +80,8 @@ struct More {
     // the queue on the web and its end on the phone (phases 21 and 22)
     const char *qw_notify_row, *qw_paused, *qw_paused_web, *qw_resumed, *qw_pause, *qw_go_on, *qw_cancel_title, *qw_cancel_body, *qw_cancel_go,
         *qw_keep;
+    // going on after the console went off (phase 23)
+    const char *rs_title, *rs_parts_fmt, *rs_waiting_fmt, *rs_note, *rs_go, *rs_discard, *rs_discarded;
 };
 
 const More& TrM();

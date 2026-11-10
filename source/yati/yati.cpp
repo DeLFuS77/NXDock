@@ -406,6 +406,8 @@ struct Yati {
     Config config{};
     // NXDock: see ConfigOverride::allow_newer_firmware.
     bool allow_newer_firmware{};
+    // NXDock: see ConfigOverride::resume.
+    ConfigOverride::Resume resume{};
     keys::Keys keys{};
 
     // tracks what Setup() actually managed to acquire. these services are
@@ -1370,6 +1372,7 @@ Result Yati::Setup(const ConfigOverride& override) {
     config.title_ids = override.title_ids;
     config.repair = override.repair.value_or(false);
     allow_newer_firmware = override.allow_newer_firmware;
+    resume = override.resume;
     storage_id = config.sd_card_install ? NcmStorageId_SdCard : NcmStorageId_BuiltInUser;
 
     R_TRY(source->GetOpenResult());
@@ -1480,6 +1483,28 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
     if (KeptOrCopied(tickets, nca)) {
         R_SUCCEED();
     }
+    // NXDock: a part checked before the console went off stays as its placeholder (23A)
+    if (resume.before) {
+        NcmPlaceHolderId ph{};
+        if (resume.before(nca.content_id, ph, std::addressof(nca.header), sizeof(nca.header))) {
+            bool has{};
+            s64 size{};
+            if (R_SUCCEEDED(ncmContentStorageHasPlaceHolder(std::addressof(cs), std::addressof(has), std::addressof(ph))) && has &&
+                R_SUCCEEDED(ncmContentStorageGetSizeFromPlaceHolderId(std::addressof(cs), std::addressof(size), std::addressof(ph))) && size > 0 &&
+                R_SUCCEEDED(HasRequiredTicket(nca.header, tickets))) {
+                nca.placeholder_id = ph;
+                std::memcpy(nca.hash, std::addressof(nca.content_id), sizeof(nca.content_id));
+                pbox->AddSaved(u64(size));
+                pbox->NcaChecked();
+                log_write("[NXDock] %s kept from before the console went off\n", nca.name.c_str());
+                R_SUCCEED();
+            }
+            // not usable: it goes, and the part comes again
+            if (has) {
+                ncmContentStorageDeletePlaceHolder(std::addressof(cs), std::addressof(ph));
+            }
+        }
+    }
     if (config.skip_if_already_installed || config.ticket_only || config.repair) {
         R_TRY(ncmContentStorageHas(std::addressof(cs), std::addressof(nca.skipped), std::addressof(nca.content_id)));
         if (nca.skipped) {
@@ -1496,6 +1521,9 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
     R_TRY(ncmContentStorageGeneratePlaceHolderId(std::addressof(cs), std::addressof(nca.placeholder_id)));
     log_write("creating placeholder\n");
     R_TRY(ncmContentStorageCreatePlaceHolder(std::addressof(cs), std::addressof(nca.content_id), std::addressof(nca.placeholder_id), nca.size));
+    if (resume.part) {
+        resume.part(nca.content_id, nca.placeholder_id, nca.size, false, nullptr, 0);
+    }
 
     log_write("opening thread\n");
     ThreadData t_data{this, tickets, std::addressof(nca)};
@@ -1585,6 +1613,11 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
         }
     } else {
         log_write("skipping nca sha256 verify\n");
+    }
+    if (resume.part) {
+        // on the card for good before the journal says it is checked (23A)
+        ncmContentStorageFlushPlaceHolder(std::addressof(cs));
+        resume.part(nca.content_id, nca.placeholder_id, nca.size, true, std::addressof(nca.header), sizeof(nca.header));
     }
     pbox->NcaChecked();
 
@@ -1947,6 +1980,13 @@ Result Yati::CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span
         for (const auto& packed : cnmt.infos) {
             u64 size;
             ncmContentInfoSizeToU64(&packed.info, &size);
+            if (resume.before) {
+                // a part checked before the console went off is on the card already (23A)
+                NcmPlaceHolderId ph{};
+                if (resume.before(packed.info.content_id, ph, nullptr, 0)) {
+                    continue;
+                }
+            }
             if (config.repair || config.reuse_installed) {
                 // a repair, or an install that keeps what is there (16A), writes only what the
                 // storage does not have

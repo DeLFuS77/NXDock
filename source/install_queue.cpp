@@ -15,6 +15,7 @@
 #include "yati/container/nsp.hpp"
 #include "yati/container/xci.hpp"
 #include "yati/yati.hpp"
+#include "resume.hpp"
 #include "log.hpp"
 
 #include <switch.h>
@@ -206,6 +207,98 @@ void InstallQueue::Remove(int id) {
         }
         return;
     }
+}
+
+namespace {
+
+ResumeJob ToResume(const InstallJob& j) {
+    ResumeJob r;
+    auto& f = r.fields;
+    f["game"] = j.game;
+    f["label"] = j.label;
+    f["cover"] = j.cover;
+    f["color"] = j.color_key;
+    f["file"] = j.file_id;
+    f["url"] = j.url;
+    f["format"] = j.format;
+    f["origin"] = std::to_string(int(j.origin));
+    f["kind"] = std::to_string(int(j.kind));
+    f["title"] = std::to_string(j.title_id);
+    f["size"] = std::to_string(j.size);
+    f["nand"] = j.nand ? "1" : "0";
+    f["system"] = std::to_string(j.required_system);
+    f["version"] = std::to_string(j.version);
+    f["downgrade"] = j.downgrade ? "1" : "0";
+    f["firmware_ok"] = j.firmware_ok ? "1" : "0";
+    r.parts = j.parts;
+    return r;
+}
+
+InstallJob FromResume(const ResumeJob& r, const std::string& key) {
+    const auto get = [&r](const char* k) {
+        auto it = r.fields.find(k);
+        return it == r.fields.end() ? std::string() : it->second;
+    };
+    InstallJob j;
+    j.game = get("game");
+    j.label = get("label");
+    j.cover = get("cover");
+    j.color_key = get("color");
+    j.file_id = get("file");
+    j.url = get("url");
+    j.format = get("format");
+    j.origin = InstallJob::Origin(std::atoi(get("origin").c_str()));
+    j.kind = CatalogFile::Kind(std::atoi(get("kind").c_str()));
+    j.title_id = std::strtoull(get("title").c_str(), nullptr, 10);
+    j.size = std::strtoull(get("size").c_str(), nullptr, 10);
+    j.nand = get("nand") == "1";
+    j.required_system = u32(std::strtoul(get("system").c_str(), nullptr, 10));
+    j.version = u32(std::strtoul(get("version").c_str(), nullptr, 10));
+    j.downgrade = get("downgrade") == "1";
+    j.firmware_ok = get("firmware_ok") == "1";
+    j.checked = true; // asked about before the console went off
+    j.parts = r.parts;
+    j.resumable = true;
+    if (j.origin == InstallJob::Origin::Library) j.key = key;
+    return j;
+}
+
+} // namespace
+
+std::vector<InstallJob> ResumeJobs(const ResumeState& state, const std::string& key) {
+    std::vector<InstallJob> jobs;
+    jobs.push_back(FromResume(state.job, key));
+    jobs.back().resumed = true;
+    for (const auto& w : state.waiting) jobs.push_back(FromResume(w, key));
+    return jobs;
+}
+
+namespace {
+
+// The placeholders of these parts deleted, where they are.
+void DeletePlaceholders(const std::vector<ResumePart>& parts) {
+    if (parts.empty()) return;
+    if (R_SUCCEEDED(ncmInitialize())) {
+        for (const bool sd : {true, false}) {
+            NcmContentStorage cs{};
+            if (R_FAILED(ncmOpenContentStorage(&cs, sd ? NcmStorageId_SdCard : NcmStorageId_BuiltInUser))) continue;
+            for (const auto& p : parts) {
+                NcmPlaceHolderId ph{};
+                if (p.sd != sd || !ResumeUnhex(p.placeholder, &ph, sizeof(ph))) continue;
+                bool has = false;
+                if (R_SUCCEEDED(ncmContentStorageHasPlaceHolder(&cs, &has, &ph)) && has) ncmContentStorageDeletePlaceHolder(&cs, &ph);
+            }
+            ncmContentStorageClose(&cs);
+        }
+        ncmExit();
+    }
+}
+
+} // namespace
+
+void DiscardResume(const ResumeState& state) {
+    DeletePlaceholders(state.parts);
+    ClearResume(kResumeDir);
 }
 
 void InstallQueue::SetPaused(bool paused) {
@@ -568,6 +661,27 @@ void InstallQueue::RunJob(InstallJob& job) {
         go_on = CopyBefore(job.title_id & ~0x1FFFull, job.downgrade ? 3 : job.repair.empty() ? 0 : 1, job.version, job.game);
     }
     Result rc = go_on ? Result(0) : Result(Result_TransferCancelled);
+    // the journal, to go on if the console goes off (23A): files from the library or a disk
+    ResumeState journal;
+    std::mutex journal_mutex;
+    const bool journaled = go_on && job.resumable && (job.origin == InstallJob::Origin::Library || job.origin == InstallJob::Origin::File);
+    if (journaled) {
+        if (job.resumed && LoadResume(kResumeDir, journal)) {
+            // parts cut half way are written again: their placeholders go now
+            DeletePlaceholders(ResumeTakeCut(journal));
+        } else {
+            journal = ResumeState{};
+        }
+        journal.job = ToResume(job);
+        journal.waiting.clear();
+        {
+            std::lock_guard lock(m_mutex);
+            for (const auto& w : m_jobs) {
+                if (w.state == InstallJob::State::Waiting && w.resumable) journal.waiting.push_back(ToResume(w));
+            }
+        }
+        SaveResume(kResumeDir, journal);
+    }
     if (go_on) {
         // the source of the file, from where it comes
         std::unique_ptr<sphaira::yati::source::Base> holder;
@@ -617,6 +731,26 @@ void InstallQueue::RunJob(InstallJob& job) {
                 config.allow_newer_firmware = job.firmware_ok;
                 // going back to an older version, asked for on the page of the game (20A)
                 if (job.downgrade) config.allow_downgrade = true;
+                if (journaled) {
+                    const bool sd = !job.nand;
+                    config.resume.part = [&journal, &journal_mutex, sd](const NcmContentId& cid, const NcmPlaceHolderId& ph, s64 size, bool checked,
+                                                                        const void* header, size_t header_size) {
+                        std::lock_guard lock(journal_mutex);
+                        const std::string id = ResumeHex(&cid, sizeof(cid));
+                        // the header first: a part is said checked only once its header is kept
+                        const bool kept = checked && (!header || SaveResumeHeader(kResumeDir, id, header, header_size));
+                        ResumeNote(journal, id, ResumeHex(&ph, sizeof(ph)), size, kept, sd);
+                        SaveResume(kResumeDir, journal);
+                    };
+                    config.resume.before = [&journal, &journal_mutex, sd](const NcmContentId& cid, NcmPlaceHolderId& ph, void* header,
+                                                                          size_t header_size) {
+                        std::lock_guard lock(journal_mutex);
+                        const std::string id = ResumeHex(&cid, sizeof(cid));
+                        std::string placeholder;
+                        if (!ResumeLookup(journal, id, sd, placeholder) || !ResumeUnhex(placeholder, &ph, sizeof(ph))) return false;
+                        return !header || LoadResumeHeader(kResumeDir, id, header, header_size);
+                    };
+                }
                 if (!job.repair.empty()) {
                     // a repair: the damaged parts go first; only what is missing then comes
                     config.repair = true;
@@ -633,6 +767,11 @@ void InstallQueue::RunJob(InstallJob& job) {
     }
     log_write("[NXDock] result 0x%X\n", rc);
     nxdock_log_close();
+    if (journaled) {
+        // the job ended, well or not: its placeholders that were not registered go with the journal
+        std::lock_guard lock(journal_mutex);
+        DiscardResume(journal);
+    }
 
     job.seconds = Now() - m_started;
     job.written = box.WrittenBytes();

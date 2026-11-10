@@ -19,6 +19,7 @@
 #include "space.hpp"
 #include "sdcheck_nx.hpp"
 #include "queue_report.hpp"
+#include "resume.hpp"
 #include "vault.hpp"
 #include "push.hpp"
 #include "sound.hpp"
@@ -365,7 +366,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -398,6 +399,10 @@ private:
     bool m_report_busy = false;
     std::vector<int> m_report_jobs;
     std::vector<QueueCommand> m_web_cancels; // cancels the web asked for, asked about one by one
+    // an install cut by the console going off, found when NXDock opens (23A)
+    void CheckResume();
+    bool m_resume_checked = false;
+    std::unique_ptr<ResumeState> m_resume;
     // the versions of a game the library has, to go back to an older one (20A)
     void OpenVersions();
     std::vector<int> VersionRows(const Game& g) const; // its updates, the newest first

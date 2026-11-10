@@ -355,6 +355,13 @@ constexpr More kEnglish{
     .qw_cancel_body = "It was asked from the library app. Cancel the install? What was written of it is deleted: nothing stays half installed.",
     .qw_cancel_go = "Cancel the install",
     .qw_keep = "Keep installing",
+    .rs_title = "An install stopped when the console went off",
+    .rs_parts_fmt = "%d parts (%s) were written and checked: they stay, and the rest comes.",
+    .rs_waiting_fmt = "%d more waited after it, and come too.",
+    .rs_note = "Nothing was registered: the console is as it was. Discard deletes what was written, leaving nothing behind.",
+    .rs_go = "Go on where it stopped",
+    .rs_discard = "Discard",
+    .rs_discarded = "Discarded: nothing was left behind.",
 };
 
 constexpr More kSpanish{
@@ -703,6 +710,13 @@ constexpr More kSpanish{
     .qw_cancel_body = "Se ha pedido desde la app de la biblioteca. ¿Cancelar la instalación? Lo que se haya escrito se borra: no queda nada a medias.",
     .qw_cancel_go = "Cancelar la instalación",
     .qw_keep = "Seguir instalando",
+    .rs_title = "Una instalación se cortó al apagarse la consola",
+    .rs_parts_fmt = "Se escribieron y comprobaron %d partes (%s): se quedan, y viene el resto.",
+    .rs_waiting_fmt = "Detrás esperaban %d más, que también vienen.",
+    .rs_note = "No se registró nada: la consola está como estaba. Descartar borra lo escrito sin dejar restos.",
+    .rs_go = "Seguir donde se quedó",
+    .rs_discard = "Descartar",
+    .rs_discarded = "Descartado: no queda ningún resto.",
 };
 
 constexpr More kFrench{
@@ -1051,6 +1065,13 @@ constexpr More kFrench{
     .qw_cancel_body = "C'est demandé depuis l'appli de la bibliothèque. Annuler l'installation ? Ce qui a été écrit est supprimé : rien ne reste à moitié installé.",
     .qw_cancel_go = "Annuler l'installation",
     .qw_keep = "Continuer l'installation",
+    .rs_title = "Une installation s'est arrêtée quand la console s'est éteinte",
+    .rs_parts_fmt = "%d parties (%s) ont été écrites et vérifiées : elles restent, et le reste arrive.",
+    .rs_waiting_fmt = "%d autres attendaient après, et arrivent aussi.",
+    .rs_note = "Rien n'a été enregistré : la console est comme avant. Abandonner supprime ce qui a été écrit, sans laisser de trace.",
+    .rs_go = "Reprendre où ça s'est arrêté",
+    .rs_discard = "Abandonner",
+    .rs_discarded = "Abandonné : il ne reste rien.",
 };
 
 constexpr More kGerman{
@@ -1399,6 +1420,13 @@ constexpr More kGerman{
     .qw_cancel_body = "Es wurde in der Bibliotheks-App verlangt. Installation abbrechen? Was davon geschrieben wurde, wird gelöscht: nichts bleibt halb installiert.",
     .qw_cancel_go = "Installation abbrechen",
     .qw_keep = "Weiter installieren",
+    .rs_title = "Eine Installation brach ab, als die Konsole ausging",
+    .rs_parts_fmt = "%d Teile (%s) wurden geschrieben und geprüft: sie bleiben, der Rest kommt.",
+    .rs_waiting_fmt = "Danach warteten noch %d weitere, die auch kommen.",
+    .rs_note = "Nichts wurde registriert: Die Konsole ist wie vorher. Verwerfen löscht das Geschriebene ohne Reste.",
+    .rs_go = "Dort weitermachen, wo es aufhörte",
+    .rs_discard = "Verwerfen",
+    .rs_discarded = "Verworfen: nichts ist übrig geblieben.",
 };
 
 constexpr More kItalian{
@@ -1747,6 +1775,13 @@ constexpr More kItalian{
     .qw_cancel_body = "È stato chiesto dall'app della libreria. Annullare l'installazione? Ciò che è stato scritto viene eliminato: nulla resta a metà.",
     .qw_cancel_go = "Annulla l'installazione",
     .qw_keep = "Continua a installare",
+    .rs_title = "Un'installazione si è interrotta quando la console si è spenta",
+    .rs_parts_fmt = "%d parti (%s) sono state scritte e controllate: restano, e arriva il resto.",
+    .rs_waiting_fmt = "Dopo ne aspettavano altre %d, che arrivano anche loro.",
+    .rs_note = "Non è stato registrato nulla: la console è com'era. Scarta elimina ciò che è stato scritto, senza lasciare resti.",
+    .rs_go = "Riprendi da dove si è fermata",
+    .rs_discard = "Scarta",
+    .rs_discarded = "Scartato: non resta nulla.",
 };
 
 constexpr More kPortuguese{
@@ -2095,6 +2130,13 @@ constexpr More kPortuguese{
     .qw_cancel_body = "Foi pedido pelo app da biblioteca. Cancelar a instalação? O que foi gravado é apagado: nada fica pela metade.",
     .qw_cancel_go = "Cancelar a instalação",
     .qw_keep = "Continuar instalando",
+    .rs_title = "Uma instalação parou quando o console desligou",
+    .rs_parts_fmt = "%d partes (%s) foram gravadas e verificadas: ficam, e o resto vem.",
+    .rs_waiting_fmt = "Depois esperavam mais %d, que também vêm.",
+    .rs_note = "Nada foi registrado: o console está como estava. Descartar apaga o que foi gravado, sem deixar restos.",
+    .rs_go = "Continuar de onde parou",
+    .rs_discard = "Descartar",
+    .rs_discarded = "Descartado: não ficou nada.",
 };
 
 constexpr More kDutch{
@@ -2443,6 +2485,13 @@ constexpr More kDutch{
     .qw_cancel_body = "Het is gevraagd vanuit de bibliotheek-app. Installatie annuleren? Wat ervan geschreven is, wordt verwijderd: niets blijft half geïnstalleerd.",
     .qw_cancel_go = "Installatie annuleren",
     .qw_keep = "Doorgaan met installeren",
+    .rs_title = "Een installatie stopte toen de console uitging",
+    .rs_parts_fmt = "%d delen (%s) zijn geschreven en gecontroleerd: die blijven, de rest komt.",
+    .rs_waiting_fmt = "Daarna wachtten er nog %d, die ook komen.",
+    .rs_note = "Er is niets geregistreerd: de console is zoals hij was. Weggooien verwijdert wat geschreven is, zonder resten.",
+    .rs_go = "Verder waar het stopte",
+    .rs_discard = "Weggooien",
+    .rs_discarded = "Weggegooid: er blijft niets achter.",
 };
 
 constexpr More kRussian{
@@ -2791,6 +2840,13 @@ constexpr More kRussian{
     .qw_cancel_body = "Это запрошено из приложения библиотеки. Отменить установку? Записанное будет удалено: ничего не останется наполовину установленным.",
     .qw_cancel_go = "Отменить установку",
     .qw_keep = "Продолжить установку",
+    .rs_title = "Установка прервалась, когда консоль выключилась",
+    .rs_parts_fmt = "Записано и проверено частей: %d (%s): они остаются, остальное докачается.",
+    .rs_waiting_fmt = "За ней ждали ещё %d, они тоже будут установлены.",
+    .rs_note = "Ничего не зарегистрировано: консоль в прежнем состоянии. «Отменить» удалит записанное без следов.",
+    .rs_go = "Продолжить с места остановки",
+    .rs_discard = "Отменить",
+    .rs_discarded = "Отменено: ничего не осталось.",
 };
 
 constexpr More kJapanese{
@@ -3139,6 +3195,13 @@ constexpr More kJapanese{
     .qw_cancel_body = "ライブラリアプリからの依頼です。インストールを取り消しますか？ 書き込んだ分は削除され、途中のまま残りません。",
     .qw_cancel_go = "インストールを取り消す",
     .qw_keep = "インストールを続ける",
+    .rs_title = "本体の電源が切れてインストールが止まりました",
+    .rs_parts_fmt = "%d 個のパーツ（%s）は書き込みとチェックが済んでいます。それは残し、残りを取得します。",
+    .rs_waiting_fmt = "後ろに待っていた %d 件も続けて入ります。",
+    .rs_note = "何も登録されていないので、本体は元のままです。「破棄」は書き込んだ分を跡形なく削除します。",
+    .rs_go = "止まったところから続ける",
+    .rs_discard = "破棄",
+    .rs_discarded = "破棄しました。何も残っていません。",
 };
 
 constexpr More kKorean{
@@ -3487,6 +3550,13 @@ constexpr More kKorean{
     .qw_cancel_body = "라이브러리 앱에서 요청했습니다. 설치를 취소할까요? 쓴 부분은 지워지며 반쯤 설치된 채로 남지 않습니다.",
     .qw_cancel_go = "설치 취소",
     .qw_keep = "계속 설치",
+    .rs_title = "본체 전원이 꺼져 설치가 멈췄습니다",
+    .rs_parts_fmt = "%d개 부분(%s)은 쓰기와 검사가 끝났습니다. 그대로 두고 나머지를 받습니다.",
+    .rs_waiting_fmt = "뒤에서 기다리던 %d개도 이어서 설치합니다.",
+    .rs_note = "등록된 것은 없어 본체는 그대로입니다. 버리기를 누르면 쓴 부분을 흔적 없이 지웁니다.",
+    .rs_go = "멈춘 곳부터 계속",
+    .rs_discard = "버리기",
+    .rs_discarded = "버렸습니다. 남은 것이 없습니다.",
 };
 
 constexpr More kChinese{
@@ -3835,6 +3905,13 @@ constexpr More kChinese{
     .qw_cancel_body = "这是从游戏库应用请求的。要取消安装吗？已写入的部分会被删除，不会留下装了一半的内容。",
     .qw_cancel_go = "取消安装",
     .qw_keep = "继续安装",
+    .rs_title = "主机断电时安装中断了",
+    .rs_parts_fmt = "已写入并检查 %d 个部分（%s）：保留它们，其余部分继续获取。",
+    .rs_waiting_fmt = "后面还有 %d 个在等待，也会继续安装。",
+    .rs_note = "没有注册任何内容：主机保持原样。“放弃”会删除已写入的部分，不留痕迹。",
+    .rs_go = "从中断处继续",
+    .rs_discard = "放弃",
+    .rs_discarded = "已放弃：没有留下任何东西。",
 };
 
 // In the order of LanguageName in i18n.cpp.

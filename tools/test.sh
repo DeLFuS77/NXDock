@@ -28,6 +28,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # the check of the SD card, against fake cards made up here
   g++ -std=c++20 -Wall -Wextra -O2 -Isource -o /tmp/sdcheck_test tests/sdcheck_test.cpp source/sdcheck.cpp
   /tmp/sdcheck_test
+  # the journal of an install cut by the console going off, cut at every byte and every step
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/resume_test tests/resume_test.cpp source/resume.cpp
+  /tmp/resume_test /tmp
   # clear errors and the check before installing, in every language
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp
   /tmp/errors_test

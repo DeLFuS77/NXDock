@@ -45,6 +45,8 @@ struct InstallJob {
     std::vector<NcmContentId> repair; // a repair: these damaged parts go, and only what is missing comes
     u32 version = 0;          // an update: its version
     bool downgrade = false;   // an older update in place of the one installed (20A)
+    bool resumable = false;   // a journal is kept, to go on if the console goes off (23A)
+    bool resumed = false;     // going on from the journal
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took
@@ -200,6 +202,14 @@ private:
     u64 m_sample_net = 0, m_sample_ready = 0, m_sample_written = 0;
     double m_rate_net = 0, m_rate_ready = 0, m_rate_written = 0;
 };
+
+// The journal of the install that was cut by the console going off (23A): resume.hpp.
+struct ResumeState;
+constexpr const char* kResumeDir = "sdmc:/switch/NXDock/resume";
+// The jobs of a journal: the one cut, then those that waited (the key is the library's, given).
+std::vector<InstallJob> ResumeJobs(const ResumeState& state, const std::string& key);
+// Every placeholder of a journal deleted, and the journal: nothing is left.
+void DiscardResume(const ResumeState& state);
 
 // The install or check was cancelled by the user.
 bool IsCancelled(unsigned rc);
