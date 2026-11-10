@@ -98,3 +98,8 @@
   screen goes dark; any button or a touch lights it again.
 - At start, a notice says how many updates the library has for what is
   installed (− Options installs them).
+- NSZ and XCZ made with the extra compression of NXPress install as they
+  are, also when the library app sends them without turning them back into
+  plain NCA first: the parts kept decompressed are compressed again exactly
+  as they were, on three threads, and checked against their SHA-256 like
+  every other part.

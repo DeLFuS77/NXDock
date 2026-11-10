@@ -50,6 +50,8 @@ The install core "yati" from Sphaira (commit 05bd057, 5 November 2026)
   - the USB, file and stream sources, the MSP installer and the random
     access NCZ reader are left out; NXDock brings its own HTTP source;
   - NCZBLOCK blocks are decompressed on three threads;
+  - the NCZSECT2 and NCZSECT3 formats of NXPress are read, the LZ4 blocks of
+    an NCZSECT3 made again on the same threads;
   - the install is all or nothing: the free space and the firmware are
     checked first, nothing is registered until every NCA is written and its
     SHA-256 matches its content id, and a failed register is taken back;
@@ -68,6 +70,12 @@ Zstandard
   https://github.com/facebook/zstd
   Copyright (c) Meta Platforms, Inc. and affiliates.
   BSD licence. Linked from devkitPro's portlibs (switch-zstd).
+
+LZ4 (the two compressors in source/lz4nintendo.c are written after it)
+  https://github.com/lz4/lz4
+  Copyright (c) Yann Collet.
+  BSD 2-Clause License. lz4.c (before 1.8.2) and lz4hc.c (r1xx), as
+  Nintendo's tools set them, written again for NXDock.
 
 Mbed TLS (the RSA check of tickets)
   https://github.com/Mbed-TLS/mbedtls

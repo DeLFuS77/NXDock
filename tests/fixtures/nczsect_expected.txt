@@ -1,0 +1,4 @@
+# file size sha256 fnv1a64 of the NCA the library app gives (switchfs.OpenInstallStream)
+nczsect2.ncz 170297 54631eaf0d402441caee55221565ac6c924ce3f4dc62caf994a9701b881d9a36 96e44e3e09dfe57e
+nczsect3.ncz 170297 54631eaf0d402441caee55221565ac6c924ce3f4dc62caf994a9701b881d9a36 96e44e3e09dfe57e
+plain 170297 1dbd88f6cf3936627207affad024617b33fb1722a65cfc0a0747ad0ebbf48833 ea477216184fc415

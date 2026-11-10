@@ -295,7 +295,7 @@ std::vector<Game> Catalog::Games() {
 }
 
 void Catalog::Run(std::string url, std::string key) {
-    const auto r = http::GetLarge(url + "/install/catalog", key, 20000, 16 * 1024 * 1024);
+    const auto r = http::GetLarge(url + "/install/catalog?ncz=native", key, 20000, 16 * 1024 * 1024);
     std::vector<Game> games;
     if (r.status != 200 || !ParseCatalog(r.body, games)) {
         std::lock_guard lock(m_mutex);

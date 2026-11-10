@@ -55,6 +55,8 @@ add_library(yati STATIC
     source/yati/nx/nca.cpp
     source/yati/nx/ncm.cpp
     source/yati/nx/ns.cpp
+    source/yati/nx/nczsect.cpp
+    source/lz4nintendo.c
     source/yati/nx/nxdumptool_rsa.c
     source/yati/nx/nxdumptool/save.c
     compat/yati_env.cpp
@@ -65,6 +67,9 @@ target_compile_definitions(yati PRIVATE NXDOCK_VERSION="${PROJECT_VERSION}")
 # the core keeps its upstream style: signed/unsigned comparisons and partial initialisers are
 # not reported there; NXDock's own code is built with every -Wall -Wextra warning.
 target_compile_options(yati PRIVATE -Wall -Wextra -Wno-sign-compare -Wno-missing-field-initializers -O2)
+# NXDock's own files in the core get every warning back.
+set_source_files_properties(source/yati/nx/nczsect.cpp source/lz4nintendo.c
+    PROPERTIES COMPILE_OPTIONS "-Wsign-compare;-Wmissing-field-initializers")
 find_path(zstd_inc zstd.h REQUIRED)
 find_library(zstd_lib zstd REQUIRED)
 find_library(mbedcrypto_lib mbedcrypto REQUIRED)

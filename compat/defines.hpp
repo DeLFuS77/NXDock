@@ -101,7 +101,7 @@ enum class NXDockResult : u32 {
     YatiHttpReadFailed,
     // added by NXDock
     NotEnoughSpace,        // the storage has less room than the install needs
-    NczExperimental,       // NCZSECT2/3 of NXPress: the app sends them as plain NCA
+    NczExperimental,       // an NCZ section format newer than NCZSECT3
     FirmwareTooOld,        // the content needs a newer system version
     NczBlockTooLarge,      // a block too large to decompress in memory
     NetworkLost,           // the app stopped answering and retries ran out
@@ -110,6 +110,8 @@ enum class NXDockResult : u32 {
     OutOfMemory,
     GameRunning,           // the content is of the game NXDock was opened from
     UnknownContainer,      // neither an NSP/NSZ nor an XCI/XCZ
+    NczBadTable,           // a damaged section or LZ4 table of an NCZSECT2/3
+    NczLz4Rebuild,         // an LZ4 block of an NCZSECT3 is not made again to its size
 };
 
 #define MAKE_NXDOCK_RESULT_ENUM(x) Result_##x = MAKERESULT(Module_NXDock, (u32)NXDockResult::x)
@@ -170,4 +172,6 @@ enum : Result {
     MAKE_NXDOCK_RESULT_ENUM(OutOfMemory),
     MAKE_NXDOCK_RESULT_ENUM(GameRunning),
     MAKE_NXDOCK_RESULT_ENUM(UnknownContainer),
+    MAKE_NXDOCK_RESULT_ENUM(NczBadTable),
+    MAKE_NXDOCK_RESULT_ENUM(NczLz4Rebuild),
 };
