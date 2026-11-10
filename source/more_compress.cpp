@@ -97,9 +97,15 @@ void App::DrawCompress(NVGcontext* vg) {
     const auto rows = CompressRows(v);
     draw::Panel(vg, t, rx, 92, rw, 460, 16);
     if (!v.scanned) {
-        // the console is still being read: the list comes when it ends
-        ui::Spinner(vg, rx + rw / 2, 300, 14, t.work, m_time);
-        ui::Text(vg, rx + rw / 2, 340, 17, t.muted, m.scanning, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        // the console is still being read: how far, and the list when it ends
+        ui::Spinner(vg, rx + rw / 2, 280, 14, t.work, m_time);
+        if (v.total) {
+            std::snprintf(text, sizeof(text), m.sp_reading_fmt, int(v.done), int(v.total));
+            ui::Text(vg, rx + rw / 2, 320, 17, t.muted, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            ui::Progress(vg, t, rx + 60, 344, rw - 120, 10, float(double(v.done) / double(v.total)), t.work, m_time);
+        } else {
+            ui::Text(vg, rx + rw / 2, 320, 17, t.muted, m.scanning, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
     } else if (rows.empty()) {
         ui::Text(vg, rx + rw / 2, 320, 17, t.muted, m.cz_no_games, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
@@ -149,7 +155,13 @@ void App::DrawCompress(NVGcontext* vg) {
                 std::snprintf(text, sizeof(text), m.cz_ours_fmt, draw::Size(e.saved).c_str());
                 col = t.work;
                 break;
-            default: std::snprintf(text, sizeof(text), "%s", m.cz_unsupported); break;
+            default:
+                std::snprintf(text, sizeof(text), "%s",
+                              e.why == GameEstimate::Why::Sparse ? m.cz_why_sparse
+                              : e.why == GameEstimate::Why::Key  ? m.cz_why_key
+                              : e.why == GameEstimate::Why::NotFound ? m.cz_why_missing
+                                                                 : m.cz_unsupported);
+                break;
         }
         const bool spin = known && e.state == GameEstimate::State::Pending;
         if (spin) ui::Spinner(vg, rx + rw - 30, ry + 25, 8, t.muted, m_time);

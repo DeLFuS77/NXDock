@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -65,6 +66,7 @@ public:
         int finished = 0;
         Task last = Task::None;
         bool card = false;    // a game card is in
+        int names_done = 0, names_total = 0; // the names read after the scan (NameLater)
         std::string card_name;
         unsigned long long card_bytes = 0;
     };
@@ -88,6 +90,12 @@ private:
     void Run(Task task, std::function<std::string()> work);
     void Progress(unsigned long long done, unsigned long long total, const std::string& current = {});
     void ScanNow();
+    // The names of the games, read after the scan on a thread of their own, and kept: with many
+    // games, reading each name takes long, and the screen answers meanwhile.
+    void NameLater();
+    std::map<unsigned long long, std::string> m_names;
+    std::thread m_name_thread;
+    std::atomic<bool> m_naming{false};
     std::thread m_thread;
     std::mutex m_mutex;
     View m_view;

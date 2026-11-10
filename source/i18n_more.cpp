@@ -414,6 +414,11 @@ constexpr More kEnglish{
     .cz_room_t = "Not enough room",
     .cz_room_d = "Compressing needs room for the new copy of the game's data before the old one goes. Free some room and try again.",
     .cz_tap = "A: see what it saves",
+    .cz_why_sparse = "Sparse storage: not compressed",
+    .cz_why_key = "Its ticket cannot be read",
+    .cz_why_missing = "Not found on the console",
+    .sp_reading_fmt = "Reading the console… %d of %d",
+    .sp_names_fmt = "Reading the names… %d of %d",
 };
 
 constexpr More kSpanish{
@@ -821,6 +826,11 @@ constexpr More kSpanish{
     .cz_room_t = "No hay espacio suficiente",
     .cz_room_d = "Para comprimir hace falta sitio para la copia nueva de los datos del juego antes de quitar la vieja. Libera espacio y prueba otra vez.",
     .cz_tap = "A: ver cuánto ahorra",
+    .cz_why_sparse = "Almacenamiento disperso: no se comprime",
+    .cz_why_key = "No se puede leer su ticket",
+    .cz_why_missing = "No está en la consola",
+    .sp_reading_fmt = "Leyendo la consola… %d de %d",
+    .sp_names_fmt = "Leyendo los nombres… %d de %d",
 };
 
 constexpr More kFrench{
@@ -1228,6 +1238,11 @@ constexpr More kFrench{
     .cz_room_t = "Pas assez de place",
     .cz_room_d = "Compresser demande de la place pour la nouvelle copie des données du jeu avant que l'ancienne parte. Libère de la place et réessaie.",
     .cz_tap = "A : voir ce qu'il gagne",
+    .cz_why_sparse = "Stockage clairsemé : pas compressé",
+    .cz_why_key = "Son ticket ne peut pas être lu",
+    .cz_why_missing = "Introuvable sur la console",
+    .sp_reading_fmt = "Lecture de la console… %d sur %d",
+    .sp_names_fmt = "Lecture des noms… %d sur %d",
 };
 
 constexpr More kGerman{
@@ -1635,6 +1650,11 @@ constexpr More kGerman{
     .cz_room_t = "Nicht genug Platz",
     .cz_room_d = "Zum Komprimieren braucht es Platz für die neue Kopie der Spieldaten, bevor die alte geht. Mach Platz frei und versuche es noch einmal.",
     .cz_tap = "A: sehen, was es spart",
+    .cz_why_sparse = "Sparse-Speicher: wird nicht komprimiert",
+    .cz_why_key = "Sein Ticket lässt sich nicht lesen",
+    .cz_why_missing = "Nicht auf der Konsole",
+    .sp_reading_fmt = "Konsole wird gelesen… %d von %d",
+    .sp_names_fmt = "Namen werden gelesen… %d von %d",
 };
 
 constexpr More kItalian{
@@ -2042,6 +2062,11 @@ constexpr More kItalian{
     .cz_room_t = "Spazio insufficiente",
     .cz_room_d = "Per comprimere serve spazio per la nuova copia dei dati del gioco prima di eliminare la vecchia. Libera spazio e riprova.",
     .cz_tap = "A: vedi quanto risparmia",
+    .cz_why_sparse = "Archiviazione sparsa: non si comprime",
+    .cz_why_key = "Il suo ticket non si può leggere",
+    .cz_why_missing = "Non è sulla console",
+    .sp_reading_fmt = "Lettura della console… %d di %d",
+    .sp_names_fmt = "Lettura dei nomi… %d di %d",
 };
 
 constexpr More kPortuguese{
@@ -2449,6 +2474,11 @@ constexpr More kPortuguese{
     .cz_room_t = "Sem espaço suficiente",
     .cz_room_d = "Comprimir precisa de espaço para a nova cópia dos dados do jogo antes de a antiga sair. Libere espaço e tente de novo.",
     .cz_tap = "A: ver quanto economiza",
+    .cz_why_sparse = "Armazenamento esparso: não é comprimido",
+    .cz_why_key = "O ticket dele não pode ser lido",
+    .cz_why_missing = "Não está no console",
+    .sp_reading_fmt = "Lendo o console… %d de %d",
+    .sp_names_fmt = "Lendo os nomes… %d de %d",
 };
 
 constexpr More kDutch{
@@ -2856,6 +2886,11 @@ constexpr More kDutch{
     .cz_room_t = "Niet genoeg ruimte",
     .cz_room_d = "Comprimeren heeft ruimte nodig voor de nieuwe kopie van de spelgegevens voordat de oude weggaat. Maak ruimte vrij en probeer het opnieuw.",
     .cz_tap = "A: zien wat het bespaart",
+    .cz_why_sparse = "Sparse opslag: niet gecomprimeerd",
+    .cz_why_key = "Het ticket kan niet worden gelezen",
+    .cz_why_missing = "Niet op de console",
+    .sp_reading_fmt = "Console lezen… %d van %d",
+    .sp_names_fmt = "Namen lezen… %d van %d",
 };
 
 constexpr More kRussian{
@@ -3263,6 +3298,11 @@ constexpr More kRussian{
     .cz_room_t = "Недостаточно места",
     .cz_room_d = "Для сжатия нужно место под новую копию данных игры до удаления старой. Освободите место и попробуйте снова.",
     .cz_tap = "A: узнать экономию",
+    .cz_why_sparse = "Разреженное хранилище: не сжимается",
+    .cz_why_key = "Не удаётся прочитать тикет",
+    .cz_why_missing = "Не найдено на консоли",
+    .sp_reading_fmt = "Чтение консоли… %d из %d",
+    .sp_names_fmt = "Чтение названий… %d из %d",
 };
 
 constexpr More kJapanese{
@@ -3670,6 +3710,11 @@ constexpr More kJapanese{
     .cz_room_t = "空き容量が足りません",
     .cz_room_d = "圧縮には、古いデータを消す前に新しいデータを書く空きが必要です。空きを作ってもう一度試してください。",
     .cz_tap = "A: 削減量を見る",
+    .cz_why_sparse = "スパース形式: 圧縮しません",
+    .cz_why_key = "チケットを読めません",
+    .cz_why_missing = "本体に見つかりません",
+    .sp_reading_fmt = "本体を読み込み中… %d / %d",
+    .sp_names_fmt = "名前を読み込み中… %d / %d",
 };
 
 constexpr More kKorean{
@@ -4077,6 +4122,11 @@ constexpr More kKorean{
     .cz_room_t = "공간이 부족합니다",
     .cz_room_d = "압축하려면 이전 데이터를 지우기 전에 새 데이터를 쓸 공간이 필요합니다. 공간을 비우고 다시 시도하세요.",
     .cz_tap = "A: 절약량 보기",
+    .cz_why_sparse = "스파스 저장: 압축하지 않음",
+    .cz_why_key = "티켓을 읽을 수 없음",
+    .cz_why_missing = "본체에 없음",
+    .sp_reading_fmt = "본체 읽는 중… %d / %d",
+    .sp_names_fmt = "이름 읽는 중… %d / %d",
 };
 
 constexpr More kChinese{
@@ -4484,6 +4534,11 @@ constexpr More kChinese{
     .cz_room_t = "空间不足",
     .cz_room_d = "压缩需要在删除旧数据前，先有空间写入新的游戏数据。请释放空间后再试。",
     .cz_tap = "A：查看能省多少",
+    .cz_why_sparse = "稀疏存储：不压缩",
+    .cz_why_key = "无法读取它的票据",
+    .cz_why_missing = "主机上找不到",
+    .sp_reading_fmt = "正在读取主机… %d / %d",
+    .sp_names_fmt = "正在读取名称… %d / %d",
 };
 
 // In the order of LanguageName in i18n.cpp.

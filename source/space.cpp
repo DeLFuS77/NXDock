@@ -276,6 +276,61 @@ std::string Upload(const std::string& url, const std::string& key, const std::st
 Space::~Space() {
     m_cancel = true;
     if (m_thread.joinable()) m_thread.join();
+    if (m_name_thread.joinable()) m_name_thread.join();
+}
+
+void Space::NameLater() {
+    if (m_naming.exchange(true)) return;
+    if (m_name_thread.joinable()) m_name_thread.join();
+    m_name_thread = std::thread([this] {
+        std::vector<u64> missing;
+        {
+            std::lock_guard lock(m_mutex);
+            for (const auto& a : m_view.apps) {
+                if (!m_names.count(a.app_id)) missing.push_back(a.app_id);
+            }
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.names_done = 0;
+            m_view.names_total = int(missing.size());
+        }
+        if (!missing.empty() && R_SUCCEEDED(nsInitialize())) {
+            auto control = std::make_unique<NsApplicationControlData>();
+            for (const u64 app : missing) {
+                if (m_cancel) break;
+                {
+                    std::lock_guard lock(m_mutex);
+                    m_view.names_done++;
+                }
+                std::string name;
+                u64 size = 0;
+                // the cache of the console first (fast), then the game itself
+                for (const auto source : {NsApplicationControlSource_CacheOnly, NsApplicationControlSource_Storage}) {
+                    if (R_SUCCEEDED(nsGetApplicationControlData(source, app, control.get(), sizeof(*control), &size))) {
+                        NacpLanguageEntry* lang = nullptr;
+                        if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang && lang->name[0]) {
+                            name = lang->name;
+                            break;
+                        }
+                    }
+                }
+                if (name.empty()) continue;
+                // in place: the order of the list stays while it is on screen
+                std::lock_guard lock(m_mutex);
+                m_names[app] = name;
+                for (auto& a : m_view.apps) {
+                    if (a.app_id == app) a.name = name;
+                }
+            }
+            nsExit();
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.names_done = m_view.names_total = 0;
+        }
+        m_naming = false;
+    });
 }
 
 bool Space::Busy() {
@@ -309,6 +364,7 @@ void Space::Run(Task task, std::function<std::string()> work) {
     m_thread = std::thread([this, task, work] {
         const std::string error = work();
         if (task != Task::Scan) ScanNow(); // what changed, read again
+        NameLater(); // names not known yet, without holding the screen
         std::lock_guard lock(m_mutex);
         m_view.error = error;
         m_view.last = task;
@@ -325,6 +381,13 @@ void Space::ScanNow() {
     Storage st;
     std::set<u64> installed_ids;
     if (R_SUCCEEDED(ncmInitialize())) {
+        // how many to read, for the bar of the screen
+        unsigned long long total = 0, done = 0;
+        for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+            Store s(sid);
+            if (s.ok) total += s.Keys().size();
+        }
+        Progress(0, total);
         for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
             Store s(sid);
             if (!s.ok) continue;
@@ -336,6 +399,7 @@ void Space::ScanNow() {
             (nand ? st.nand_total : st.sd_total) = total_b;
             std::set<std::string> referenced;
             for (const auto& key : s.Keys()) {
+                if ((++done & 15) == 0) Progress(done, total);
                 if (key.type != NcmContentMetaType_Application && key.type != NcmContentMetaType_Patch && key.type != NcmContentMetaType_AddOnContent) continue;
                 installed_ids.insert(key.id);
                 const u64 app = AppOf(key.id);
@@ -436,13 +500,15 @@ void Space::ScanNow() {
             }
             pdmqryExit();
         }
-        auto control = std::make_unique<NsApplicationControlData>();
-        for (auto& a : apps) {
-            u64 size = 0;
-            if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, a.app_id, control.get(), sizeof(*control), &size))) {
-                NacpLanguageEntry* lang = nullptr;
-                if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang) a.name = lang->name;
+        // the names known already; the others come after, on their own thread (NameLater)
+        {
+            std::lock_guard lock(m_mutex);
+            for (auto& a : apps) {
+                auto it = m_names.find(a.app_id);
+                if (it != m_names.end()) a.name = it->second;
             }
+        }
+        for (auto& a : apps) {
             if (a.name.empty()) {
                 char t[20];
                 std::snprintf(t, sizeof(t), "%016llX", (unsigned long long)a.app_id);

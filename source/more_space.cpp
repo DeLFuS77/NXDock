@@ -201,6 +201,17 @@ void App::DrawSpace(NVGcontext* vg) {
     }
     draw::Box(vg, rx, 412, cw, 14, t.muted, m.dumps_note);
 
+    // the console being read: how far (a long while with many games)
+    if ((v.task == Space::Task::Scan && v.total) || v.names_total) {
+        const bool names = v.task != Space::Task::Scan;
+        draw::Panel(vg, t, lx, 572, kWidth - 96, 70, 12);
+        std::snprintf(text, sizeof(text), names ? m.sp_names_fmt : m.sp_reading_fmt, names ? v.names_done : int(v.done),
+                      names ? v.names_total : int(v.total));
+        ui::Spinner(vg, lx + 30, 596, 9, t.work, m_time);
+        ui::Text(vg, lx + 50, 596, 15, t.muted, text);
+        const float frac = names ? float(v.names_done) / float(std::max(1, v.names_total)) : float(double(v.done) / double(v.total));
+        ui::Progress(vg, t, lx + 22, 620, kWidth - 140, 10, frac, t.work, m_time);
+    }
     // the work going on
     if (v.task != Space::Task::None && v.task != Space::Task::Scan) {
         const char* what = v.task == Space::Task::Clean     ? m.st_cleaning

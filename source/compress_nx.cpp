@@ -76,6 +76,7 @@ struct Storage {
 struct GameContents {
     NcmContentMetaKey key{};
     NcmContentId program{}, meta{};
+    bool has_meta = false; // other installers do not always list the CNMT
     s64 program_size = 0;
 };
 
@@ -102,14 +103,16 @@ bool FindGame(Storage& s, u64 app, GameContents& g) {
             meta = true;
         }
     }
-    if (!program || !meta) return false;
+    g.has_meta = meta;
+    if (!program) return false;
     return R_SUCCEEDED(ncmContentStorageGetSizeFromContentId(&s.cs, &g.program_size, &g.program));
 }
 
 // The RomFS section an NCA can have compressed: IVFC, AES-CTR, not a patch, not sparse, not
 // compressed already. -1 when none; `already` when it is compressed.
-int RomfsSection(const nca::Header& h, bool& already) {
+int RomfsSection(const nca::Header& h, bool& already, bool& sparse_out) {
     already = false;
+    sparse_out = false;
     for (int i = 0; i < NCA_SECTION_TOTAL; i++) {
         const auto& fh = h.fs_header[i];
         if (!h.fs_table[i].IsValid() || fh.fs_type != 0 || fh.hash_type != 3) continue;
@@ -119,6 +122,7 @@ int RomfsSection(const nca::Header& h, bool& already) {
         }
         bool sparse = false;
         for (u8 b : fh.spares_info) sparse |= b != 0;
+        if (sparse) sparse_out = true;
         if (fh.encryption_type != nca::EncryptionType_AesCtr || fh.patch_info.indirect_size || sparse) continue;
         const u32 layers = fh.hash_data.integrity_meta_info.info_level_hash.max_layers;
         if (layers < 2 || layers > 7) continue;
@@ -306,6 +310,7 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
             }
             GameEstimate e;
             e.state = GameEstimate::State::Unsupported;
+            e.why = GameEstimate::Why::NotFound;
             for (const auto& m : marks) {
                 if (m.app_id == app) {
                     e.state = GameEstimate::State::Ours;
@@ -320,17 +325,25 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                 e.bytes = u64(g.program_size);
                 u8 raw[0xC00];
                 nca::Header h;
+                e.why = GameEstimate::Why::Read;
                 if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) break;
-                bool already = false;
-                const int r = RomfsSection(h, already);
+                bool already = false, sparse = false;
+                const int r = RomfsSection(h, already, sparse);
                 if (already) {
                     e.state = GameEstimate::State::Already;
                     break;
                 }
-                if (r < 0) break;
+                if (r < 0) {
+                    e.why = sparse ? GameEstimate::Why::Sparse : GameEstimate::Why::Read;
+                    break;
+                }
                 nca::Header copy = h;
                 keys::KeyEntry key;
-                if (R_FAILED(nca::GetDecryptedTitleKey(copy, k, key))) break;
+                if (R_FAILED(nca::GetDecryptedTitleKey(copy, k, key))) {
+                    e.why = GameEstimate::Why::Key;
+                    break;
+                }
+                e.why = GameEstimate::Why::None;
                 const auto& fh = h.fs_header[r];
                 const u64 base = h.fs_table[r].GetOffset() + DataLevel(fh).logical_offset;
                 const u64 size = DataLevel(fh).hash_data_size;
@@ -397,8 +410,8 @@ bool Compressor::StartCompress(unsigned long long app) {
                     error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
                     return;
                 }
-                bool already = false;
-                const int r = RomfsSection(h, already);
+                bool already = false, sparse = false;
+                const int r = RomfsSection(h, already, sparse);
                 if (r < 0) {
                     error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
                     return;
@@ -539,9 +552,12 @@ bool Compressor::StartCompress(unsigned long long app) {
                 NcmContentId new_program;
                 std::memcpy(&new_program, program_hash, sizeof(new_program));
 
-                // 5. the CNMT with the new program, made again
+                // 5. the CNMT with the new program, made again (when the record lists it)
                 progress(3, 0, 1);
+                NcmContentId new_meta{};
+                NcmPlaceHolderId mph{};
                 s64 meta_size = 0;
+                if (g.has_meta) {
                 if (R_FAILED(rc = ncmContentStorageGetSizeFromContentId(&s.cs, &meta_size, &g.meta)) || meta_size <= 0xC00 || meta_size > 16 * 1024 * 1024) {
                     return fail(rc);
                 }
@@ -588,14 +604,13 @@ bool Compressor::StartCompress(unsigned long long app) {
                 sphaira::crypto::cryptoAes128Xts(&mh, mn.data(), k.header_key, 0, 0x200, sizeof(mh), true);
                 u8 meta_hash[32];
                 sha256CalculateHash(meta_hash, mn.data(), mn.size());
-                NcmContentId new_meta;
                 std::memcpy(&new_meta, meta_hash, sizeof(new_meta));
-                NcmPlaceHolderId mph{};
                 if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &mph)) ||
                     R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &g.meta, &mph, meta_size)) ||
                     R_FAILED(rc = ncmContentStorageWritePlaceHolder(&s.cs, &mph, 0, mn.data(), mn.size()))) {
                     ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
                     return fail(rc);
+                }
                 }
 
                 // 6. both registered, then the record of the game; only then the old ones go
@@ -606,10 +621,12 @@ bool Compressor::StartCompress(unsigned long long app) {
                 keep_ph = true;
                 const auto undo = [&] {
                     sphaira::ncm::Delete(&s.cs, &new_program);
-                    sphaira::ncm::Delete(&s.cs, &new_meta);
-                    ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
+                    if (g.has_meta) {
+                        sphaira::ncm::Delete(&s.cs, &new_meta);
+                        ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
+                    }
                 };
-                if (R_FAILED(rc = RegisterAs(s.cs, new_meta, mph))) {
+                if (g.has_meta && R_FAILED(rc = RegisterAs(s.cs, new_meta, mph))) {
                     undo();
                     error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
                     return;
@@ -632,7 +649,7 @@ bool Compressor::StartCompress(unsigned long long app) {
                         ci.content_id = new_program;
                         ncmU64ToContentInfoSize(new_size, &ci);
                         program_set = true;
-                    } else if (!std::memcmp(&ci.content_id, &g.meta, sizeof(ci.content_id))) {
+                    } else if (g.has_meta && !std::memcmp(&ci.content_id, &g.meta, sizeof(ci.content_id))) {
                         ci.content_id = new_meta;
                         ncmU64ToContentInfoSize(u64(meta_size), &ci);
                     }
@@ -645,7 +662,7 @@ bool Compressor::StartCompress(unsigned long long app) {
                     return;
                 }
                 sphaira::ncm::Delete(&s.cs, &g.program);
-                sphaira::ncm::Delete(&s.cs, &g.meta);
+                if (g.has_meta) sphaira::ncm::Delete(&s.cs, &g.meta);
                 saved = u64(g.program_size) - new_size;
                 auto marks = LoadCompressed(kCompressedList);
                 std::erase_if(marks, [app](const CompressedGame& c) { return c.app_id == app; });

@@ -33,6 +33,8 @@ struct GameEstimate {
     double gain = 0;               // share of the RomFS saved, from a sample
     unsigned long long bytes = 0;  // the program NCA now
     unsigned long long saved = 0;  // what it would save (Worth, Low), or saved (Ours)
+    enum class Why { None, NotFound, Sparse, Key, Read };
+    Why why = Why::None;           // Unsupported: why
 };
 
 class Compressor {
