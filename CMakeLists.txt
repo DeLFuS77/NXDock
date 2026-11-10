@@ -129,6 +129,9 @@ add_executable(nxdock
     source/more.cpp
     source/more_vault.cpp
     source/more_space.cpp
+    source/more_shop.cpp
+    source/shop.cpp
+    source/shop_load.cpp
     source/space.cpp
     source/space_plan.cpp
     source/vault.cpp
@@ -154,7 +157,7 @@ find_library(deko3d_lib deko3d REQUIRED)
 find_path(curl_inc curl/curl.h REQUIRED)
 find_library(curl_lib curl REQUIRED)
 find_library(z_lib z REQUIRED)
-target_include_directories(nxdock PRIVATE ${curl_inc})
+target_include_directories(nxdock PRIVATE ${curl_inc} ${zstd_inc})
 target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg libusbhsfs ${deko3d_lib} ${curl_lib} ${z_lib})
 if (NXDOCK_MTP)
     target_compile_definitions(nxdock PRIVATE NXDOCK_MTP)

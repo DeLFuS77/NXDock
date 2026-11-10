@@ -145,3 +145,8 @@
   - dump the game card or an installed game to the library app as an NSP,
     in pieces that go on after a cut.
   Every action asks first.
+- Shops of the kind of Tinfoil and Ownfoil (More › Shops): an index of
+  files, plain JSON or packed with zstd or zlib, opens as another library
+  (its name in the top bar; B goes back to the library app). A user and a
+  password are typed on the console. An encrypted index is told apart and
+  explained: only Tinfoil has its key.

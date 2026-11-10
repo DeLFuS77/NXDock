@@ -669,6 +669,13 @@ void App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::MoreSide:
                 break;
+            case HitKind::ShopRow:
+                if (m_shop_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_shop_focus = it->index;
+                }
+                break;
             case HitKind::SpaceAction:
                 if (m_space_focus == it->index) {
                     down |= HidNpadButton_A;
@@ -909,6 +916,20 @@ void App::Draw(NVGcontext* vg) {
         queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
     }
     ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging);
+    if (m_shop_active && m_tab == Tab::Library) {
+        // which shop the library shows
+        char badge[160];
+        std::snprintf(badge, sizeof(badge), TrM().sh_badge, m_shop_name.c_str());
+        const float bw = std::min(260.f, ui::TextWidth(vg, 14, badge) + 28);
+        const float bx = tabs[kTabs - 1].x + tabs[kTabs - 1].w + 30;
+        NVGcolor bg = m_theme.work;
+        bg.a = 0.16f;
+        ui::FillRound(vg, bx, 22, bw, 28, 14, bg);
+        nvgSave(vg);
+        nvgScissor(vg, bx + 8, 22, bw - 16, 28);
+        ui::Text(vg, bx + 14, 36, 14, m_theme.text, badge);
+        nvgRestore(vg);
+    }
     for (int i = 0; i < kTabs; i++) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
         m_tab_rects[i] = tabs[i];
@@ -1181,7 +1202,7 @@ void App::FollowLink() {
             m_catalog.Load(c.url, c.key);
         }
     }
-    if (m_catalog.Version() != m_games_version) {
+    if (!m_shop_active && m_catalog.Version() != m_games_version) {
         m_games_version = m_catalog.Version();
         // the same game stays in focus; the first time, the one in focus when NXDock was closed
         m_keep_key = m_focus_restored ? FocusedKey() : m_ui.focus;
@@ -1282,6 +1303,11 @@ void App::UpdateLibrary(u64 down, u64 held) {
     const u64 up = HidNpadButton_Up | HidNpadButton_StickLUp, dn = HidNpadButton_Down | HidNpadButton_StickLDown;
     const int count = int(m_view.size());
     const int before = m_focus;
+    if (m_shop_active && (down & HidNpadButton_B)) {
+        // B leaves the shop: the library app again
+        LeaveShop();
+        return;
+    }
     if (Repeat(down, held, left) && m_focus % kColumns > 0) m_focus--;
     if (Repeat(down, held, right) && m_focus % kColumns < kColumns - 1 && m_focus + 1 < count) m_focus++;
     if (Repeat(down, held, up) && m_focus >= kColumns) m_focus -= kColumns;
@@ -2051,8 +2077,9 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
     job.cover = g.cover;
     job.color_key = g.key;
     job.file_id = f.id;
-    job.url = c.url + f.url;
-    job.key = c.key;
+    const bool whole = f.url.rfind("http://", 0) == 0 || f.url.rfind("https://", 0) == 0;
+    job.url = whole ? f.url : c.url + f.url;
+    job.key = m_shop_active ? m_shop_key : c.key;
     job.format = f.format;
     job.kind = f.kind;
     job.title_id = f.title_id;
@@ -3397,6 +3424,16 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::SpaceDump:
             SpaceDialogText(title, body, primary);
             break;
+        case DialogKind::ShopRemove: {
+            const More& m = TrM();
+            char text[200];
+            std::snprintf(text, sizeof(text), m.sh_remove_title,
+                          m_dialog.entry >= 0 && m_dialog.entry < int(m_shops.size()) ? m_shops[size_t(m_dialog.entry)].name.c_str() : "");
+            title = text;
+            body = m.sh_remove_body;
+            primary = m.sh_remove;
+            break;
+        }
         case DialogKind::VaultError:
             title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             error = m_dialog.from;
@@ -3745,6 +3782,12 @@ void App::ConfirmDialog() {
         case DialogKind::SpaceCard:
         case DialogKind::SpaceDump:
             ConfirmSpaceDialog();
+            break;
+        case DialogKind::ShopRemove:
+            if (m_dialog.entry >= 0 && m_dialog.entry < int(m_shops.size())) {
+                m_shops.erase(m_shops.begin() + m_dialog.entry);
+                SaveShops(ShopsPath(), m_shops);
+            }
             break;
         case DialogKind::VaultRestore: {
             const Config c = m_link.CurrentConfig();

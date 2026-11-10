@@ -14,6 +14,7 @@
 #include "install_queue.hpp"
 #include "link.hpp"
 #include "precheck.hpp"
+#include "shop.hpp"
 #include "space.hpp"
 #include "vault.hpp"
 #include "push.hpp"
@@ -43,7 +44,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -143,6 +144,18 @@ private:
     std::vector<std::pair<int, int>> m_pick_rows; // the game, and its content (dump) or -1
     std::vector<char> m_pick_marks;
     std::string m_plan_head;
+    // shops of the kind of Tinfoil and Ownfoil (9A, more_shop.cpp)
+    void OpenShops();
+    bool EditShop(ShopConfig& shop, bool fresh);
+    void FollowShop();
+    void LeaveShop();
+    void DrawShops(NVGcontext* vg);
+    void UpdateShops(u64 down, u64 held);
+    std::vector<ShopConfig> m_shops;
+    std::unique_ptr<ShopLoader> m_shop_loader;
+    int m_shop_focus = 0, m_shop_opening = -1;
+    bool m_shop_active = false;   // the library shows a shop
+    std::string m_shop_name, m_shop_key;
     // saver mode: dark after a minute without input while installing
     void DrawSaver(NVGcontext* vg);
     double m_last_input = 0;
@@ -307,7 +320,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

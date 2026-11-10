@@ -39,4 +39,8 @@ long long JsonNumber(const std::string& json, const std::string& field, long lon
 bool JsonBool(const std::string& json, const std::string& field, bool fallback = false);
 std::string JsonQuote(const std::string& text);
 
+// The user and password of basic authentication for a key: the console key goes as the password
+// of the user "nxdock"; a shop's key is "user", a unit separator, then "password".
+void SplitKey(const std::string& key, std::string& user, std::string& pass);
+
 } // namespace nxdock::http

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 DeLFuS77
 #include "tls_pin.hpp"
 #include "http_source.hpp"
+#include "http.hpp"
 #include "log.hpp"
 
 #include <curl/curl.h>
@@ -96,9 +97,12 @@ CURL* NewHandle(const std::string& url, const std::string& key) {
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     if (!key.empty()) {
         // as http.cpp: the key is the password of basic authentication
+        // a shop's key holds a user and a password (http.hpp, SplitKey)
+        static thread_local std::string user, pass;
+        http::SplitKey(key, user, pass);
         curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-        curl_easy_setopt(curl, CURLOPT_USERNAME, "nxdock");
-        curl_easy_setopt(curl, CURLOPT_PASSWORD, key.c_str());
+        curl_easy_setopt(curl, CURLOPT_USERNAME, user.c_str());
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, pass.c_str());
     }
     return curl;
 }

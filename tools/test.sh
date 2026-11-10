@@ -15,6 +15,10 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   gcc -O1 -c -o /tmp/yyjson_v.o build/_deps/yyjson-src/src/yyjson.c
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -Ibuild/_deps/yyjson-src/src -o /tmp/vault_test tests/vault_test.cpp source/zip.cpp source/vault_json.cpp /tmp/yyjson_v.o /usr/lib/x86_64-linux-gnu/libz.so.1
   /tmp/vault_test /tmp
+  # shops of the kind of Tinfoil and Ownfoil: plain, zstd, zlib, encrypted
+  cp /opt/devkitpro/portlibs/switch/include/zstd.h /opt/devkitpro/portlibs/switch/include/zstd_errors.h /tmp/zinc/
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -Ibuild/_deps/yyjson-src/src -o /tmp/shop_test tests/shop_test.cpp source/shop.cpp /tmp/yyjson_v.o /usr/lib/x86_64-linux-gnu/libz.so.1 /usr/lib/x86_64-linux-gnu/libzstd.so.1
+  /tmp/shop_test
   # clear errors and the check before installing, in every language
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp
   /tmp/errors_test
@@ -47,7 +51,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   /tmp/tls_pin_test /tmp/tls/rsa.pem "sha256//$(pin_of /tmp/tls/rsa.pem)" https://127.0.0.1:18766 /tmp/tls/ec.pem
   kill $tls_server
   # the network source, against a Range server that cuts answers on purpose
-  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -I/tmp/inc -DNXDOCK_VERSION=\"test\" -o /tmp/http_source_test tests/http_source_test.cpp source/http_source.cpp source/tls_pin.cpp /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
+  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -I/tmp/inc -DNXDOCK_VERSION=\"test\" -o /tmp/http_source_test tests/http_source_test.cpp source/http_source.cpp source/http.cpp source/tls_pin.cpp /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
   size=12595257
   python3 tests/range_server.py 18765 $size testkey &
   server=$!

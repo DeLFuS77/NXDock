@@ -11,6 +11,7 @@
 namespace nxdock::http {
 namespace {
 
+
 constexpr size_t kMaxBody = 64 * 1024;
 
 struct Sink {
@@ -46,9 +47,11 @@ Response Request(const std::string& url, const std::string* json, const std::str
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "NXDock/" NXDOCK_VERSION);
     if (!key.empty()) {
+        static thread_local std::string user, pass;
+        SplitKey(key, user, pass);
         curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-        curl_easy_setopt(curl, CURLOPT_USERNAME, "nxdock");
-        curl_easy_setopt(curl, CURLOPT_PASSWORD, key.c_str());
+        curl_easy_setopt(curl, CURLOPT_USERNAME, user.c_str());
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, pass.c_str());
     }
     headers = curl_slist_append(headers, "Accept: application/json");
     if (json) {
@@ -110,9 +113,11 @@ CURL* Prepare(const std::string& url, const std::string& key) {
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "NXDock/" NXDOCK_VERSION);
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
     if (!key.empty()) {
+        static thread_local std::string user, pass;
+        SplitKey(key, user, pass);
         curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-        curl_easy_setopt(curl, CURLOPT_USERNAME, "nxdock");
-        curl_easy_setopt(curl, CURLOPT_PASSWORD, key.c_str());
+        curl_easy_setopt(curl, CURLOPT_USERNAME, user.c_str());
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, pass.c_str());
     }
     return curl;
 }
@@ -129,6 +134,17 @@ Response Finish(CURL* curl, CURLcode res) {
 }
 
 } // namespace
+
+void SplitKey(const std::string& key, std::string& user, std::string& pass) {
+    const auto sep = key.find('');
+    if (sep == std::string::npos) {
+        user = "nxdock";
+        pass = key;
+    } else {
+        user = key.substr(0, sep);
+        pass = key.substr(sep + 1);
+    }
+}
 
 Response Send(const std::string& method, const std::string& url, const std::string& key, uint64_t size,
               const std::function<long(char*, size_t)>& read, const std::function<bool(uint64_t)>& progress) {
