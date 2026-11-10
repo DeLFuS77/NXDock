@@ -14,6 +14,7 @@
 #include "install_queue.hpp"
 #include "link.hpp"
 #include "precheck.hpp"
+#include "space.hpp"
 #include "vault.hpp"
 #include "push.hpp"
 #include "sound.hpp"
@@ -42,7 +43,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -126,6 +127,22 @@ private:
     std::vector<Vault::User> m_vault_users;
     std::vector<Vault::Save> m_vault_saves;
     int m_vault_user = 0, m_vault_focus = 0, m_vault_copy = 0, m_vault_side = 0, m_vault_finished = 0;
+    // space and dumps (8A, more_space.cpp)
+    unsigned long long QueueNeedsOnSd();
+    void OpenSpace();
+    void OpenPicker(int kind); // 0 archive (several), 1 move, 2 dump
+    void OpenPlanner();
+    void FollowSpace();
+    void DrawSpace(NVGcontext* vg);
+    void DrawPicker(NVGcontext* vg, const Space::View& v);
+    void UpdateSpace(u64 down, u64 held);
+    void SpaceDialogText(std::string& title, std::string& body, std::string& primary);
+    void ConfirmSpaceDialog();
+    std::unique_ptr<Space> m_space;
+    int m_space_focus = 0, m_space_mode = 0, m_pick_kind = 0, m_pick_focus = 0, m_pick_first = 0, m_space_finished = 0;
+    std::vector<std::pair<int, int>> m_pick_rows; // the game, and its content (dump) or -1
+    std::vector<char> m_pick_marks;
+    std::string m_plan_head;
     // saver mode: dark after a minute without input while installing
     void DrawSaver(NVGcontext* vg);
     double m_last_input = 0;
@@ -290,7 +307,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -303,6 +320,10 @@ private:
         std::string from;               // Push: who sent it
         PreCheck check;                 // PreCheck: the firmware, the keys and Atmosphère
         LibrarySave save;               // VaultRestore: the copy to bring back
+        std::vector<unsigned long long> ids; // Space*: the games, or the content to dump
+        std::string text;               // Space*: a name or a size to show; VaultError: its title
+        bool to_nand = false;           // SpaceMove: the way it goes
+        unsigned long long size = 0;    // SpaceMove: how much moves
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;

@@ -134,3 +134,14 @@
   empty); A restores a copy, always after a question, and the save it
   replaces goes to the library first ("Before restoring"). R changes the
   user.
+- Space and dumps (More › Space): the SD card and the internal memory as
+  bars, and:
+  - clean leftovers: contents no title uses and tickets of titles that are
+    not on the console (archived games keep theirs);
+  - archive games: the content goes, the icon stays on the HOME menu;
+  - move a game between the SD card and the internal memory (copied,
+    checked, then the old copy goes; the internal memory asks first);
+  - plan the queue: when it does not fit, the largest games come marked;
+  - dump the game card or an installed game to the library app as an NSP,
+    in pieces that go on after a cut.
+  Every action asks first.

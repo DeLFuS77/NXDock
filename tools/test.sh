@@ -8,7 +8,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   set -e
   g++ -std=c++20 -Wall -Wextra -O1 -o /tmp/json_test tests/json_test.cpp source/json.cpp && /tmp/json_test
   # installing without a server: split files and the USB protocol of Tinfoil
-  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/local_test tests/local_test.cpp source/file_source.cpp source/usb_tinfoil.cpp
+  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/local_test tests/local_test.cpp source/file_source.cpp source/usb_tinfoil.cpp source/space_plan.cpp
   /tmp/local_test /tmp
   # the vault of saves: zips written and read, and the list of the library app
   mkdir -p /tmp/zinc && cp /opt/devkitpro/portlibs/switch/include/zlib.h /opt/devkitpro/portlibs/switch/include/zconf.h /tmp/zinc/

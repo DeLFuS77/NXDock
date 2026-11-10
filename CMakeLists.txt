@@ -128,6 +128,9 @@ add_executable(nxdock
     source/file_source.cpp
     source/more.cpp
     source/more_vault.cpp
+    source/more_space.cpp
+    source/space.cpp
+    source/space_plan.cpp
     source/vault.cpp
     source/vault_json.cpp
     source/zip.cpp

@@ -48,6 +48,8 @@ struct More {
     const char *no_saves, *no_copies, *need_link, *st_copying, *st_sending, *st_receiving, *st_restoring, *copied, *restored;
     const char *restore_title, *restore_body, *restore_go, *before_restore, *no_note;
     const char *v_copy_failed, *v_copy_failed_d, *v_no_save, *v_no_save_d, *v_restore_failed, *v_restore_failed_d;
+    // space and dumps (phase 12)
+    const char *sp_sd_fmt, *sp_nand_fmt, *a_clean, *a_clean_sub_fmt, *a_archive, *a_archive_sub, *a_move, *a_move_sub, *a_plan, *a_plan_sub_fmt, *a_plan_fits, *a_card, *a_card_sub, *a_card_none, *a_dump, *a_dump_sub, *choose_word, *dumps_note, *scanning, *clean_title, *clean_body_fmt, *clean_go, *archive_title_fmt, *archive_body_fmt, *archive_go, *move_title_fmt, *move_body_fmt, *move_go, *plan_head_fmt, *card_title, *card_body, *dump_title_fmt, *dump_body, *dump_go, *st_cleaning, *st_archiving, *st_moving, *st_dumping, *done_clean, *done_archive, *done_move, *done_dump, *s_archive_failed, *s_archive_failed_d, *s_move_failed, *s_move_failed_d, *s_dump_failed, *s_dump_failed_d, *s_no_card, *s_no_card_d, *d_uploads_off, *d_uploads_off_d, *d_library_full, *d_library_full_d, *archived_tag, *game_word;
 };
 
 const More& TrM();

@@ -45,6 +45,7 @@ void App::OpenMoreTile(int tile) {
         case 0: OpenMoreScreen(MoreScreen::Files); break;
         case 1: OpenMoreScreen(MoreScreen::Mtp); break;
         case 2: OpenMoreScreen(MoreScreen::Usb); break;
+        case 5: OpenSpace(); break;
         case 4:
             OpenVault();
             m_more = MoreScreen::Saves;
@@ -113,6 +114,7 @@ void App::DrawMore(NVGcontext* vg) {
         case MoreScreen::Mtp:
         case MoreScreen::Usb: DrawArrival(vg); break;
         case MoreScreen::Saves: DrawVault(vg); break;
+        case MoreScreen::Space: DrawSpace(vg); break;
         default: DrawTiles(vg); break;
     }
 }
@@ -124,6 +126,7 @@ void App::UpdateMore(u64 down, u64 held) {
         case MoreScreen::Mtp:
         case MoreScreen::Usb: UpdateArrival(down, held); break;
         case MoreScreen::Saves: UpdateVault(down, held); break;
+        case MoreScreen::Space: UpdateSpace(down, held); break;
         default: m_more = MoreScreen::Tiles; break;
     }
 }

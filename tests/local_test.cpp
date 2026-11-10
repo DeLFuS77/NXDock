@@ -5,6 +5,7 @@
 // folder of parts 00, 01… and name.nsp.00, .01…), reading across the parts, and the bytes of
 // the USB protocol of Tinfoil as NS-USBloader expects them.
 #include "file_source.hpp"
+#include "space.hpp"
 #include "usb_tinfoil.hpp"
 
 #include <cstdio>
@@ -98,6 +99,20 @@ int main(int argc, char** argv) {
     CHECK(tinfoil::AnswerLength(answer) == 0x800000);
     answer[4] = 0;
     CHECK(tinfoil::AnswerLength(answer) == -1);
+
+    // the planner: the largest games first, only as many as needed, never archived ones
+    {
+        std::vector<InstalledApp> apps(4);
+        apps[0].name = "small", apps[0].sd_bytes = 1000;
+        apps[1].name = "big", apps[1].sd_bytes = 9000;
+        apps[2].name = "middle", apps[2].sd_bytes = 4000;
+        apps[3].name = "gone", apps[3].archived = true, apps[3].sd_bytes = 20000;
+        const auto plan = PlanArchive(apps, 10000, false);
+        CHECK(plan.size() == 2 && plan[0] == 1 && plan[1] == 2);
+        CHECK(PlanArchive(apps, 5000, false).size() == 1);
+        CHECK(PlanArchive(apps, 50000, false).empty()); // not enough even with all
+        CHECK(PlanArchive(apps, 100, true).empty());     // nothing in the internal memory
+    }
 
     if (failures) {
         std::printf("local_test: %d failures\n", failures);

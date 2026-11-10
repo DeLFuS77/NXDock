@@ -669,6 +669,20 @@ void App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::MoreSide:
                 break;
+            case HitKind::SpaceAction:
+                if (m_space_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_space_focus = it->index;
+                }
+                break;
+            case HitKind::PickRow:
+                if (m_pick_focus == it->index) {
+                    down |= m_pick_kind == 0 ? HidNpadButton_Y : HidNpadButton_A;
+                } else {
+                    m_pick_focus = it->index;
+                }
+                break;
             case HitKind::VaultGame:
                 m_vault_side = 0;
                 if (m_vault_focus != it->index) m_vault_copy = 0;
@@ -3376,8 +3390,15 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = m.restore_go;
             break;
         }
+        case DialogKind::SpaceClean:
+        case DialogKind::SpaceArchive:
+        case DialogKind::SpaceMove:
+        case DialogKind::SpaceCard:
+        case DialogKind::SpaceDump:
+            SpaceDialogText(title, body, primary);
+            break;
         case DialogKind::VaultError:
-            title = TrM().t_saves;
+            title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             error = m_dialog.from;
             break;
         case DialogKind::MtpNand: {
@@ -3717,6 +3738,13 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::MtpNand:
             MtpAllowNand(true);
+            break;
+        case DialogKind::SpaceClean:
+        case DialogKind::SpaceArchive:
+        case DialogKind::SpaceMove:
+        case DialogKind::SpaceCard:
+        case DialogKind::SpaceDump:
+            ConfirmSpaceDialog();
             break;
         case DialogKind::VaultRestore: {
             const Config c = m_link.CurrentConfig();

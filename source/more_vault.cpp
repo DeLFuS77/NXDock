@@ -23,7 +23,7 @@ std::string When(long long when) {
     const time_t t = time_t(when);
     const struct tm* lt = localtime(&t);
     if (!lt) return "";
-    char text[32];
+    char text[64];
     std::snprintf(text, sizeof(text), "%02d/%02d/%04d %02d:%02d", lt->tm_mday, lt->tm_mon + 1, lt->tm_year + 1900, lt->tm_hour, lt->tm_min);
     return text;
 }
