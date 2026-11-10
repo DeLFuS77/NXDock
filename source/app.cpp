@@ -202,6 +202,8 @@ bool App::Init() {
     // remembered: connects by itself; else looks for the app on the network
     m_link.Start(config);
     m_prefs = InstallPrefs::Load();
+    m_ui = UiPrefs::Load();
+    m_psm = R_SUCCEEDED(psmInitialize());
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_push = std::make_unique<Push>();
@@ -218,7 +220,25 @@ void App::Exit() {
     m_covers.Stop();
     m_covers.Free(m_gfx.vg());
     m_gfx.Exit();
+    if (m_psm) {
+        psmExit();
+    }
     net::Exit();
+}
+
+void App::CheckBattery() {
+    if (!m_psm || m_time - m_battery_checked < 5) {
+        return;
+    }
+    m_battery_checked = m_time;
+    u32 percent = 0;
+    PsmChargerType charger = PsmChargerType_Unconnected;
+    if (R_SUCCEEDED(psmGetBatteryChargePercentage(&percent))) {
+        m_battery = int(std::min(percent, 100u));
+    }
+    if (R_SUCCEEDED(psmGetChargerType(&charger))) {
+        m_charging = charger != PsmChargerType_Unconnected;
+    }
 }
 
 void App::ActivateSetting(int row) {
@@ -528,6 +548,7 @@ bool App::Frame() {
     FollowQueue();
     FollowPush();
     CheckSdSpace();
+    CheckBattery();
 
     // Ease the grid toward where it should be (frame-rate independent).
     if (!m_dragging) {
@@ -558,7 +579,7 @@ void App::Draw(NVGcontext* vg) {
     if (m_queue) {
         queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
     }
-    ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str());
+    ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging);
     for (int i = 0; i < 4; i++) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
     }
@@ -1331,6 +1352,13 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
     }
     if (added) {
         Notice(s.added_to_queue);
+        // little battery and no charger: said before the install starts, it is not stopped
+        if (m_ui.battery_notice && m_battery >= 0 && m_battery < m_ui.battery_level && !m_charging) {
+            char text[200];
+            std::snprintf(text, sizeof(text), s.battery_low, m_battery);
+            Notice(text);
+            m_notice_until = m_time + 6;
+        }
         // back to the library: the strip shows the install going on
         m_detail = false;
     } else if (duplicate) {

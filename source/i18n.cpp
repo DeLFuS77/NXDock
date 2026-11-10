@@ -148,6 +148,7 @@ constexpr Strings kEnglish{
     "No",
     "Share what is installed",
     "Yes",
+    "Battery at %d %% and no charger: connect it so the install is not cut.",
 };
 
 constexpr Strings kSpanish{
@@ -291,6 +292,7 @@ constexpr Strings kSpanish{
     "No",
     "Compartir lo instalado",
     "Sí",
+    "Batería al %d %% y sin cargador: conéctalo para que no se corte la instalación.",
 };
 
 constexpr Strings kFrench{
@@ -515,6 +517,7 @@ constexpr Strings kFrench{
     "Non",
     "Partager ce qui est installé",
     "Oui",
+    "Batterie à %d %% et sans chargeur : branchez-le pour que l'installation ne soit pas coupée.",
 };
 
 constexpr Strings kGerman{
@@ -739,6 +742,7 @@ constexpr Strings kGerman{
     "Nein",
     "Installiertes teilen",
     "Ja",
+    "Akku bei %d %% und kein Ladegerät: Schließe es an, damit die Installation nicht abbricht.",
 };
 
 constexpr Strings kItalian{
@@ -963,6 +967,7 @@ constexpr Strings kItalian{
     "No",
     "Condividi ciò che è installato",
     "Sì",
+    "Batteria al %d %% e senza caricatore: collegalo perché l'installazione non si interrompa.",
 };
 
 constexpr Strings kPortuguese{
@@ -1187,6 +1192,7 @@ constexpr Strings kPortuguese{
     "Não",
     "Partilhar o que está instalado",
     "Sim",
+    "Bateria a %d %% e sem carregador: liga-o para que a instalação não seja cortada.",
 };
 
 constexpr Strings kDutch{
@@ -1411,6 +1417,7 @@ constexpr Strings kDutch{
     "Nee",
     "Geïnstalleerde delen",
     "Ja",
+    "Batterij op %d %% en geen lader: sluit hem aan zodat de installatie niet wordt afgebroken.",
 };
 
 constexpr Strings kRussian{
@@ -1635,6 +1642,7 @@ constexpr Strings kRussian{
     "Нет",
     "Делиться установленным",
     "Да",
+    "Заряд %d %%, зарядка не подключена: подключите её, чтобы установка не прервалась.",
 };
 
 constexpr Strings kJapanese{
@@ -1859,6 +1867,7 @@ constexpr Strings kJapanese{
     "いいえ",
     "インストール済みを共有",
     "はい",
+    "バッテリー残量 %d %%、充電器なし：インストールが途切れないよう接続してください。",
 };
 
 constexpr Strings kKorean{
@@ -2083,6 +2092,7 @@ constexpr Strings kKorean{
     "아니요",
     "설치된 내용 공유",
     "네",
+    "배터리 %d %%, 충전기 없음: 설치가 끊기지 않도록 연결하세요.",
 };
 
 constexpr Strings kChinese{
@@ -2307,6 +2317,7 @@ constexpr Strings kChinese{
     "否",
     "共享已安装内容",
     "是",
+    "电量 %d %%，未连接充电器：请连接，以免安装中断。",
 };
 
 const Strings* g_strings = &kEnglish;

@@ -63,7 +63,13 @@ void Spinner(NVGcontext* vg, float cx, float cy, float r, NVGcolor c, double tim
 void CheckMark(NVGcontext* vg, float cx, float cy, float s, NVGcolor c, float width);
 
 // Draws the bar on top; `tabs` receives the area of each tab (the full bar height, easy to tap).
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[4], const char* sd_free);
+// battery: the charge in %, -1 when unknown (then nothing is drawn).
+void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[4], const char* sd_free,
+            int battery = -1, bool charging = false);
+
+// The battery with its %: filled by the level, amber below 20 %, red only below 10 %, a bolt
+// while charging. Drawn to the left of `right`; returns where it starts.
+float Battery(NVGcontext* vg, const Theme& t, float right, float cy, int percent, bool charging);
 // Draws the hint bar; each hint adds its area to `hits` (the full bar height).
 void HintBar(NVGcontext* vg, const Theme& t, const char* left, std::initializer_list<Hint> hints,
              std::vector<HitRect>& hits);

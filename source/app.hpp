@@ -128,6 +128,13 @@ private:
     SpeedTest m_speed;
     bool m_speed_kept = false;      // the result of the last test went to install.ini
     InstallPrefs m_prefs;
+    UiPrefs m_ui;
+    // the battery in the top bar, read every few seconds
+    void CheckBattery();
+    bool m_psm = false;
+    int m_battery = -1;
+    bool m_charging = false;
+    double m_battery_checked = -100;
     std::unique_ptr<InstallQueue> m_queue;
     unsigned m_queue_version = 0;
     int m_queue_focus = 0;          // row in focus on the queue screen

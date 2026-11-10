@@ -30,4 +30,25 @@ struct InstallPrefs {
     bool Save() const;
 };
 
+// How the interface behaves, in sdmc:/config/NXDock/ui.ini.
+struct UiPrefs {
+    bool wizard_done = false;   // the first-run wizard was shown (or skipped)
+    bool wizard_music = true;   // the soft music of the wizard
+    bool sounds = true;         // the sounds of the interface
+    bool finish_effect = true;  // when the queue ends: notice, vibration and sound
+    bool battery_notice = true; // a notice before installing with little battery and no charger
+    int battery_level = 15;     // from which %
+    bool check_updates = true;  // at start, say how many updates the library has for what is installed
+    bool saver = true;          // dims the screen after a while without touching anything while installing
+    int language = -1;          // -1: the console's; else an index of the languages NXDock speaks
+    bool theme_auto = false;    // the theme follows the console's
+    int dest = 0;               // where the page of a game installs: 0 SD card, 1 internal memory, 2 ask each time
+    int pick = 0;               // what the page of a game ticks: 0 what is missing, 1 the game only, 2 the game and its update
+    int sort = 0;               // the order of the library: 0 A-Z, 1 size, 2 not installed first
+    std::string focus;          // the key of the game in focus in the library, for the next time
+
+    static UiPrefs Load();
+    bool Save() const;
+};
+
 } // namespace nxdock

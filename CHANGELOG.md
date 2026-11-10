@@ -63,3 +63,7 @@
 - Sharing what is installed with the library app, asked once the first time
   and changed in Settings: the games, updates and DLC of the console and
   where they are; nothing is sent when the answer is no.
+- The battery next to the clock, with its %: it fills by the level, turns
+  amber below 20 % and red below 10 %, and shows a bolt while charging. With
+  little battery and no charger, adding an install to the queue says so first
+  (the install is not stopped).

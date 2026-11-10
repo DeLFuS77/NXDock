@@ -203,7 +203,44 @@ void BrandMark(NVGcontext* vg, const Theme& t, float x, float y, float s) {
 
 } // namespace
 
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[4], const char* sd_free) {
+float Battery(NVGcontext* vg, const Theme& t, float right, float cy, int percent, bool charging) {
+    percent = std::clamp(percent, 0, 100);
+    // red only when it is really low, as an error would be; amber a little before
+    const NVGcolor color = percent < 10 ? t.err : percent < 20 ? t.warn : t.text;
+    const NVGcolor outline = percent < 20 ? color : t.muted;
+    const float bw = 30, bh = 15, bx = right - bw - 4, by = cy - bh / 2;
+    StrokeRound(vg, bx, by, bw, bh, 4, outline, 2);
+    FillRound(vg, bx + bw + 1, cy - 3, 3, 6, 1.5f, outline);
+    const float fw = (bw - 6) * float(percent) / 100.f;
+    if (fw > 0.5f) {
+        FillRound(vg, bx + 3, by + 3, std::max(fw, 2.f), bh - 6, 1.5f, color);
+    }
+    if (charging) {
+        // a bolt over the middle, outlined with the colour of the bar behind it
+        const float mx = bx + bw / 2, my = cy;
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, mx + 1.5f, my - 8.5f);
+        nvgLineTo(vg, mx - 4.5f, my + 1.f);
+        nvgLineTo(vg, mx - 0.5f, my + 1.f);
+        nvgLineTo(vg, mx - 1.5f, my + 8.5f);
+        nvgLineTo(vg, mx + 4.5f, my - 1.f);
+        nvgLineTo(vg, mx + 0.5f, my - 1.f);
+        nvgClosePath(vg);
+        nvgStrokeColor(vg, t.bg);
+        nvgStrokeWidth(vg, 2.5f);
+        nvgStroke(vg);
+        nvgFillColor(vg, color);
+        nvgFill(vg);
+    }
+    char text[8];
+    std::snprintf(text, sizeof(text), "%d %%", percent);
+    const float tw = TextWidth(vg, 16, text);
+    Text(vg, bx - 7, cy, 16, color, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    return bx - 7 - tw;
+}
+
+void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[4], const char* sd_free, int battery,
+            bool charging) {
     BrandMark(vg, t, 36, 19, 34);
     Text(vg, 80, 36, 24, t.text, "NXDock");
 
@@ -233,16 +270,20 @@ void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect ta
     }
     Text(vg, x + 6, 37, 22, t.muted, glyph::R, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 
-    // Right side: free space on the SD card (sample value for now) and the clock.
+    // Right side: free space on the SD card, the battery and the clock.
     char clock[16];
     const time_t now = time(nullptr);
     const struct tm* lt = localtime(&now);
     std::snprintf(clock, sizeof(clock), "%02d:%02d", lt ? lt->tm_hour : 0, lt ? lt->tm_min : 0);
     Text(vg, 1244, 36, 17, t.text, clock, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    float right = 1244 - TextWidth(vg, 17, clock) - 20;
+    if (battery >= 0) {
+        right = Battery(vg, t, right, 36, battery, charging) - 22;
+    }
     if (sd_free && sd_free[0]) {
         char sd[64];
         std::snprintf(sd, sizeof(sd), "SD  %s %s", sd_free, s.free_space);
-        Text(vg, 1180, 36, 16, t.muted, sd, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        Text(vg, right, 36, 16, t.muted, sd, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     }
 
     nvgBeginPath(vg);

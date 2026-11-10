@@ -15,6 +15,8 @@ constexpr const char* kPath = "sdmc:/config/NXDock/config.ini";
 constexpr const char* kTemp = "sdmc:/config/NXDock/config.ini.tmp";
 constexpr const char* kInstallPath = "sdmc:/config/NXDock/install.ini";
 constexpr const char* kInstallTemp = "sdmc:/config/NXDock/install.ini.tmp";
+constexpr const char* kUiPath = "sdmc:/config/NXDock/ui.ini";
+constexpr const char* kUiTemp = "sdmc:/config/NXDock/ui.ini.tmp";
 
 std::string Trim(const char* s) {
     std::string out(s);
@@ -100,6 +102,61 @@ bool InstallPrefs::Save() const {
     }
     std::remove(kInstallPath);
     return std::rename(kInstallTemp, kInstallPath) == 0;
+}
+
+UiPrefs UiPrefs::Load() {
+    UiPrefs p;
+    FILE* f = std::fopen(kUiPath, "r");
+    if (!f) {
+        return p;
+    }
+    char line[512];
+    while (std::fgets(line, sizeof(line), f)) {
+        const char* eq = std::strchr(line, '=');
+        if (!eq) {
+            continue;
+        }
+        const std::string key(line, eq - line);
+        const std::string value = Trim(eq + 1);
+        const int n = std::atoi(value.c_str());
+        if (key == "wizard_done") p.wizard_done = n != 0;
+        else if (key == "wizard_music") p.wizard_music = n != 0;
+        else if (key == "sounds") p.sounds = n != 0;
+        else if (key == "finish_effect") p.finish_effect = n != 0;
+        else if (key == "battery_notice") p.battery_notice = n != 0;
+        else if (key == "battery_level") p.battery_level = n >= 5 && n <= 50 ? n : 15;
+        else if (key == "check_updates") p.check_updates = n != 0;
+        else if (key == "saver") p.saver = n != 0;
+        else if (key == "language") p.language = n;
+        else if (key == "theme_auto") p.theme_auto = n != 0;
+        else if (key == "dest") p.dest = n >= 0 && n <= 2 ? n : 0;
+        else if (key == "pick") p.pick = n >= 0 && n <= 2 ? n : 0;
+        else if (key == "sort") p.sort = n >= 0 && n <= 2 ? n : 0;
+        else if (key == "focus") p.focus = value;
+    }
+    std::fclose(f);
+    return p;
+}
+
+bool UiPrefs::Save() const {
+    mkdir("sdmc:/config", 0777);
+    mkdir(kDir, 0777);
+    FILE* f = std::fopen(kUiTemp, "w");
+    if (!f) {
+        return false;
+    }
+    std::fprintf(f,
+                 "wizard_done=%d\nwizard_music=%d\nsounds=%d\nfinish_effect=%d\nbattery_notice=%d\nbattery_level=%d\n"
+                 "check_updates=%d\nsaver=%d\nlanguage=%d\ntheme_auto=%d\ndest=%d\npick=%d\nsort=%d\nfocus=%s\n",
+                 wizard_done, wizard_music, sounds, finish_effect, battery_notice, battery_level, check_updates, saver,
+                 language, theme_auto, dest, pick, sort, focus.c_str());
+    const bool ok = std::fclose(f) == 0;
+    if (!ok) {
+        std::remove(kUiTemp);
+        return false;
+    }
+    std::remove(kUiPath);
+    return std::rename(kUiTemp, kUiPath) == 0;
 }
 
 } // namespace nxdock
