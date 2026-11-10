@@ -307,7 +307,7 @@ void App::UpdateSdCheck(u64 down, u64 held) {
     if (Repeat(down, held, HidNpadButton_AnyLeft)) m_sd_choice = 0;
     if (Repeat(down, held, HidNpadButton_AnyRight)) m_sd_choice = 1;
     if (down & HidNpadButton_A) {
-        if (m_sdcheck->Start(m_sd_choice == 1)) {
+        if (m_sdcheck->Start(m_sd_choice == 0)) { // 0 quick, 1 full
             m_sd_seen_done = false;
         }
     }
