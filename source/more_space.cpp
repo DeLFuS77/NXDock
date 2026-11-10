@@ -149,7 +149,7 @@ void App::DrawSpace(NVGcontext* vg) {
     const unsigned long long need = QueueNeedsOnSd();
     std::string sub[7], right[7];
     char text[200];
-    std::snprintf(text, sizeof(text), m.a_clean_sub_fmt, v.leftovers.contents, v.leftovers.tickets);
+    std::snprintf(text, sizeof(text), m.cl_sub_fmt, v.leftovers.contents, v.leftovers.placeholders, v.leftovers.addons, v.leftovers.tickets);
     sub[0] = v.scanned ? text : m.scanning;
     right[0] = v.scanned ? draw::Size(v.leftovers.bytes) : "";
     sub[1] = m.a_archive_sub;
@@ -181,7 +181,7 @@ void App::DrawSpace(NVGcontext* vg) {
         draw::Panel(vg, t, x, y, cw, 66, 12);
         if (i == m_space_focus) ui::Focus(vg, t, x, y, cw, 66, 12, m_time);
         AddHit(x, y, cw, 66, HitKind::SpaceAction, i);
-        const bool off = (i == 4 && !v.card) || (i == 0 && v.scanned && !v.leftovers.contents && !v.leftovers.tickets);
+        const bool off = (i == 4 && !v.card) || (i == 0 && v.scanned && !v.leftovers.Any());
         nvgGlobalAlpha(vg, off ? 0.5f : 1.f);
         DrawTileIcon(vg, i == 0 ? 6 : i == 1 ? 4 : i == 2 ? 5 : i == 3 ? 5 : i == 4 ? 0 : i == 5 ? 1 : 0, x + 18, y + 33);
         ui::Text(vg, x + 70, y + 24, 17, t.text, titles[i]);
@@ -377,7 +377,7 @@ void App::UpdateSpace(u64 down, u64 held) {
     const Config c = m_link.CurrentConfig();
     switch (m_space_focus) {
         case 0:
-            if (!v.leftovers.contents && !v.leftovers.tickets) return;
+            if (!v.leftovers.Any()) return;
             m_dialog = Dialog{};
             m_dialog.kind = DialogKind::SpaceClean;
             break;
@@ -412,7 +412,8 @@ void App::SpaceDialogText(std::string& title, std::string& body, std::string& pr
     switch (m_dialog.kind) {
         case DialogKind::SpaceClean:
             title = m.clean_title;
-            std::snprintf(text, sizeof(text), m.clean_body_fmt, v.leftovers.contents, draw::Size(v.leftovers.bytes).c_str(), v.leftovers.tickets);
+            std::snprintf(text, sizeof(text), m.cl_body_fmt, draw::Size(v.leftovers.bytes).c_str(), v.leftovers.contents, v.leftovers.placeholders,
+                          v.leftovers.addons, v.leftovers.tickets);
             body = text;
             primary = m.clean_go;
             break;

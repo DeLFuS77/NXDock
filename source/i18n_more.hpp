@@ -82,6 +82,8 @@ struct More {
         *qw_keep;
     // going on after the console went off (phase 23)
     const char *rs_title, *rs_parts_fmt, *rs_waiting_fmt, *rs_note, *rs_go, *rs_discard, *rs_discarded;
+    // optimize space: what Clean leftovers takes (phase 24)
+    const char *cl_sub_fmt, *cl_body_fmt;
 };
 
 const More& TrM();

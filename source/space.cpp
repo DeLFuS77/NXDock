@@ -9,6 +9,9 @@
 #include "yati/nx/es.hpp"
 #include "yati/nx/ncm.hpp"
 #include "yati/nx/ns.hpp"
+#include "install_queue.hpp"
+#include "resume.hpp"
+#include "uninstall.hpp"
 
 #include <switch.h>
 
@@ -350,6 +353,21 @@ void Space::ScanNow() {
                 (nand ? a.nand_bytes : a.sd_bytes) += c.bytes;
                 a.contents.push_back(c);
             }
+            // placeholders of installs that did not end (24A), except those NXDock can go on with
+            {
+                const auto keep = ResumePlaceholders(!nand);
+                std::vector<NcmPlaceHolderId> phs(512);
+                s32 n = 0;
+                if (R_SUCCEEDED(ncmContentStorageListPlaceHolder(&s.cs, phs.data(), s32(phs.size()), &n))) {
+                    for (s32 i = 0; i < n; i++) {
+                        if (keep.count(IdHex(&phs[size_t(i)], sizeof(NcmPlaceHolderId)))) continue;
+                        s64 size = 0;
+                        ncmContentStorageGetSizeFromPlaceHolderId(&s.cs, &size, &phs[size_t(i)]);
+                        left.placeholders++;
+                        left.bytes += u64(std::max<s64>(0, size));
+                    }
+                }
+            }
             // contents no title refers to
             std::vector<NcmContentId> ids(256);
             s32 written = 0, offset = 0;
@@ -433,6 +451,16 @@ void Space::ScanNow() {
         }
         // tickets of titles that are not on the console in any way
         const std::set<u64> records = RecordApps();
+        // updates and DLC whose game is neither installed nor in the records (24A)
+        for (const auto& a : apps) {
+            if (a.archived || records.count(a.app_id)) continue;
+            const bool base = std::any_of(a.contents.begin(), a.contents.end(), [](const InstalledApp::Content& c) {
+                return c.type == NcmContentMetaType_Application;
+            });
+            if (base) continue;
+            left.addons += int(a.contents.size());
+            left.bytes += a.Bytes();
+        }
         if (R_SUCCEEDED(esx::Initialize())) {
             std::vector<FsRightsId> ids;
             esx::GetCommonTickets(ids);
@@ -500,7 +528,43 @@ bool Space::StartClean() {
                 if (written < s32(ids.size())) break;
             }
             for (const auto& id : orphans) ncmContentStorageDelete(&s.cs, &id);
-            ncmContentStorageCleanupAllPlaceHolder(&s.cs);
+            // placeholders, one by one: those of an install NXDock can go on with stay (24A)
+            const auto keep = ResumePlaceholders(sid == NcmStorageId_SdCard);
+            std::vector<NcmPlaceHolderId> phs(512);
+            s32 n = 0;
+            if (R_SUCCEEDED(ncmContentStorageListPlaceHolder(&s.cs, phs.data(), s32(phs.size()), &n))) {
+                for (s32 i = 0; i < n; i++) {
+                    if (!keep.count(IdHex(&phs[size_t(i)], sizeof(NcmPlaceHolderId)))) ncmContentStorageDeletePlaceHolder(&s.cs, &phs[size_t(i)]);
+                }
+            }
+        }
+        // updates and DLC whose game is neither installed nor in the records (24A)
+        if (R_SUCCEEDED(nsInitialize())) {
+            const std::set<u64> records = RecordApps();
+            nsExit();
+            for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+                std::vector<NcmContentMetaKey> lonely;
+                {
+                    Store s(sid);
+                    if (!s.ok) continue;
+                    const auto keys = s.Keys();
+                    std::set<u64> bases;
+                    for (const auto sid2 : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+                        Store o(sid2);
+                        if (!o.ok) continue;
+                        for (const auto& k : o.Keys()) {
+                            if (k.type == NcmContentMetaType_Application) bases.insert(AppOf(k.id));
+                        }
+                    }
+                    for (const auto& k : keys) {
+                        if ((k.type == NcmContentMetaType_Patch || k.type == NcmContentMetaType_AddOnContent) && !bases.count(AppOf(k.id)) &&
+                            !records.count(AppOf(k.id))) {
+                            lonely.push_back(k);
+                        }
+                    }
+                }
+                for (const auto& k : lonely) RemoveInstalled(k, sid);
+            }
         }
         ncmExit();
         if (R_SUCCEEDED(nsInitialize())) {

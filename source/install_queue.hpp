@@ -6,6 +6,7 @@
 #include <functional>
 #include <condition_variable>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -210,6 +211,8 @@ constexpr const char* kResumeDir = "sdmc:/switch/NXDock/resume";
 std::vector<InstallJob> ResumeJobs(const ResumeState& state, const std::string& key);
 // Every placeholder of a journal deleted, and the journal: nothing is left.
 void DiscardResume(const ResumeState& state);
+// The placeholders (hexadecimal) of the journal in one storage: never cleaned (24A).
+std::set<std::string> ResumePlaceholders(bool sd);
 
 // The install or check was cancelled by the user.
 bool IsCancelled(unsigned rc);

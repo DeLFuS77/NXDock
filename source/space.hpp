@@ -34,7 +34,10 @@ struct InstalledApp {
 // are not on the console in any way (archived games keep theirs).
 struct Leftovers {
     int contents = 0, tickets = 0;
-    unsigned long long bytes = 0;
+    int placeholders = 0; // unfinished installs of other installers (24A); never those NXDock can go on with
+    int addons = 0;       // updates and DLC whose game is not on the console, nor in its records
+    unsigned long long bytes = 0; // all of it
+    bool Any() const { return contents || tickets || placeholders || addons; }
 };
 
 // The free space of the SD card and the internal memory, and their size.

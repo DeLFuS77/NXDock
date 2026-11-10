@@ -362,6 +362,8 @@ constexpr More kEnglish{
     .rs_go = "Go on where it stopped",
     .rs_discard = "Discard",
     .rs_discarded = "Discarded: nothing was left behind.",
+    .cl_sub_fmt = "%d contents without a game, %d unfinished installs, %d updates and DLC without their game, %d tickets",
+    .cl_body_fmt = "Frees %s: %d contents no game uses, %d installs other tools left unfinished, %d updates and DLC whose game is not on the console, and %d tickets of games that are not on it. Games, their updates and DLC, archived games and an install NXDock can go on with are not touched.",
 };
 
 constexpr More kSpanish{
@@ -717,6 +719,8 @@ constexpr More kSpanish{
     .rs_go = "Seguir donde se quedó",
     .rs_discard = "Descartar",
     .rs_discarded = "Descartado: no queda ningún resto.",
+    .cl_sub_fmt = "%d contenidos sin juego, %d instalaciones a medias, %d actualizaciones y DLC sin su juego, %d tickets",
+    .cl_body_fmt = "Libera %s: %d contenidos que no usa ningún juego, %d instalaciones que otras herramientas dejaron a medias, %d actualizaciones y DLC cuyo juego no está en la consola y %d tickets de juegos que no están. No se tocan los juegos, sus actualizaciones y DLC, los juegos archivados ni una instalación que NXDock pueda seguir.",
 };
 
 constexpr More kFrench{
@@ -1072,6 +1076,8 @@ constexpr More kFrench{
     .rs_go = "Reprendre où ça s'est arrêté",
     .rs_discard = "Abandonner",
     .rs_discarded = "Abandonné : il ne reste rien.",
+    .cl_sub_fmt = "%d contenus sans jeu, %d installations inachevées, %d mises à jour et DLC sans leur jeu, %d tickets",
+    .cl_body_fmt = "Libère %s : %d contenus qu'aucun jeu n'utilise, %d installations laissées inachevées par d'autres outils, %d mises à jour et DLC dont le jeu n'est pas sur la console, et %d tickets de jeux absents. Les jeux, leurs mises à jour et DLC, les jeux archivés et une installation que NXDock peut reprendre ne sont pas touchés.",
 };
 
 constexpr More kGerman{
@@ -1427,6 +1433,8 @@ constexpr More kGerman{
     .rs_go = "Dort weitermachen, wo es aufhörte",
     .rs_discard = "Verwerfen",
     .rs_discarded = "Verworfen: nichts ist übrig geblieben.",
+    .cl_sub_fmt = "%d Inhalte ohne Spiel, %d unfertige Installationen, %d Updates und DLC ohne ihr Spiel, %d Tickets",
+    .cl_body_fmt = "Gibt %s frei: %d Inhalte, die kein Spiel nutzt, %d Installationen, die andere Tools unfertig ließen, %d Updates und DLC, deren Spiel nicht auf der Konsole ist, und %d Tickets von Spielen, die nicht da sind. Spiele, ihre Updates und DLC, archivierte Spiele und eine Installation, die NXDock fortsetzen kann, bleiben.",
 };
 
 constexpr More kItalian{
@@ -1782,6 +1790,8 @@ constexpr More kItalian{
     .rs_go = "Riprendi da dove si è fermata",
     .rs_discard = "Scarta",
     .rs_discarded = "Scartato: non resta nulla.",
+    .cl_sub_fmt = "%d contenuti senza gioco, %d installazioni a metà, %d aggiornamenti e DLC senza il loro gioco, %d ticket",
+    .cl_body_fmt = "Libera %s: %d contenuti che nessun gioco usa, %d installazioni lasciate a metà da altri strumenti, %d aggiornamenti e DLC il cui gioco non è sulla console e %d ticket di giochi assenti. Giochi, loro aggiornamenti e DLC, giochi archiviati e un'installazione che NXDock può riprendere non vengono toccati.",
 };
 
 constexpr More kPortuguese{
@@ -2137,6 +2147,8 @@ constexpr More kPortuguese{
     .rs_go = "Continuar de onde parou",
     .rs_discard = "Descartar",
     .rs_discarded = "Descartado: não ficou nada.",
+    .cl_sub_fmt = "%d conteúdos sem jogo, %d instalações pela metade, %d atualizações e DLC sem o seu jogo, %d tickets",
+    .cl_body_fmt = "Libera %s: %d conteúdos que nenhum jogo usa, %d instalações que outras ferramentas deixaram pela metade, %d atualizações e DLC cujo jogo não está no console e %d tickets de jogos que não estão. Jogos, suas atualizações e DLC, jogos arquivados e uma instalação que o NXDock pode continuar não são tocados.",
 };
 
 constexpr More kDutch{
@@ -2492,6 +2504,8 @@ constexpr More kDutch{
     .rs_go = "Verder waar het stopte",
     .rs_discard = "Weggooien",
     .rs_discarded = "Weggegooid: er blijft niets achter.",
+    .cl_sub_fmt = "%d inhoud zonder spel, %d onafgemaakte installaties, %d updates en DLC zonder hun spel, %d tickets",
+    .cl_body_fmt = "Maakt %s vrij: %d inhoud die geen spel gebruikt, %d installaties die andere tools onafgemaakt lieten, %d updates en DLC waarvan het spel niet op de console staat en %d tickets van spellen die er niet zijn. Spellen, hun updates en DLC, gearchiveerde spellen en een installatie die NXDock kan voortzetten blijven.",
 };
 
 constexpr More kRussian{
@@ -2847,6 +2861,8 @@ constexpr More kRussian{
     .rs_go = "Продолжить с места остановки",
     .rs_discard = "Отменить",
     .rs_discarded = "Отменено: ничего не осталось.",
+    .cl_sub_fmt = "без игры: %d, незавершённых установок: %d, обновлений и DLC без игры: %d, тикетов: %d",
+    .cl_body_fmt = "Освободит %s: данные, которые не использует ни одна игра (%d), установки, брошенные другими программами (%d), обновления и DLC, чьей игры нет на консоли (%d), и тикеты отсутствующих игр (%d). Игры, их обновления и DLC, архивные игры и установка, которую NXDock может продолжить, не затрагиваются.",
 };
 
 constexpr More kJapanese{
@@ -3202,6 +3218,8 @@ constexpr More kJapanese{
     .rs_go = "止まったところから続ける",
     .rs_discard = "破棄",
     .rs_discarded = "破棄しました。何も残っていません。",
+    .cl_sub_fmt = "ゲームのないデータ %d 件、途中のインストール %d 件、ゲームのない更新・DLC %d 件、チケット %d 件",
+    .cl_body_fmt = "%s を空けます: どのゲームも使っていないデータ %d 件、ほかのツールが途中で残したインストール %d 件、本体にゲームがない更新・DLC %d 件、本体にないゲームのチケット %d 件。ゲームとその更新・DLC、整理済みのソフト、NXDock が続けられるインストールはそのままです。",
 };
 
 constexpr More kKorean{
@@ -3557,6 +3575,8 @@ constexpr More kKorean{
     .rs_go = "멈춘 곳부터 계속",
     .rs_discard = "버리기",
     .rs_discarded = "버렸습니다. 남은 것이 없습니다.",
+    .cl_sub_fmt = "게임 없는 데이터 %d개, 중단된 설치 %d개, 게임 없는 업데이트·DLC %d개, 티켓 %d개",
+    .cl_body_fmt = "%s를 비웁니다: 어떤 게임도 쓰지 않는 데이터 %d개, 다른 도구가 중단한 설치 %d개, 게임이 본체에 없는 업데이트·DLC %d개, 없는 게임의 티켓 %d개. 게임과 그 업데이트·DLC, 보관된 게임, NXDock이 이어서 할 수 있는 설치는 그대로입니다.",
 };
 
 constexpr More kChinese{
@@ -3912,6 +3932,8 @@ constexpr More kChinese{
     .rs_go = "从中断处继续",
     .rs_discard = "放弃",
     .rs_discarded = "已放弃：没有留下任何东西。",
+    .cl_sub_fmt = "无游戏的内容 %d 个、未完成的安装 %d 个、无游戏的更新和 DLC %d 个、票据 %d 个",
+    .cl_body_fmt = "将释放 %s：没有游戏使用的内容 %d 个、其他工具留下的未完成安装 %d 个、游戏不在主机上的更新和 DLC %d 个，以及不在主机上的游戏的票据 %d 个。游戏及其更新和 DLC、已归档游戏以及 NXDock 可以继续的安装都不会动。",
 };
 
 // In the order of LanguageName in i18n.cpp.

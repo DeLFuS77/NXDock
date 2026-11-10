@@ -296,6 +296,16 @@ void DeletePlaceholders(const std::vector<ResumePart>& parts) {
 
 } // namespace
 
+std::set<std::string> ResumePlaceholders(bool sd) {
+    std::set<std::string> out;
+    ResumeState state;
+    if (!LoadResume(kResumeDir, state)) return out;
+    for (const auto& p : state.parts) {
+        if (p.sd == sd) out.insert(p.placeholder);
+    }
+    return out;
+}
+
 void DiscardResume(const ResumeState& state) {
     DeletePlaceholders(state.parts);
     ClearResume(kResumeDir);
