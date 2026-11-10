@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
+#include "tls_pin.hpp"
 #include "speedtest.hpp"
 
 #include <switch.h>
@@ -59,6 +60,7 @@ void Download(Worker* w, std::string url, std::string key) {
         return;
     }
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    tls::Apply(curl, url);
     curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
     curl_easy_setopt(curl, CURLOPT_USERNAME, "nxdock");
     curl_easy_setopt(curl, CURLOPT_PASSWORD, key.c_str());

@@ -70,6 +70,8 @@ private:
     void JobReconnect();
     void JobSearch();
     void JobPair();
+    // With https: keeps the key of the app the first time (see tls_pin.hpp).
+    void TakePin(const std::string& url);
     void JobAddress();
     void Set(State state);
     void Fail(State state, const std::string& error);

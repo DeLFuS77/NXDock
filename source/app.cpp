@@ -205,6 +205,7 @@ bool App::Init() {
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_push = std::make_unique<Push>();
+    m_safety = std::make_unique<Safety>();
     m_time = Now();
     return true;
 }
@@ -1321,6 +1322,13 @@ void App::FollowPush() {
 
 void App::AddJobs(std::vector<InstallJob> jobs) {
     const auto& s = Tr();
+    if (!m_risk_ok && m_safety && m_safety->Risky() && !jobs.empty()) {
+        // not on an emuMMC, or Nintendo reachable: said once, before the first install
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Risk;
+        m_dialog.jobs = std::move(jobs);
+        return;
+    }
     int added = 0, duplicate = 0;
     for (auto& job : jobs) {
         if (m_queue->Add(std::move(job))) {
@@ -2398,6 +2406,19 @@ void App::DrawDialog(NVGcontext* vg) {
             cancel_label = s.not_now;
             break;
         }
+        case DialogKind::Risk: {
+            title = s.risk_title;
+            // the reasons, then what is recommended
+            if (m_safety->EmuMmc() != Safety::Answer::Yes) {
+                body += std::string("• ") + s.risk_sysmmc + "\n";
+            }
+            if (m_safety->NintendoBlocked() == Safety::Answer::No) {
+                body += std::string("• ") + s.risk_online + "\n";
+            }
+            note = s.risk_body;
+            primary = s.risk_go;
+            break;
+        }
         case DialogKind::Share:
             title = s.share_title;
             body = s.share_body;
@@ -2610,10 +2631,13 @@ void App::UpdateDialog(u64 down, u64 held) {
         return;
     }
     if (down & HidNpadButton_A) {
+        const DialogKind before = m_dialog.kind;
         if (m_dialog.focus == 1 && !info) {
             ConfirmDialog();
         }
-        m_dialog.kind = DialogKind::None;
+        if (m_dialog.kind == before) {
+            m_dialog.kind = DialogKind::None; // unless the choice led to another question
+        }
     }
 }
 
@@ -2634,6 +2658,10 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::Push:
             for (const auto& id : m_dialog.push) m_push->Answer(id, true);
+            AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::Risk:
+            m_risk_ok = true;
             AddJobs(std::move(m_dialog.jobs));
             break;
         case DialogKind::Share:

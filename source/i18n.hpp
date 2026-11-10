@@ -42,6 +42,7 @@ struct Strings {
     const char *nand_title, *nand_body, *used_fmt, *will_take_fmt, *free_after_fmt, *nand_no_room, *nand_confirm, *space_line_nand, *write_nand, *internal_short, *this_session, *history, *view_switch, *session_empty, *session_empty_hint, *undo_all, *remove_this, *freed_sd, *freed_nand, *undo_bar, *undo_title, *undo_one_title, *undo_note, *undo_confirm, *removing, *removed, *remove_failed, *undo_wait_queue, *more_count, *hist_installed, *hist_total, *hist_avg, *hist_best, *col_date, *col_game, *col_where, *col_size, *col_time, *col_speed, *col_result, *today, *yesterday, *res_installed, *history_empty, *clear_history, *clear_title, *clear_body, *clear_confirm, *details, *close, *col_written;
     const char *update_all, *update_all_title, *update_all_note, *update_all_confirm, *verify, *verify_title, *verify_progress, *verify_fine, *verify_bad, *verify_all_ok, *repair_confirm, *repair_note, *repair_missing, *verify_wait, *repair_tag;
     const char *push_title, *push_from, *push_install, *not_now, *share_title, *share_body, *share_yes, *no_word, *share_row, *yes_word;
+    const char *risk_title, *risk_sysmmc, *risk_online, *risk_body, *risk_go;
 };
 
 // Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
+#include "tls_pin.hpp"
 #include "http.hpp"
 
 #include <curl/curl.h>
@@ -37,6 +38,7 @@ Response Request(const std::string& url, const std::string* json, const std::str
     }
     curl_slist* headers = nullptr;
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    tls::Apply(curl, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, OnBody);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, std::min(timeout_ms, 3000L));

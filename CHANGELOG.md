@@ -63,3 +63,9 @@
 - Sharing what is installed with the library app, asked once the first time
   and changed in Settings: the games, updates and DLC of the console and
   where they are; nothing is sent when the answer is no.
+- A warning before the first install of a session when NXDock is not running
+  on an emuMMC, or when the console can reach Nintendo's servers (no 90DNS or
+  DNS block); the install goes on only after "Install anyway".
+- HTTPS with a pinned key: with a library app on an https address, the key of
+  its certificate is kept the first time it is linked, and from then on a
+  server with another key is refused before anything is sent.

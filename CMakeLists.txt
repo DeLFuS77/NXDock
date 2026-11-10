@@ -74,7 +74,9 @@ add_executable(nxdock
     source/link.cpp
     source/net.cpp
     source/push.cpp
+    source/safety.cpp
     source/speedtest.cpp
+    source/tls_pin.cpp
     source/uninstall.cpp
     source/verify.cpp
     source/gfx.cpp

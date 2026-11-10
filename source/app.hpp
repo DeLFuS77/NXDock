@@ -13,6 +13,7 @@
 #include "install_queue.hpp"
 #include "link.hpp"
 #include "push.hpp"
+#include "safety.hpp"
 #include "speedtest.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
@@ -138,7 +139,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Risk };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -156,6 +157,9 @@ private:
     unsigned m_inventory_sent = ~0u;    // the queue version the last inventory was read at
     std::string m_inventory_url;
     void FollowPush();
+    // emuMMC and 90DNS, read once; the warning comes before the first install of a session
+    std::unique_ptr<Safety> m_safety;
+    bool m_risk_ok = false;
     std::string m_update_hint;
     Dialog m_dialog;
     double m_time = 0;
