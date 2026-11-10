@@ -29,9 +29,15 @@ namespace {
 namespace nca = sphaira::nca;
 namespace keys = sphaira::keys;
 
-constexpr int kLevel = 0;          // the fast LZ4 of Nintendo (level 0): what most of its games use
+// The LZ4 HC of Nintendo at level 9 (a hash chain of 256 tries): on real games 9 % to 21 % smaller
+// than its fast level 0, and levels 12 and 16 gain under 1 % more for far more time (25A).
+constexpr int kLevel = 9;
+constexpr unsigned kThreads = 3;   // the cores a homebrew gets
 constexpr uint32_t kMinGain = 64;  // a block must get this much smaller to be kept compressed
 constexpr uint32_t kSample = 32;   // the analysis reads one block in 32
+// A game Nintendo compressed is packed again when most of its blocks are of its fast level 0;
+// those of its HC levels (5, 16) are as small as LZ4 gets.
+constexpr double kRepackShare = 0.5;
 
 std::string Hex(const void* p, size_t n) {
     static const char* d = "0123456789ABCDEF";
@@ -108,18 +114,15 @@ bool FindGame(Storage& s, u64 app, GameContents& g) {
     return R_SUCCEEDED(ncmContentStorageGetSizeFromContentId(&s.cs, &g.program_size, &g.program));
 }
 
-// The RomFS section an NCA can have compressed: IVFC, AES-CTR, not a patch, not sparse, not
-// compressed already. -1 when none; `already` when it is compressed.
+// The RomFS section an NCA can have compressed: IVFC, AES-CTR, not a patch, not sparse. -1 when
+// none; `already` when it is compressed (by Nintendo): then it can be packed again.
 int RomfsSection(const nca::Header& h, bool& already, bool& sparse_out) {
     already = false;
     sparse_out = false;
     for (int i = 0; i < NCA_SECTION_TOTAL; i++) {
         const auto& fh = h.fs_header[i];
         if (!h.fs_table[i].IsValid() || fh.fs_type != 0 || fh.hash_type != 3) continue;
-        if (fh.compression_info.table_size) {
-            already = true;
-            continue;
-        }
+        already = fh.compression_info.table_size != 0;
         bool sparse = false;
         for (u8 b : fh.spares_info) sparse |= b != 0;
         if (sparse) sparse_out = true;
@@ -134,6 +137,46 @@ int RomfsSection(const nca::Header& h, bool& already, bool& sparse_out) {
 nca::HierarchicalIntegrityVerificationLevelInformation DataLevel(const nca::FsHeader& fh) {
     const auto& info = fh.hash_data.integrity_meta_info.info_level_hash;
     return info.levels[info.max_layers - 2];
+}
+
+// Whether an update of the game is installed: it reads its base game by the places of the bytes
+// stored in it, so a base game written again would break it (25A).
+bool HasUpdate(u64 app) {
+    for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+        NcmContentMetaDatabase db{};
+        if (R_FAILED(ncmOpenContentMetaDatabase(&db, sid))) continue;
+        NcmContentMetaKey key{};
+        s32 total = 0, written = 0;
+        const bool found = R_SUCCEEDED(ncmContentMetaDatabaseList(&db, &total, &written, &key, 1, NcmContentMetaType_Patch, app, 0, UINT64_MAX,
+                                                                  NcmContentInstallType_Full)) &&
+                           written > 0;
+        ncmContentMetaDatabaseClose(&db);
+        if (found) return true;
+    }
+    return false;
+}
+
+void Sha256(const u8* d, size_t n, u8 out[32]) { sha256CalculateHash(out, d, n); }
+
+// The levels of the IVFC of a RomFS, from its FS header.
+std::vector<lz4pack::IvfcLevel> IvfcLevels(const nca::FsHeader& fh) {
+    const auto& info = fh.hash_data.integrity_meta_info.info_level_hash;
+    std::vector<lz4pack::IvfcLevel> lv;
+    for (u32 i = 0; i + 1 < info.max_layers; i++) lv.push_back({info.levels[i].logical_offset, info.levels[i].hash_data_size, info.levels[i].block_size});
+    return lv;
+}
+
+Result ReadPlain(NcmContentStorage& cs, const NcmContentId& id, const u8 key[16], const nca::FsHeader& fh, u64 offset, u8* out, size_t size,
+                 std::vector<u8>& work);
+
+// The table of a RomFS Nintendo compressed, read decrypted.
+bool ReadOldTable(NcmContentStorage& cs, const NcmContentId& id, const u8 key[16], const nca::FsHeader& fh, u64 data_start,
+                  std::vector<lz4pack::Entry>& entries, u64& virt_end, std::vector<u8>& work) {
+    const auto& ci = fh.compression_info;
+    if (ci.table_size == 0 || ci.table_size > 256 * 1024 * 1024 || ci.table_header.magic != 0x52544B42) return false;
+    std::vector<u8> table(size_t(ci.table_size));
+    if (R_FAILED(ReadPlain(cs, id, key, fh, data_start + ci.table_offset, table.data(), table.size(), work))) return false;
+    return lz4pack::ParseTable(table.data(), table.size(), ci.table_header.count, entries, virt_end);
 }
 
 void CtrAt(const nca::FsHeader& fh, u64 offset, u8 ctr[16]) {
@@ -336,11 +379,11 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                 if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) break;
                 bool already = false, sparse = false;
                 const int r = RomfsSection(h, already, sparse);
-                if (already) {
-                    e.state = GameEstimate::State::Already;
-                    e.why = GameEstimate::Why::None;
-                } else if (r < 0) {
+                if (r < 0) {
                     e.why = sparse ? GameEstimate::Why::Sparse : GameEstimate::Why::Read;
+                } else if (HasUpdate(app)) {
+                    // compressing the base game would break its update
+                    e.why = GameEstimate::Why::Update;
                 } else {
                     e.state = GameEstimate::State::Possible;
                     e.why = GameEstimate::Why::None;
@@ -383,9 +426,27 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                 const auto& fh = h.fs_header[r];
                 const u64 base = h.fs_table[r].GetOffset() + DataLevel(fh).logical_offset;
                 const u64 size = DataLevel(fh).hash_data_size;
-                e.gain = lz4pack::EstimateGain(size, kLevel, kSample, [&](u64 o, u8* b, size_t n) {
+                const lz4pack::ReadFn stored = [&](u64 o, u8* b, size_t n) {
                     return !m_stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, base + o, b, n, work));
-                });
+                };
+                if (already) {
+                    // compressed by Nintendo: packed again when it used its fast level
+                    std::vector<lz4pack::Entry> old;
+                    u64 old_end = 0;
+                    if (!ReadOldTable(s.cs, g.program, key.key, fh, base, old, old_end, work)) {
+                        e.state = GameEstimate::State::Unsupported;
+                        e.why = GameEstimate::Why::Read;
+                        break;
+                    }
+                    if (lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
+                        e.state = GameEstimate::State::Already;
+                        e.why = GameEstimate::Why::None;
+                        break;
+                    }
+                    e.gain = lz4pack::EstimateRepack(old, old_end, kLevel, kSample, stored);
+                } else {
+                    e.gain = lz4pack::EstimateGain(size, kLevel, kSample, stored);
+                }
                 e.saved = u64(double(size) * e.gain);
                 e.state = e.gain >= kCompressWorth ? GameEstimate::State::Worth : GameEstimate::State::Low;
                 break;
@@ -449,7 +510,8 @@ bool Compressor::StartCompress(unsigned long long app) {
                 }
                 bool already = false, sparse = false;
                 const int r = RomfsSection(h, already, sparse);
-                if (r < 0) {
+                // with its update installed, the base game written again would break it
+                if (r < 0 || HasUpdate(app)) {
                     error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
                     return;
                 }
@@ -461,20 +523,49 @@ bool Compressor::StartCompress(unsigned long long app) {
                 }
                 const nca::FsHeader fh = h.fs_header[r];
                 const u64 start = h.fs_table[r].GetOffset(), old_end = h.fs_table[r].GetOffsetEnd();
-                const u64 data_at = DataLevel(fh).logical_offset, virt = DataLevel(fh).hash_data_size;
+                const u64 data_at = DataLevel(fh).logical_offset;
+                u64 virt = DataLevel(fh).hash_data_size;
                 std::vector<u8> work;
-                const lz4pack::ReadFn read = [&](u64 o, u8* b, size_t n) {
+                // the data level as it is stored now
+                const lz4pack::ReadFn raw_read = [&](u64 o, u8* b, size_t n) {
                     return !m_stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, start + data_at + o, b, n, work));
                 };
-                // 2. measured: what the compressed data level takes
+                // compressed by Nintendo (with its fast level): read decompressed through its table
+                std::vector<lz4pack::Entry> old;
+                u64 old_virt_end = 0;
+                if (already) {
+                    if (!ReadOldTable(s.cs, g.program, key.key, fh, start + data_at, old, old_virt_end, work) ||
+                        lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
+                        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+                        return;
+                    }
+                    virt = old_virt_end;
+                }
+                const lz4pack::ReadFn read = already ? lz4pack::ReadFn([&](u64 o, u8* b, size_t n) {
+                    return lz4pack::Unpack(old, old_virt_end, raw_read, o, b, n);
+                }) : raw_read;
+                // 2. measured: what the compressed data level takes, and the hashes of it, from which
+                // the IVFC is made again (it hashes the data level as it is stored)
+                const u32 data_block = 1u << DataLevel(fh).block_size;
+                lz4pack::BlockHasher hasher(data_block, Sha256);
                 lz4pack::Packed sizes;
-                if (!lz4pack::Pack(virt, kLevel, kMinGain, read, [](u64, const u8*, size_t) { return true; },
-                                   [&](u64 d) { progress(1, d, virt); return !m_stop; }, sizes)) {
+                if (!lz4pack::Pack(virt, kLevel, kMinGain, read, [&](u64, const u8* d, size_t n) { hasher.Feed(d, n); return true; },
+                                   [&](u64 d) { progress(1, d, virt); return !m_stop; }, sizes, kThreads)) {
                     error = m_stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d);
                     return;
                 }
                 const auto table = lz4pack::BuildTable(sizes.entries, virt);
                 const u64 stored = sizes.table_offset + table.size();
+                hasher.Feed(table.data(), table.size());
+                const std::vector<u8> data_hashes = hasher.Finish();
+                std::vector<lz4pack::IvfcLevel> lv = IvfcLevels(fh);
+                lv.back().size = stored;
+                std::vector<std::vector<u8>> levels;
+                u8 master[32];
+                if (lv.back().offset != data_at || !lz4pack::BuildIvfc(data_hashes, lv, Sha256, levels, master)) {
+                    error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+                    return;
+                }
                 const u64 new_end = start + ((data_at + stored + 0x3FFF) & ~u64(0x3FFF));
                 if (new_end >= old_end) {
                     error = Packed(m.cz_low_t, m.cz_low_d);
@@ -493,8 +584,9 @@ bool Compressor::StartCompress(unsigned long long app) {
                     }
                 }
                 auto& nfh = nh.fs_header[r];
-                const u32 data_level = nfh.hash_data.integrity_meta_info.info_level_hash.max_layers - 2;
-                nfh.hash_data.integrity_meta_info.info_level_hash.levels[data_level].hash_data_size = stored;
+                auto& ivfc = nfh.hash_data.integrity_meta_info;
+                for (size_t i = 0; i < lv.size(); i++) ivfc.info_level_hash.levels[i].hash_data_size = lv[i].size;
+                std::memcpy(ivfc.master_hash, master, sizeof(master));
                 nfh.compression_info.table_offset = sizes.table_offset;
                 nfh.compression_info.table_size = table.size();
                 nfh.compression_info.table_header.magic = 0x52544B42; // BKTR
@@ -538,18 +630,26 @@ bool Compressor::StartCompress(unsigned long long app) {
                         if (R_FAILED(rc = CopyRaw(s.cs, g.program, w, old_at, os, buf))) return fail(rc);
                     }
                     if (i == r) {
-                        // the hash levels as they are, then the data level compressed, then the table
-                        if (R_FAILED(rc = CopyRaw(s.cs, g.program, w, os, os + data_at, buf))) return fail(rc);
+                        // the hash levels made again, then the data level compressed, then the
+                        // table, all encrypted for their places
+                        std::vector<u8> head(size_t(data_at), 0);
+                        for (size_t l = 0; l < levels.size(); l++) std::memcpy(head.data() + lv[l].offset, levels[l].data(), levels[l].size());
                         w.Encrypt(&fh, key.key);
+                        if (R_FAILED(rc = w.Write(head.data(), head.size()))) return fail(rc);
+                        lz4pack::BlockHasher check(data_block, Sha256);
                         lz4pack::Packed again;
                         Result wrc = 0;
                         const bool ok = lz4pack::Pack(virt, kLevel, kMinGain, read,
-                            [&](u64, const u8* d, size_t n) { wrc = w.Write(d, n); return R_SUCCEEDED(wrc); },
-                            [&](u64 d) { progress(2, d, virt); return !m_stop; }, again);
+                            [&](u64, const u8* d, size_t n) { check.Feed(d, n); wrc = w.Write(d, n); return R_SUCCEEDED(wrc); },
+                            [&](u64 d) { progress(2, d, virt); return !m_stop; }, again, kThreads);
                         if (!ok || again.entries.size() != sizes.entries.size() || again.table_offset != sizes.table_offset) {
                             return fail(R_FAILED(wrc) ? wrc : Result(0));
                         }
                         if (R_FAILED(rc = w.Write(table.data(), table.size())) || R_FAILED(rc = w.Zeros(new_end - (os + data_at + stored)))) return fail(rc);
+                        // what was written is what the hashes were made of (a read that went wrong
+                        // the second time would leave a game that does not open)
+                        check.Feed(table.data(), table.size());
+                        if (check.Finish() != data_hashes) return fail(Result(0));
                     } else if (os >= old_end) {
                         // after the RomFS: moved up, so encrypted again for its new place
                         const nca::FsHeader& sfh = h.fs_header[i];

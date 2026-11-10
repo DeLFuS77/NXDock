@@ -235,6 +235,7 @@ void App::DrawCompress(NVGcontext* vg) {
                               e.why == GameEstimate::Why::Sparse ? m.cz_why_sparse
                               : e.why == GameEstimate::Why::Key  ? m.cz_why_key
                               : e.why == GameEstimate::Why::NotFound ? m.cz_why_missing
+                              : e.why == GameEstimate::Why::Update ? m.cz_why_update
                                                                  : m.cz_unsupported);
                 break;
         }

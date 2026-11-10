@@ -48,7 +48,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   g++ -std=c++20 -Wall -Wextra -O2 -Iinclude -o /tmp/lz4nintendo_test tests/lz4nintendo_test.cpp /tmp/lz4nintendo.o
   /tmp/lz4nintendo_test tests/fixtures/lz4nintendo_golden.txt LICENSE assets/icon.jpg
   # the compressed storage of an NCA, written as Nintendo writes it (24A)
-  g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/romfs_lz4_test tests/romfs_lz4_test.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/romfs_lz4_test tests/romfs_lz4_test.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libcrypto.so.3 -lpthread
   /tmp/romfs_lz4_test
   # the list of compressed games, the look for sigpatches and the CNMT made again (24A)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/compress_meta_test tests/compress_meta_test.cpp source/compress_meta.cpp

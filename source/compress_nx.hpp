@@ -4,12 +4,16 @@
 
 // "Compress games" (24A, experimental, off until the user turns it on). The RomFS of the program
 // NCA of an installed game is compressed in place with the LZ4 layer of the NCA (firmware 12 and
-// later) and the LZ4 of Nintendo, as the games Nintendo ships compressed (romfs_lz4.hpp): one NCA
-// at a time, so no double room is needed; the NCA is written again and encrypted, its CNMT made
-// again with the new ids, and both registered; only then does the original go. A failure before
-// that leaves the game as it was.
-//  - The update of the game is not merged into it: an update installs over a compressed game as
-//    over those Nintendo compresses.
+// later) and the LZ4 HC of Nintendo at level 9, as the games Nintendo ships compressed
+// (romfs_lz4.hpp): one NCA at a time, so no double room is needed; the NCA is written again and
+// encrypted, with its IVFC made again for the data as it is stored, its CNMT made again with the
+// new ids, and both registered; only then does the original go. A failure before that leaves the
+// game as it was.
+//  - A game Nintendo compressed with its fast level 0 is packed again at level 9 (25A); one it
+//    compressed with its HC levels is as small as LZ4 gets, and stays.
+//  - A game with its update installed is not compressed: the update reads the base game by the
+//    places of its stored bytes, so the base written again would break it, and an official update
+//    cannot be installed over a compressed game later either (25A).
 //  - The firmware the game needs is not raised.
 //  - The NCA header is no longer signed by Nintendo: the game needs sigpatches (compress_meta).
 // An analysis first, from a sample of the RomFS of each game, says what it would save.
@@ -33,7 +37,7 @@ struct GameEstimate {
     double gain = 0;               // share of the RomFS saved, from a sample
     unsigned long long bytes = 0;  // the program NCA now
     unsigned long long saved = 0;  // what it would save (Worth, Low), or saved (Ours)
-    enum class Why { None, NotFound, Sparse, Key, Read };
+    enum class Why { None, NotFound, Sparse, Key, Read, Update };
     Why why = Why::None;           // Unsupported: why
 };
 
