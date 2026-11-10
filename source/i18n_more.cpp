@@ -413,6 +413,7 @@ constexpr More kEnglish{
     .cz_low_d = "Compressed, the game would not take less room. It stays as it is.",
     .cz_room_t = "Not enough room",
     .cz_room_d = "Compressing needs room for the new copy of the game's data before the old one goes. Free some room and try again.",
+    .cz_tap = "A: see what it saves",
 };
 
 constexpr More kSpanish{
@@ -819,6 +820,7 @@ constexpr More kSpanish{
     .cz_low_d = "Comprimido, el juego no ocuparía menos. Se queda como está.",
     .cz_room_t = "No hay espacio suficiente",
     .cz_room_d = "Para comprimir hace falta sitio para la copia nueva de los datos del juego antes de quitar la vieja. Libera espacio y prueba otra vez.",
+    .cz_tap = "A: ver cuánto ahorra",
 };
 
 constexpr More kFrench{
@@ -1225,6 +1227,7 @@ constexpr More kFrench{
     .cz_low_d = "Compressé, le jeu ne prendrait pas moins de place. Il reste tel quel.",
     .cz_room_t = "Pas assez de place",
     .cz_room_d = "Compresser demande de la place pour la nouvelle copie des données du jeu avant que l'ancienne parte. Libère de la place et réessaie.",
+    .cz_tap = "A : voir ce qu'il gagne",
 };
 
 constexpr More kGerman{
@@ -1631,6 +1634,7 @@ constexpr More kGerman{
     .cz_low_d = "Komprimiert würde das Spiel nicht weniger Platz brauchen. Es bleibt, wie es ist.",
     .cz_room_t = "Nicht genug Platz",
     .cz_room_d = "Zum Komprimieren braucht es Platz für die neue Kopie der Spieldaten, bevor die alte geht. Mach Platz frei und versuche es noch einmal.",
+    .cz_tap = "A: sehen, was es spart",
 };
 
 constexpr More kItalian{
@@ -2037,6 +2041,7 @@ constexpr More kItalian{
     .cz_low_d = "Compresso, il gioco non occuperebbe meno. Resta com'è.",
     .cz_room_t = "Spazio insufficiente",
     .cz_room_d = "Per comprimere serve spazio per la nuova copia dei dati del gioco prima di eliminare la vecchia. Libera spazio e riprova.",
+    .cz_tap = "A: vedi quanto risparmia",
 };
 
 constexpr More kPortuguese{
@@ -2443,6 +2448,7 @@ constexpr More kPortuguese{
     .cz_low_d = "Comprimido, o jogo não ocuparia menos. Fica como está.",
     .cz_room_t = "Sem espaço suficiente",
     .cz_room_d = "Comprimir precisa de espaço para a nova cópia dos dados do jogo antes de a antiga sair. Libere espaço e tente de novo.",
+    .cz_tap = "A: ver quanto economiza",
 };
 
 constexpr More kDutch{
@@ -2849,6 +2855,7 @@ constexpr More kDutch{
     .cz_low_d = "Gecomprimeerd zou het spel niet minder ruimte innemen. Het blijft zoals het is.",
     .cz_room_t = "Niet genoeg ruimte",
     .cz_room_d = "Comprimeren heeft ruimte nodig voor de nieuwe kopie van de spelgegevens voordat de oude weggaat. Maak ruimte vrij en probeer het opnieuw.",
+    .cz_tap = "A: zien wat het bespaart",
 };
 
 constexpr More kRussian{
@@ -3255,6 +3262,7 @@ constexpr More kRussian{
     .cz_low_d = "В сжатом виде игра не стала бы меньше. Она останется как есть.",
     .cz_room_t = "Недостаточно места",
     .cz_room_d = "Для сжатия нужно место под новую копию данных игры до удаления старой. Освободите место и попробуйте снова.",
+    .cz_tap = "A: узнать экономию",
 };
 
 constexpr More kJapanese{
@@ -3661,6 +3669,7 @@ constexpr More kJapanese{
     .cz_low_d = "圧縮しても容量は減りません。そのままにします。",
     .cz_room_t = "空き容量が足りません",
     .cz_room_d = "圧縮には、古いデータを消す前に新しいデータを書く空きが必要です。空きを作ってもう一度試してください。",
+    .cz_tap = "A: 削減量を見る",
 };
 
 constexpr More kKorean{
@@ -4067,6 +4076,7 @@ constexpr More kKorean{
     .cz_low_d = "압축해도 용량이 줄지 않습니다. 그대로 둡니다.",
     .cz_room_t = "공간이 부족합니다",
     .cz_room_d = "압축하려면 이전 데이터를 지우기 전에 새 데이터를 쓸 공간이 필요합니다. 공간을 비우고 다시 시도하세요.",
+    .cz_tap = "A: 절약량 보기",
 };
 
 constexpr More kChinese{
@@ -4473,6 +4483,7 @@ constexpr More kChinese{
     .cz_low_d = "压缩后游戏也不会更小。保持原样。",
     .cz_room_t = "空间不足",
     .cz_room_d = "压缩需要在删除旧数据前，先有空间写入新的游戏数据。请释放空间后再试。",
+    .cz_tap = "A：查看能省多少",
 };
 
 // In the order of LanguageName in i18n.cpp.

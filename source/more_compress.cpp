@@ -32,12 +32,8 @@ void App::OpenCompress() {
     m_compress_opened = m_time;
     m_compress_focus = 0;
     m_space_mode = 3;
-    const auto v = m_space ? m_space->Snapshot() : Space::View{};
-    std::vector<unsigned long long> apps;
-    for (const auto& a : v.apps) {
-        if (!a.archived) apps.push_back(a.app_id);
-    }
-    m_compress->StartAnalysis(apps);
+    // nothing is read now: a game is analysed when it is chosen (A), the others are not touched
+    m_compressed_marks = Compressor::Marks();
 }
 
 // The installed games the list shows: those with their game, as the scan found them.
@@ -127,10 +123,18 @@ void App::DrawCompress(NVGcontext* vg) {
         // what it would save, or what it is
         GameEstimate e;
         const auto it = c.games.find(a.app_id);
-        if (it != c.games.end()) e = it->second;
+        bool known = it != c.games.end();
+        if (known) e = it->second;
+        for (const auto& mark : m_compressed_marks) {
+            if (!known && mark.app_id == a.app_id) {
+                e.state = GameEstimate::State::Ours;
+                e.saved = mark.saved;
+                known = true;
+            }
+        }
         NVGcolor col = t.muted;
         switch (e.state) {
-            case GameEstimate::State::Pending: std::snprintf(text, sizeof(text), "%s", m.cz_pending); break;
+            case GameEstimate::State::Pending: std::snprintf(text, sizeof(text), "%s", known ? m.cz_pending : m.cz_tap); break;
             case GameEstimate::State::Worth:
                 std::snprintf(text, sizeof(text), m.cz_worth_fmt, int(e.gain * 100 + 0.5), draw::Size(e.saved).c_str());
                 col = t.ok;
@@ -143,8 +147,9 @@ void App::DrawCompress(NVGcontext* vg) {
                 break;
             default: std::snprintf(text, sizeof(text), "%s", m.cz_unsupported); break;
         }
-        if (e.state == GameEstimate::State::Pending) ui::Spinner(vg, rx + rw - 30, ry + 25, 8, t.muted, m_time);
-        ui::Text(vg, rx + rw - (e.state == GameEstimate::State::Pending ? 48 : 24), ry + 25, 15, col, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        const bool spin = known && e.state == GameEstimate::State::Pending;
+        if (spin) ui::Spinner(vg, rx + rw - 30, ry + 25, 8, t.muted, m_time);
+        ui::Text(vg, rx + rw - (spin ? 48 : 24), ry + 25, 15, col, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         // the share it saves, as a small bar under the name
         if (e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low) {
             NVGcolor track = t.text;
@@ -230,10 +235,22 @@ void App::UpdateCompress(u64 down, u64 held) {
     }
     if (!(down & HidNpadButton_A) || rows.empty()) return;
     const auto& a = v.apps[size_t(rows[size_t(std::clamp(m_compress_focus, 0, int(rows.size()) - 1))])];
-    const auto it = c.games.find(a.app_id);
-    if (it == c.games.end()) return;
     const More& m = TrM();
-    const GameEstimate& e = it->second;
+    GameEstimate e;
+    const auto it = c.games.find(a.app_id);
+    bool known = it != c.games.end();
+    if (known) e = it->second;
+    for (const auto& mark : m_compressed_marks) {
+        if (!known && mark.app_id == a.app_id) {
+            e.state = GameEstimate::State::Ours;
+            known = true;
+        }
+    }
+    if (!known) {
+        // this game only: a sample of its data, read now
+        if (!m_compress->StartAnalysis({a.app_id})) Notice(m.cz_pending);
+        return;
+    }
     if (e.state == GameEstimate::State::Ours) {
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::CompressUndo;
