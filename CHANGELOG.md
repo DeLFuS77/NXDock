@@ -67,3 +67,5 @@
   amber below 20 % and red below 10 %, and shows a bolt while charging. With
   little battery and no charger, adding an install to the queue says so first
   (the install is not stopped).
+- A QR on the pairing screen, under the code: scanned with a phone it opens
+  the library app NXDock found, where the notice to pair shows on any page.

@@ -1794,7 +1794,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     ui::Text(vg, rx + 26, top + 36, 22, t.text, s.approve_title);
     TextBox(vg, rx + 26, top + 56, rw - 52, 15, t.muted, s.approve_hint);
 
-    const float cy = top + 150;
+    const float cy = top + 118;
     const bool has_code = v.state == State::Waiting && !v.code.empty();
     // eight boxes in two groups, as the app shows the code
     const float bw = 50, bh = 66, bg = 8, dash = 22;
@@ -1818,8 +1818,35 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
         bx += bw + bg;
     }
 
+    // The QR (4A): the address of the app chosen, so a phone opens the library; the app shows the
+    // notice to pair on any of its pages. The steps go on its right.
+    const float qy = cy + bh + 26, qs = 150;
+    std::string chosen_url;
+    if (v.chosen >= 0 && v.chosen < int(v.found.size())) {
+        chosen_url = v.found[v.chosen].url;
+    } else if (!v.url.empty()) {
+        chosen_url = v.url;
+    }
+    if (!chosen_url.empty()) {
+        ui::Qr(vg, rx + 26, qy, qs, chosen_url + "/");
+        const float tx = rx + 26 + qs + 22, tw = rw - 52 - qs - 22;
+        const size_t scheme = chosen_url.find("://");
+        const std::string host = chosen_url.substr(scheme == std::string::npos ? 0 : scheme + 3);
+        TextBox(vg, tx, qy + 18, tw, 15, t.muted, s.qr_scan);
+        const float h1 = TextBoxHeight(vg, tw, 15, s.qr_scan);
+        nvgSave(vg);
+        nvgScissor(vg, tx, qy, tw, qs);
+        ui::Text(vg, tx, qy + 18 + h1 + 16, 18, t.text, host.c_str());
+        nvgRestore(vg);
+        TextBox(vg, tx, qy + 18 + h1 + 34, tw, 15, t.muted, s.qr_notice);
+    } else {
+        ui::FillRound(vg, rx + 26, qy, qs, qs, 10, t.panel2);
+        ui::StrokeRound(vg, rx + 26.5f, qy + .5f, qs - 1, qs - 1, 10, t.line, 1);
+        ui::Text(vg, rx + 26 + qs / 2, qy + qs / 2, 22, t.muted, "QR", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
+
     // What happens now.
-    const float sy = cy + bh + 40;
+    const float sy = qy + qs + 34;
     if (v.state == State::Waiting) {
         char line[160];
         std::snprintf(line, sizeof(line), s.waiting_accept, v.seconds_left / 60, v.seconds_left % 60);

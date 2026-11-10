@@ -9,6 +9,10 @@
 #include "gfx.hpp"
 #include "i18n.hpp"
 
+extern "C" {
+#include <qrcodegen.h>
+}
+
 namespace nxdock::ui {
 
 float Text(NVGcontext* vg, float x, float y, float size, NVGcolor color, const char* str, int align) {
@@ -172,6 +176,38 @@ void Spinner(NVGcontext* vg, float cx, float cy, float r, NVGcolor c, double tim
     nvgStrokeColor(vg, c);
     nvgLineCap(vg, NVG_ROUND);
     nvgStroke(vg);
+}
+
+void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text) {
+    static std::string encoded;
+    static std::vector<uint8_t> code;
+    if (text != encoded) {
+        encoded = text;
+        code.assign(qrcodegen_BUFFER_LEN_MAX, 0);
+        std::vector<uint8_t> temp(qrcodegen_BUFFER_LEN_MAX);
+        if (!qrcodegen_encodeText(text.c_str(), temp.data(), code.data(), qrcodegen_Ecc_MEDIUM, qrcodegen_VERSION_MIN,
+                                  qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true)) {
+            code.clear();
+        }
+    }
+    FillRound(vg, x, y, s, s, 10, nvgRGB(255, 255, 255));
+    if (code.empty()) {
+        return;
+    }
+    // the modules with the quiet zone the standard asks for (here a little less: the tile is white)
+    const int n = qrcodegen_getSize(code.data());
+    const float margin = 10, cell = (s - 2 * margin) / float(n);
+    nvgBeginPath(vg);
+    for (int my = 0; my < n; my++) {
+        for (int mx = 0; mx < n; mx++) {
+            if (qrcodegen_getModule(code.data(), mx, my)) {
+                // a hair wider than the cell, so no seam shows between dark modules
+                nvgRect(vg, x + margin + mx * cell, y + margin + my * cell, cell + 0.3f, cell + 0.3f);
+            }
+        }
+    }
+    nvgFillColor(vg, nvgRGB(17, 17, 17));
+    nvgFill(vg);
 }
 
 namespace {

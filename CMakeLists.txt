@@ -32,6 +32,18 @@ FetchContent_Declare(yyjson
 )
 FetchContent_MakeAvailable(yyjson)
 
+# QR Code generator by Project Nayuki (MIT licence), the C version: the QR of the pairing screen.
+# Its folder has no CMake project, so it is only fetched and its one file built here.
+FetchContent_Declare(qrcodegen
+    GIT_REPOSITORY https://github.com/nayuki/QR-Code-generator.git
+    GIT_TAG v1.8.0
+    SOURCE_SUBDIR c
+)
+FetchContent_MakeAvailable(qrcodegen)
+add_library(qrcodegen STATIC ${qrcodegen_SOURCE_DIR}/c/qrcodegen.c)
+target_include_directories(qrcodegen PUBLIC ${qrcodegen_SOURCE_DIR}/c)
+target_compile_options(qrcodegen PRIVATE -O2)
+
 # The install core "yati" from Sphaira (GPL-3.0), with NXDock's layer in place of Sphaira's
 # app, settings, translations and log (compat/). See NOTICE.
 add_library(yati STATIC
@@ -94,7 +106,7 @@ find_path(curl_inc curl/curl.h REQUIRED)
 find_library(curl_lib curl REQUIRED)
 find_library(z_lib z REQUIRED)
 target_include_directories(nxdock PRIVATE ${curl_inc})
-target_link_libraries(nxdock PRIVATE yati nanovg yyjson stb_nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
+target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg ${deko3d_lib} ${curl_lib} ${z_lib})
 
 nx_generate_nacp(
     OUTPUT nxdock.nacp

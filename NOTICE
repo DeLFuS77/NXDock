@@ -29,6 +29,11 @@ yyjson (version 0.12.0)
   Copyright (c) 2020 YaoYuan
   MIT licence. Fetched at build time.
 
+QR Code generator library (version 1.8.0, the C version)
+  https://github.com/nayuki/QR-Code-generator
+  Copyright (c) Project Nayuki
+  MIT licence. Fetched at build time; draws the QR of the pairing screen.
+
 stb_image
   https://github.com/nothings/stb
   By Sean Barrett. Public domain or MIT licence. Used directly to decode

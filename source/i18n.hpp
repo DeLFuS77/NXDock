@@ -43,6 +43,7 @@ struct Strings {
     const char *update_all, *update_all_title, *update_all_note, *update_all_confirm, *verify, *verify_title, *verify_progress, *verify_fine, *verify_bad, *verify_all_ok, *repair_confirm, *repair_note, *repair_missing, *verify_wait, *repair_tag;
     const char *push_title, *push_from, *push_install, *not_now, *share_title, *share_body, *share_yes, *no_word, *share_row, *yes_word;
     const char *battery_low;
+    const char *qr_scan, *qr_notice;
 };
 
 // Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,

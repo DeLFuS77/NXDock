@@ -5,6 +5,7 @@
 #include <switch.h>
 #include <nanovg.h>
 #include <initializer_list>
+#include <string>
 #include <vector>
 #include "theme.hpp"
 
@@ -63,6 +64,10 @@ void Spinner(NVGcontext* vg, float cx, float cy, float r, NVGcolor c, double tim
 void CheckMark(NVGcontext* vg, float cx, float cy, float s, NVGcolor c, float width);
 
 // Draws the bar on top; `tabs` receives the area of each tab (the full bar height, easy to tap).
+// A QR code of `text`, dark on a white tile of size s (also in the dark theme: phones read it
+// better). Encoded once and kept while the text stays the same.
+void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text);
+
 // battery: the charge in %, -1 when unknown (then nothing is drawn).
 void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[4], const char* sd_free,
             int battery = -1, bool charging = false);
