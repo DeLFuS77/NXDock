@@ -689,6 +689,17 @@ void App::UpdateLibrary(u64 down, u64 held) {
     if ((down & HidNpadButton_A) && count > 0) {
         OpenDetail(m_focus);
     }
+    if (down & HidNpadButton_Minus) {
+        auto jobs = PendingUpdates();
+        if (!jobs.empty()) {
+            // every update goes where its game is; the question lists where, the internal memory too
+            m_sd_checked = -100;
+            CheckSdSpace();
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::UpdateAll;
+            m_dialog.jobs = std::move(jobs);
+        }
+    }
     if (down & HidNpadButton_Y) {
         std::string text;
         if (AskText(Tr().search_hint, m_search, false, text) || !m_search.empty()) {
@@ -746,6 +757,16 @@ void App::UpdateDetail(u64 down, u64 held) {
             m_detail_pick[rows[m_detail_focus]] ^= 1;
         } else {
             EnqueuePicked();
+        }
+    }
+    if ((down & HidNpadButton_Y) && (g.installed.base || !g.installed.dlc.empty())) {
+        if (m_queue->StartVerify(g.title_id)) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::Verify;
+            m_dialog.game = m_detail_game;
+            m_dialog.single = true;
+        } else {
+            Notice(Tr().verify_wait);
         }
     }
     if (down & HidNpadButton_B) {
@@ -851,10 +872,15 @@ void App::DrawLibrary(NVGcontext* vg) {
     // Queue strip, always in sight; tapping it opens the queue.
     DrawQueueStrip(vg, 556);
 
-    ui::HintBar(vg, t, where.c_str(),
-                {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::ZR, s.filter, HidNpadButton_ZR},
-                 {ui::glyph::Y, s.search, HidNpadButton_Y}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
-                m_hint_rects);
+    std::vector<ui::Hint> hints = {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::ZR, s.filter, HidNpadButton_ZR},
+                                   {ui::glyph::Y, s.search, HidNpadButton_Y}};
+    const size_t updates = PendingUpdates().size();
+    if (updates) {
+        m_update_hint = std::string(s.update_all) + " · " + std::to_string(updates);
+        hints.push_back({ui::glyph::Minus, m_update_hint.c_str(), HidNpadButton_Minus});
+    }
+    hints.push_back({ui::glyph::Plus, s.exit, HidNpadButton_Plus});
+    ui::HintBar(vg, t, where.c_str(), hints, m_hint_rects);
 }
 
 void App::DrawDetail(NVGcontext* vg) {
@@ -1011,10 +1037,13 @@ void App::DrawDetail(NVGcontext* vg) {
         ui::Text(vg, rx, dy + 72, 15, u64(free_here) < picked_size ? t.err : t.muted, line);
     }
 
-    ui::HintBar(vg, t, nullptr,
-                {{ui::glyph::A, s.select, HidNpadButton_A}, {ui::glyph::L, s.sd_card, HidNpadButton_L},
-                 {ui::glyph::R, s.internal, HidNpadButton_R}, {ui::glyph::B, s.back, HidNpadButton_B}},
-                m_hint_rects);
+    std::vector<ui::Hint> hints = {{ui::glyph::A, s.select, HidNpadButton_A}, {ui::glyph::L, s.sd_card, HidNpadButton_L},
+                                   {ui::glyph::R, s.internal, HidNpadButton_R}};
+    if (g.installed.base || !g.installed.dlc.empty()) {
+        hints.push_back({ui::glyph::Y, s.verify, HidNpadButton_Y});
+    }
+    hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
+    ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
 
 namespace {
@@ -1090,18 +1119,8 @@ void App::EnqueuePicked() {
                 firmware_note = text;
                 continue;
             }
-            InstallJob job;
-            job.game = g.name;
+            InstallJob job = JobFor(g, f);
             job.label = label;
-            job.cover = g.cover;
-            job.color_key = g.key;
-            job.file_id = f.id;
-            job.url = c.url + f.url;
-            job.key = c.key;
-            job.format = f.format;
-            job.kind = f.kind;
-            job.title_id = f.title_id;
-            job.size = f.size;
             job.nand = m_to_nand;
             jobs.push_back(std::move(job));
         }
@@ -1127,6 +1146,100 @@ void App::EnqueuePicked() {
         return;
     }
     AddJobs(std::move(jobs));
+}
+
+InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
+    const auto& s = Tr();
+    const Config c = m_link.CurrentConfig();
+    InstallJob job;
+    job.game = g.name;
+    switch (f.kind) {
+        case CatalogFile::Kind::Game: job.label = s.base_game; break;
+        case CatalogFile::Kind::Update: job.label = std::string(s.update_word) + " v" + std::to_string(f.version); break;
+        case CatalogFile::Kind::Dlc: job.label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
+    }
+    job.cover = g.cover;
+    job.color_key = g.key;
+    job.file_id = f.id;
+    job.url = c.url + f.url;
+    job.key = c.key;
+    job.format = f.format;
+    job.kind = f.kind;
+    job.title_id = f.title_id;
+    job.size = f.size;
+    return job;
+}
+
+std::vector<InstallJob> App::PendingUpdates() {
+    std::vector<InstallJob> jobs;
+    const u32 hos = hosversionGet();
+    const u32 console = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
+    for (const auto& g : m_games) {
+        if (!g.UpdateAvailable()) {
+            continue;
+        }
+        const CatalogFile* f = g.NewestUpdate();
+        if (f->required_system && (f->required_system & 0xFFFF0000) > console) {
+            continue; // the console cannot run it yet
+        }
+        InstallJob job = JobFor(g, *f);
+        job.label = std::string(Tr().update_word) + " v" + std::to_string(g.installed.patch) + " → v" + std::to_string(f->version);
+        job.nand = g.installed.base_nand;
+        jobs.push_back(std::move(job));
+    }
+    return jobs;
+}
+
+std::string App::ContentLabel(const Game& g, const NcmContentMetaKey& key) const {
+    const auto& s = Tr();
+    switch (key.type) {
+        case NcmContentMetaType_Application: return s.base_game;
+        case NcmContentMetaType_Patch: return std::string(s.update_word) + " v" + std::to_string(key.version);
+        default:
+            for (const auto& f : g.files) {
+                if (f.kind == CatalogFile::Kind::Dlc && f.title_id == key.id) {
+                    return s.dlc_prefix + (f.dlc_name.empty() ? f.name : f.dlc_name);
+                }
+            }
+            char id[40];
+            std::snprintf(id, sizeof(id), "%s%016lX", s.dlc_prefix, key.id);
+            return id;
+    }
+}
+
+bool App::RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>& out) {
+    out.clear();
+    if (m_dialog.game < 0 || m_dialog.game >= int(m_games.size())) {
+        return false;
+    }
+    const Game& g = m_games[m_dialog.game];
+    bool all = true;
+    for (const auto& c : v.result) {
+        if (c.bad.empty()) {
+            continue;
+        }
+        const CatalogFile* match = nullptr;
+        for (const auto& f : g.files) {
+            const bool kind = (c.key.type == NcmContentMetaType_Application && f.kind == CatalogFile::Kind::Game) ||
+                              (c.key.type == NcmContentMetaType_Patch && f.kind == CatalogFile::Kind::Update) ||
+                              (c.key.type == NcmContentMetaType_AddOnContent && f.kind == CatalogFile::Kind::Dlc);
+            if (kind && f.title_id == c.key.id && f.version == c.key.version) {
+                match = &f;
+            }
+        }
+        if (!match) {
+            all = false;
+            continue;
+        }
+        InstallJob job = JobFor(g, *match);
+        job.label = ContentLabel(g, c.key) + " · " + Tr().repair_tag;
+        job.file_id += ":repair";
+        job.nand = c.nand;
+        job.repair = c.bad;
+        job.size = c.bad_bytes;
+        out.push_back(std::move(job));
+    }
+    return all && !out.empty();
 }
 
 void App::AddJobs(std::vector<InstallJob> jobs) {
@@ -2062,6 +2175,7 @@ void App::UpdateInstalled(u64 down, u64 held) {
             m_dialog = Dialog{};
             m_dialog.kind = DialogKind::HistoryInfo;
             m_dialog.entry = m_installed_focus;
+            m_dialog.single = true;
         }
         if (down & HidNpadButton_Minus) {
             m_dialog = Dialog{};
@@ -2087,6 +2201,9 @@ void App::DrawDialog(NVGcontext* vg) {
     std::string title, body, note, primary, error;
     std::vector<Line> lines;
     bool can = true, bar = false;
+    bool verify_bar = false, verify_running = false;
+    float verify_frac = 0;
+    std::string verify_text;
     u64 size = 0;
     switch (m_dialog.kind) {
         case DialogKind::Nand: {
@@ -2125,6 +2242,68 @@ void App::DrawDialog(NVGcontext* vg) {
             can = !chosen.empty();
             break;
         }
+        case DialogKind::UpdateAll: {
+            for (const auto& j : m_dialog.jobs) {
+                size += j.size;
+                lines.push_back({j.game + " · " + j.label, WhereText(j.nand), SizeText(j.size), t.text});
+            }
+            char text[96];
+            std::snprintf(text, sizeof(text), s.update_all_title, int(m_dialog.jobs.size()));
+            title = text;
+            note = s.update_all_note;
+            std::snprintf(text, sizeof(text), s.update_all_confirm, int(m_dialog.jobs.size()), SizeText(size).c_str());
+            primary = text;
+            break;
+        }
+        case DialogKind::Verify: {
+            if (m_dialog.game < 0 || m_dialog.game >= int(m_games.size())) {
+                m_dialog.kind = DialogKind::None;
+                return;
+            }
+            const Game& g = m_games[m_dialog.game];
+            char text[160];
+            std::snprintf(text, sizeof(text), s.verify_title, g.name.c_str());
+            title = text;
+            const auto v = m_queue->GetVerify();
+            verify_bar = true;
+            verify_frac = v.bytes ? float(double(v.bytes_done) / double(v.bytes)) : 0.f;
+            verify_running = v.running;
+            std::snprintf(text, sizeof(text), s.verify_progress, v.parts_done, v.parts, SizeText(v.bytes_done).c_str(), SizeText(v.bytes).c_str());
+            verify_text = text;
+            m_dialog.single = true;
+            if (v.done) {
+                if (R_FAILED(v.rc) && !IsCancelled(v.rc)) {
+                    error = InstallErrorText(v.rc, 0, 0, -1);
+                }
+                bool bad = false;
+                for (const auto& c : v.result) {
+                    std::string right;
+                    if (c.bad.empty()) {
+                        right = s.verify_fine;
+                    } else {
+                        char b[96];
+                        std::snprintf(b, sizeof(b), s.verify_bad, u32(c.bad.size()), c.parts);
+                        right = b;
+                        bad = true;
+                    }
+                    lines.push_back({ContentLabel(g, c.key), WhereText(c.nand), right, c.bad.empty() ? t.ok : t.err});
+                }
+                std::vector<InstallJob> repairs;
+                if (bad && RepairJobs(v, repairs)) {
+                    u64 bytes = 0;
+                    for (const auto& j : repairs) bytes += j.size;
+                    std::snprintf(text, sizeof(text), s.repair_confirm, SizeText(bytes).c_str());
+                    primary = text;
+                    note = s.repair_note;
+                    m_dialog.single = false;
+                } else if (bad) {
+                    error = s.repair_missing;
+                } else if (error.empty()) {
+                    note = s.verify_all_ok;
+                }
+            }
+            break;
+        }
         case DialogKind::ClearHistory:
             title = s.clear_title;
             body = s.clear_body;
@@ -2159,7 +2338,7 @@ void App::DrawDialog(NVGcontext* vg) {
     const float note_h = note.empty() ? 0 : TextBoxHeight(vg, iw, 15, note.c_str()) + 14;
     const float list_h = lines.empty() ? 0 : shown * 40 + (more ? 30 : 0) + 12 + 16;
     const float err_h = error.empty() ? 0 : TextBoxHeight(vg, iw, 15, error.c_str()) + 14;
-    h += body_h + list_h + (bar ? 64 : 0) + err_h + note_h + 60 + pad - 8;
+    h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + 60 + pad - 8;
     const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x - 10, y + 6, w + 20, h + 20, 22);
@@ -2197,6 +2376,7 @@ void App::DrawDialog(NVGcontext* vg) {
             nvgSave(vg);
             nvgScissor(vg, tx, ly - 20, iw - 32 - rw - 140, 40);
             tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, l.text.c_str());
+            const bool colored = m_dialog.kind == DialogKind::HistoryInfo || m_dialog.kind == DialogKind::Verify;
             nvgRestore(vg);
             if (!l.tag.empty()) {
                 const float tw = ui::TextWidth(vg, 13, l.tag.c_str()) + 16;
@@ -2204,7 +2384,7 @@ void App::DrawDialog(NVGcontext* vg) {
                 ui::StrokeRound(vg, tagx, ly - 11, tw, 22, 6, t.line, 1);
                 ui::Text(vg, tagx + tw / 2, ly, 13, t.muted, l.tag.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
             }
-            ui::Text(vg, x + pad + iw - 16, ly, 15, m_dialog.kind == DialogKind::HistoryInfo ? l.color : t.muted, l.right.c_str(),
+            ui::Text(vg, x + pad + iw - 16, ly, 15, colored ? l.color : t.muted, l.right.c_str(),
                      NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         }
         if (more) {
@@ -2253,6 +2433,11 @@ void App::DrawDialog(NVGcontext* vg) {
         }
         cy += 64;
     }
+    if (verify_bar) {
+        ui::Progress(vg, t, x + pad, cy + 4, iw, 10, verify_running ? verify_frac : 1.f, t.work, m_time, verify_running);
+        ui::Text(vg, x + pad, cy + 34, 15, t.muted, verify_text.c_str());
+        cy += 54;
+    }
     if (!error.empty()) {
         TextBox(vg, x + pad, cy, iw, 15, t.err, error.c_str());
         cy += err_h;
@@ -2263,8 +2448,8 @@ void App::DrawDialog(NVGcontext* vg) {
     }
 
     // the buttons: Cancel (or Close) first in focus, the action on the right
-    const bool info = m_dialog.kind == DialogKind::HistoryInfo;
-    if (!can && m_dialog.focus == 1) m_dialog.focus = 0;
+    const bool info = m_dialog.single;
+    if ((!can || info) && m_dialog.focus == 1) m_dialog.focus = 0;
     const float bh = 52, by = y + h - pad - bh + 8;
     float bx = x + w - pad;
     struct Button { const char* glyph; std::string label; bool primary; int index; };
@@ -2302,7 +2487,13 @@ void App::DrawDialog(NVGcontext* vg) {
 }
 
 void App::UpdateDialog(u64 down, u64 held) {
-    const bool info = m_dialog.kind == DialogKind::HistoryInfo;
+    const bool info = m_dialog.single;
+    if (m_dialog.kind == DialogKind::Verify && (down & (HidNpadButton_B | HidNpadButton_A)) && m_queue->GetVerify().running) {
+        // stops the check; the question closes
+        m_queue->CancelVerify();
+        m_dialog.kind = DialogKind::None;
+        return;
+    }
     if (!info) {
         if (Repeat(down, held, HidNpadButton_AnyLeft)) m_dialog.focus = 0;
         if (Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.focus = 1; // a disabled action falls back when drawn
@@ -2329,6 +2520,16 @@ void App::ConfirmDialog() {
                 return;
             }
             AddJobs(std::move(m_dialog.jobs));
+            break;
+        }
+        case DialogKind::UpdateAll:
+            AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::Verify: {
+            std::vector<InstallJob> repairs;
+            if (RepairJobs(m_queue->GetVerify(), repairs)) {
+                AddJobs(std::move(repairs));
+            }
             break;
         }
         case DialogKind::Undo:

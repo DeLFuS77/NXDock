@@ -13,6 +13,7 @@
 #include <switch.h>
 #include "catalog.hpp"
 #include "container_kind.hpp"
+#include "verify.hpp"
 
 namespace sphaira::ui {
 class ProgressBox;
@@ -32,6 +33,7 @@ struct InstallJob {
     u64 title_id = 0;
     u64 size = 0;
     bool nand = false; // to the internal memory (asked first, on the page of the game)
+    std::vector<NcmContentId> repair; // a repair: these damaged parts go, and only what is missing comes
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took
@@ -104,10 +106,23 @@ public:
     bool StartUndo(std::vector<int> jobs = {});
     bool Undoing();
 
+    // Checks every part of a game on the queue's thread; false while something installs.
+    struct VerifyView {
+        bool running = false, done = false;
+        u64 bytes_done = 0, bytes = 0;
+        u32 parts_done = 0, parts = 0;
+        Result rc = 0;
+        std::vector<VerifiedContent> result;
+    };
+    bool StartVerify(u64 app_id);
+    VerifyView GetVerify();
+    void CancelVerify();
+
 private:
     void Run();
     void RunJob(InstallJob& job);
     void RunUndo();
+    void RunVerify();
 
     std::thread m_thread;
     std::mutex m_mutex;
@@ -122,6 +137,11 @@ private:
     std::vector<SessionItem> m_session;
     std::vector<int> m_undo_jobs;
     bool m_undo = false, m_undoing = false;
+    u64 m_verify_app = 0;
+    bool m_verify = false, m_verifying = false, m_verify_done = false;
+    Result m_verify_rc = 0;
+    VerifyProgress m_verify_progress;
+    std::vector<VerifiedContent> m_verify_result;
 
     // the running job
     sphaira::ui::ProgressBox* m_box = nullptr;
@@ -133,6 +153,9 @@ private:
     u64 m_sample_net = 0, m_sample_ready = 0, m_sample_written = 0;
     double m_rate_net = 0, m_rate_ready = 0, m_rate_written = 0;
 };
+
+// The install or check was cancelled by the user.
+bool IsCancelled(unsigned rc);
 
 // The message shown for a failed install, in the console language.
 std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand = false);

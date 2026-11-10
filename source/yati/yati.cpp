@@ -1190,6 +1190,7 @@ Result Yati::Setup(const ConfigOverride& override) {
     config.lower_master_key = false;
     config.lower_system_version = false;
     config.title_ids = override.title_ids;
+    config.repair = override.repair.value_or(false);
     storage_id = config.sd_card_install ? NcmStorageId_SdCard : NcmStorageId_BuiltInUser;
 
     R_TRY(source->GetOpenResult());
@@ -1230,7 +1231,7 @@ Result Yati::Setup(const ConfigOverride& override) {
 }
 
 Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection& nca) {
-    if (config.skip_if_already_installed || config.ticket_only) {
+    if (config.skip_if_already_installed || config.ticket_only || config.repair) {
         R_TRY(ncmContentStorageHas(std::addressof(cs), std::addressof(nca.skipped), std::addressof(nca.content_id)));
         if (nca.skipped) {
             log_write("\tskipped nca as it's already installed ncmContentStorageHas()\n");
@@ -1697,6 +1698,13 @@ Result Yati::CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span
         for (const auto& packed : cnmt.infos) {
             u64 size;
             ncmContentInfoSizeToU64(&packed.info, &size);
+            if (config.repair) {
+                // a repair writes only what the storage does not have
+                bool has{};
+                if (R_SUCCEEDED(ncmContentStorageHas(std::addressof(cs), std::addressof(has), std::addressof(packed.info.content_id))) && has) {
+                    continue;
+                }
+            }
             needed += size;
             ncas++;
         }

@@ -113,6 +113,23 @@ Result OpenContainer(HttpSource& source, std::unique_ptr<sphaira::yati::containe
     }
 }
 
+// Deletes the damaged parts of a content before it is repaired.
+Result DeleteParts(NcmStorageId storage, const std::vector<NcmContentId>& ids) {
+    R_TRY(ncmInitialize());
+    ON_SCOPE_EXIT(ncmExit());
+    NcmContentStorage cs{};
+    R_TRY(ncmOpenContentStorage(&cs, storage));
+    ON_SCOPE_EXIT(ncmContentStorageClose(&cs));
+    for (const auto& id : ids) {
+        bool has = false;
+        if (R_SUCCEEDED(ncmContentStorageHas(&cs, &has, &id)) && has) {
+            log_write("[NXDock] repair: deleting a damaged part\n");
+            R_TRY(ncmContentStorageDelete(&cs, &id));
+        }
+    }
+    R_SUCCEED();
+}
+
 HistoryEntry::Result HistoryResult(InstallJob::State state) {
     switch (state) {
         case InstallJob::State::Done: return HistoryEntry::Result::Installed;
@@ -122,6 +139,10 @@ HistoryEntry::Result HistoryResult(InstallJob::State state) {
 }
 
 } // namespace
+
+bool IsCancelled(unsigned rc) {
+    return R_MODULE(rc) == Module_NXDock && R_DESCRIPTION(rc) == u32(NXDockResult::TransferCancelled);
+}
 
 std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand) {
     const auto& s = Tr();
@@ -294,6 +315,59 @@ bool InstallQueue::StartUndo(std::vector<int> jobs) {
     return true;
 }
 
+bool InstallQueue::StartVerify(u64 app_id) {
+    {
+        std::lock_guard lock(m_mutex);
+        const bool busy = m_running != 0 || std::any_of(m_jobs.begin(), m_jobs.end(), [](const InstallJob& j) { return j.state == InstallJob::State::Waiting; });
+        if (busy || m_undo || m_undoing || m_verify || m_verifying) {
+            return false;
+        }
+        m_verify = true;
+        m_verify_done = false;
+        m_verify_app = app_id;
+        m_verify_rc = 0;
+        m_verify_result.clear();
+        m_verify_progress.done = m_verify_progress.total = 0;
+        m_verify_progress.parts_done = m_verify_progress.parts = 0;
+        m_verify_progress.cancel = false;
+    }
+    m_cv.notify_all();
+    return true;
+}
+
+InstallQueue::VerifyView InstallQueue::GetVerify() {
+    std::lock_guard lock(m_mutex);
+    VerifyView v;
+    v.running = m_verify || m_verifying;
+    v.done = m_verify_done;
+    v.bytes_done = m_verify_progress.done;
+    v.bytes = m_verify_progress.total;
+    v.parts_done = m_verify_progress.parts_done;
+    v.parts = m_verify_progress.parts;
+    v.rc = m_verify_rc;
+    if (m_verify_done) {
+        v.result = m_verify_result;
+    }
+    return v;
+}
+
+void InstallQueue::CancelVerify() {
+    m_verify_progress.cancel = true;
+}
+
+void InstallQueue::RunVerify() {
+    u64 app;
+    {
+        std::lock_guard lock(m_mutex);
+        app = m_verify_app;
+    }
+    std::vector<VerifiedContent> result;
+    const Result rc = VerifyApplication(app, m_verify_progress, result);
+    std::lock_guard lock(m_mutex);
+    m_verify_rc = rc;
+    m_verify_result = std::move(result);
+}
+
 bool InstallQueue::Undoing() {
     std::lock_guard lock(m_mutex);
     return m_undo || m_undoing;
@@ -346,6 +420,16 @@ InstallQueue::Live InstallQueue::GetLive() {
 void InstallQueue::Run() {
     std::unique_lock lock(m_mutex);
     while (!m_quit) {
+        if (m_verify) {
+            m_verify = false;
+            m_verifying = true;
+            lock.unlock();
+            RunVerify();
+            lock.lock();
+            m_verifying = false;
+            m_verify_done = true;
+            continue;
+        }
         if (m_undo) {
             m_undo = false;
             m_undoing = true;
@@ -426,7 +510,14 @@ void InstallQueue::RunJob(InstallJob& job) {
                 sphaira::yati::ConfigOverride config;
                 // the internal memory only for a job the user confirmed on the page of the game
                 config.sd_card_install = !job.nand;
-                rc = sphaira::yati::InstallFromContainer(&box, container.get(), config);
+                if (!job.repair.empty()) {
+                    // a repair: the damaged parts go first; only what is missing then comes
+                    config.repair = true;
+                    rc = DeleteParts(job.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard, job.repair);
+                }
+                if (R_SUCCEEDED(rc)) {
+                    rc = sphaira::yati::InstallFromContainer(&box, container.get(), config);
+                }
             }
         }
         source.SignalCancel();

@@ -60,6 +60,13 @@ private:
     // the question (1A).
     void EnqueuePicked();
     void AddJobs(std::vector<InstallJob> jobs);
+    // A job for a file of a game of the library.
+    InstallJob JobFor(const Game& g, const CatalogFile& f);
+    // The newest update of every installed game that has a newer one in the library.
+    std::vector<InstallJob> PendingUpdates();
+    // The repairs a finished check asks for; false when the library lacks a version.
+    bool RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>& out);
+    std::string ContentLabel(const Game& g, const NcmContentMetaKey& key) const;
     // The Installed tab (2A, 3A): what this session installed, and the history.
     void DrawInstalled(NVGcontext* vg);
     void UpdateInstalled(u64 down, u64 held);
@@ -130,14 +137,17 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
         std::vector<InstallJob> jobs;   // Nand: what goes to the internal memory
         std::vector<int> undo;          // Undo: the jobs whose install goes; empty: all
         int entry = -1;                 // HistoryInfo: the row of the history
+        int game = -1;                  // Verify: the game checked
+        bool single = false;            // only Close (or Cancel): no action
     };
+    std::string m_update_hint;
     Dialog m_dialog;
     double m_time = 0;
     double m_next_repeat = 0;

@@ -52,3 +52,8 @@
 - The history of installs, in the Installed tab and on the SD card: date,
   game, where, size, time, speed and result of each, with why a failed one
   failed, a summary on top, and a question before it is cleared.
+- "Update all" in the library: every installed game with a newer update in the
+  library gets it, each where its game is, after a question with the list.
+- "Check" on the page of an installed game: every part on the console is read
+  and compared with its SHA-256; "Repair" then downloads only the damaged
+  parts from the library and checks them again.

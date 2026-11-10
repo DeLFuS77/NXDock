@@ -32,6 +32,7 @@ struct InstalledState {
     bool base = false;
     u32 patch = 0; // version of the update installed, 0 without one
     std::set<u64> dlc;
+    bool base_nand = false; // the game is in the internal memory (an update goes there too)
 };
 
 // A game of the library with its files, and what the console has of it.

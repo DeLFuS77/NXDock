@@ -75,6 +75,7 @@ add_executable(nxdock
     source/net.cpp
     source/speedtest.cpp
     source/uninstall.cpp
+    source/verify.cpp
     source/gfx.cpp
     source/i18n.cpp
     source/ui.cpp

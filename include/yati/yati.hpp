@@ -67,6 +67,10 @@ struct Config {
 
     // if not empty, only content whose id is listed is installed.
     std::vector<u64> title_ids{};
+
+    // NXDock: a repair. Content already in the storage is kept; only what is missing is
+    // downloaded, and the content meta is registered again.
+    bool repair{};
 };
 
 // overridable options, set to avoid
@@ -84,6 +88,9 @@ struct ConfigOverride {
     // installs only the content whose id is listed, skipping the rest of the
     // container. on a random access source a skipped content costs one cnmt nca.
     std::vector<u64> title_ids{};
+
+    // NXDock: see Config::repair.
+    std::optional<bool> repair{};
 };
 
 Result InstallFromContainer(ui::ProgressBox* pbox, container::Base* container, const ConfigOverride& override = {});

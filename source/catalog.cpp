@@ -185,7 +185,10 @@ std::map<u64, InstalledState> ReadInstalled() {
                         continue;
                     }
                     switch (metas[m].meta_type) {
-                        case NcmContentMetaType_Application: state.base = true; break;
+                        case NcmContentMetaType_Application:
+                            state.base = true;
+                            state.base_nand = metas[m].storageID == NcmStorageId_BuiltInUser;
+                            break;
                         case NcmContentMetaType_Patch: state.patch = std::max(state.patch, metas[m].version); break;
                         case NcmContentMetaType_AddOnContent: state.dlc.insert(metas[m].application_id); break;
                         default: break;
