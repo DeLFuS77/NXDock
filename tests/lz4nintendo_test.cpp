@@ -129,6 +129,8 @@ int main(int argc, char** argv) {
         return 2;
     }
     g_text = ReadFile(argv[2]);
+    // the text as the repository keeps it, also from a checkout with Windows line endings
+    std::erase(g_text, uint8_t('\r'));
     g_jpeg = ReadFile(argv[3]);
     if (g_text.empty() || g_jpeg.empty()) {
         std::fprintf(stderr, "the text or the jpeg could not be read\n");

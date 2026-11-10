@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "link.hpp"
+#include "tls_pin.hpp"
 
 #include <switch.h>
 #include <chrono>
@@ -100,12 +101,34 @@ void Link::SetRemember(bool remember) {
     m_view.remember = remember;
 }
 
+void Link::TakePin(const std::string& url) {
+    {
+        std::lock_guard lock(m_mutex);
+        if (url.rfind("https://", 0) != 0 || (!m_session.pin.empty() && m_session.url == url)) {
+            return;
+        }
+    }
+    std::string error;
+    const std::string pin = tls::ReadPin(url, error);
+    if (pin.empty()) {
+        return; // the requests go on without a pin, as on the first contact
+    }
+    std::lock_guard lock(m_mutex);
+    m_session.pin = pin;
+    if (m_config.Linked() && m_config.key == m_session.key) {
+        m_config.pin = pin;
+        m_config.Save();
+    }
+    tls::SetPin(pin);
+}
+
 void Link::Start(const Config& config) {
     {
         std::lock_guard lock(m_mutex);
         m_config = config;
         m_session = config;
     }
+    tls::SetPin(config.pin);
     Run(config.Linked() ? &Link::JobReconnect : &Link::JobSearch);
 }
 
@@ -189,6 +212,7 @@ void Link::Forget() {
         m_session = m_config;
         m_view = View{};
     }
+    tls::SetPin("");
     Run(&Link::JobSearch);
 }
 
@@ -264,6 +288,7 @@ void Link::JobReconnect() {
         JobPair();
         return;
     }
+    TakePin(url);
     std::lock_guard lock(m_mutex);
     const bool moved = m_session.url != url || m_session.id != lib.id;
     m_session.url = url;
@@ -366,6 +391,7 @@ void Link::JobPair() {
             return;
         }
         const std::string key = http::JsonString(r.body, "key");
+        TakePin(target.url);
         std::lock_guard lock(m_mutex);
         m_session.url = target.url;
         m_session.key = key;

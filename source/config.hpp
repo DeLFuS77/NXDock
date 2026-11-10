@@ -13,6 +13,7 @@ struct Config {
     std::string key;    // the console key the app gave when paired (or typed by hand)
     std::string id;     // the id of the app, to find it again if its address changes
     std::string name;   // the name of the key in the app, shown in Settings
+    std::string pin;    // with https: the hash of the app's public key, taken when first linked
     bool light = false; // light theme
 
     bool Linked() const { return !url.empty() && !key.empty(); }

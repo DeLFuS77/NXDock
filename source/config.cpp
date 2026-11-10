@@ -40,6 +40,7 @@ Config Config::Load() {
         else if (!std::strncmp(line, "key=", 4)) c.key = Trim(line + 4);
         else if (!std::strncmp(line, "id=", 3)) c.id = Trim(line + 3);
         else if (!std::strncmp(line, "name=", 5)) c.name = Trim(line + 5);
+        else if (!std::strncmp(line, "pin=", 4)) c.pin = Trim(line + 4);
         else if (!std::strncmp(line, "theme=", 6)) c.light = Trim(line + 6) == "light";
     }
     std::fclose(f);
@@ -56,6 +57,9 @@ bool Config::Save() const {
     }
     std::fprintf(f, "url=%s\nkey=%s\nid=%s\nname=%s\ntheme=%s\n", url.c_str(), key.c_str(), id.c_str(), name.c_str(),
                  light ? "light" : "dark");
+    if (!pin.empty()) {
+        std::fprintf(f, "pin=%s\n", pin.c_str());
+    }
     const bool ok = std::fclose(f) == 0;
     if (!ok) {
         std::remove(kTemp);

@@ -207,6 +207,11 @@ constexpr Strings kEnglish{
     "Queue: what installs and what waits. It goes on while you browse.",
     "Installed: what this session installed, to undo it, and the history.",
     "%d of 3 · any button to skip",
+    "Before installing",
+    "NXDock is not running on an emuMMC: this installs to the console's own system (sysMMC).",
+    "The console can reach Nintendo's servers: there is no 90DNS or DNS block.",
+    "Installing your own copies like this can get the console banned. Recommended: an emuMMC with no access to Nintendo (90DNS or the DNS block of Atmosphère). This is said once per session.",
+    "Install anyway",
 };
 
 constexpr Strings kSpanish{
@@ -409,6 +414,11 @@ constexpr Strings kSpanish{
     "Cola: lo que se instala y lo que espera. Sigue mientras navegas.",
     "Instalado: lo instalado en esta sesión, para deshacerlo, y el historial.",
     "%d de 3 · cualquier botón para saltar",
+    "Antes de instalar",
+    "NXDock no se está ejecutando en un emuMMC: esto instala en el sistema propio de la consola (sysMMC).",
+    "La consola puede conectarse a los servidores de Nintendo: no hay 90DNS ni bloqueo de DNS.",
+    "Instalar tus copias así puede acabar en un baneo de la consola. Lo recomendado: un emuMMC sin acceso a Nintendo (90DNS o el bloqueo de DNS de Atmosphère). Se avisa una vez por sesión.",
+    "Instalar igualmente",
 };
 
 constexpr Strings kFrench{
@@ -692,6 +702,11 @@ constexpr Strings kFrench{
     "File : ce qui s'installe et ce qui attend. Elle continue pendant la navigation.",
     "Installé : ce que cette session a installé, pour l'annuler, et l'historique.",
     "%d sur 3 · un bouton pour passer",
+    "Avant d'installer",
+    "NXDock ne tourne pas sur un emuMMC : ceci installe sur le système même de la console (sysMMC).",
+    "La console peut joindre les serveurs de Nintendo : il n'y a ni 90DNS ni blocage DNS.",
+    "Installer vos copies ainsi peut faire bannir la console. Recommandé : un emuMMC sans accès à Nintendo (90DNS ou le blocage DNS d'Atmosphère). Ce message apparaît une fois par session.",
+    "Installer quand même",
 };
 
 constexpr Strings kGerman{
@@ -975,6 +990,11 @@ constexpr Strings kGerman{
     "Warteschlange: was installiert wird und was wartet. Läuft beim Stöbern weiter.",
     "Installiert: was diese Sitzung installiert hat, zum Rückgängigmachen, und der Verlauf.",
     "%d von 3 · beliebige Taste zum Überspringen",
+    "Vor dem Installieren",
+    "NXDock läuft nicht auf einem emuMMC: Das installiert auf das eigene System der Konsole (sysMMC).",
+    "Die Konsole kann Nintendos Server erreichen: Es gibt weder 90DNS noch eine DNS-Sperre.",
+    "Eigene Kopien so zu installieren kann zu einem Bann der Konsole führen. Empfohlen: ein emuMMC ohne Zugang zu Nintendo (90DNS oder die DNS-Sperre von Atmosphère). Der Hinweis kommt einmal pro Sitzung.",
+    "Trotzdem installieren",
 };
 
 constexpr Strings kItalian{
@@ -1258,6 +1278,11 @@ constexpr Strings kItalian{
     "Coda: ciò che si installa e ciò che attende. Continua mentre navighi.",
     "Installati: ciò che questa sessione ha installato, per annullarlo, e la cronologia.",
     "%d di 3 · qualsiasi pulsante per saltare",
+    "Prima di installare",
+    "NXDock non è in esecuzione su un emuMMC: questo installa sul sistema stesso della console (sysMMC).",
+    "La console può raggiungere i server di Nintendo: non c'è 90DNS né un blocco DNS.",
+    "Installare le tue copie così può far bannare la console. Consigliato: un emuMMC senza accesso a Nintendo (90DNS o il blocco DNS di Atmosphère). L'avviso compare una volta per sessione.",
+    "Installa comunque",
 };
 
 constexpr Strings kPortuguese{
@@ -1541,6 +1566,11 @@ constexpr Strings kPortuguese{
     "Fila: o que se instala e o que espera. Continua enquanto navegas.",
     "Instalado: o que esta sessão instalou, para o desfazer, e o histórico.",
     "%d de 3 · qualquer botão para saltar",
+    "Antes de instalar",
+    "O NXDock não está a correr num emuMMC: isto instala no próprio sistema da consola (sysMMC).",
+    "A consola consegue ligar-se aos servidores da Nintendo: não há 90DNS nem bloqueio de DNS.",
+    "Instalar as tuas cópias assim pode levar a um banimento da consola. Recomendado: um emuMMC sem acesso à Nintendo (90DNS ou o bloqueio de DNS do Atmosphère). O aviso aparece uma vez por sessão.",
+    "Instalar mesmo assim",
 };
 
 constexpr Strings kDutch{
@@ -1824,6 +1854,11 @@ constexpr Strings kDutch{
     "Wachtrij: wat er geïnstalleerd wordt en wat wacht. Gaat door terwijl je bladert.",
     "Geïnstalleerd: wat deze sessie installeerde, om het ongedaan te maken, en de geschiedenis.",
     "%d van 3 · elke knop om over te slaan",
+    "Voor het installeren",
+    "NXDock draait niet op een emuMMC: dit installeert op het eigen systeem van de console (sysMMC).",
+    "De console kan de servers van Nintendo bereiken: er is geen 90DNS of DNS-blokkade.",
+    "Je eigen kopieën zo installeren kan de console een ban opleveren. Aanbevolen: een emuMMC zonder toegang tot Nintendo (90DNS of de DNS-blokkade van Atmosphère). Dit wordt één keer per sessie gezegd.",
+    "Toch installeren",
 };
 
 constexpr Strings kRussian{
@@ -2107,6 +2142,11 @@ constexpr Strings kRussian{
     "Очередь: что устанавливается и что ждёт. Работает, пока вы листаете.",
     "Установлено: что установлено за этот сеанс, чтобы отменить, и история.",
     "%d из 3 · любая кнопка — пропустить",
+    "Перед установкой",
+    "NXDock запущен не на emuMMC: установка пойдёт в собственную систему консоли (sysMMC).",
+    "Консоль может связаться с серверами Nintendo: нет ни 90DNS, ни DNS-блокировки.",
+    "Такая установка своих копий может привести к бану консоли. Рекомендуется emuMMC без доступа к Nintendo (90DNS или DNS-блокировка Atmosphère). Предупреждение показывается раз за сеанс.",
+    "Всё равно установить",
 };
 
 constexpr Strings kJapanese{
@@ -2390,6 +2430,11 @@ constexpr Strings kJapanese{
     "キュー：インストール中と待機中のもの。見て回っている間も続きます。",
     "インストール済み：このセッションでインストールしたもの（取り消し可）と履歴。",
     "%d / 3 · ボタンでスキップ",
+    "インストールの前に",
+    "NXDock は emuMMC で動いていません。本体のシステム（sysMMC）にインストールされます。",
+    "本体が任天堂のサーバーに接続できます。90DNS も DNS ブロックもありません。",
+    "このように自分のコピーをインストールすると、本体が BAN される可能性があります。推奨：任天堂に接続できない emuMMC（90DNS または Atmosphère の DNS ブロック）。この案内はセッションごとに一度表示されます。",
+    "それでもインストール",
 };
 
 constexpr Strings kKorean{
@@ -2673,6 +2718,11 @@ constexpr Strings kKorean{
     "대기열: 설치 중인 것과 기다리는 것. 둘러보는 동안에도 계속됩니다.",
     "설치됨: 이번 세션에 설치한 것(취소 가능)과 기록.",
     "%d / 3 · 아무 버튼이나 눌러 건너뛰기",
+    "설치하기 전에",
+    "NXDock이 emuMMC에서 실행되고 있지 않습니다. 본체 자체 시스템(sysMMC)에 설치됩니다.",
+    "본체가 닌텐도 서버에 연결할 수 있습니다. 90DNS나 DNS 차단이 없습니다.",
+    "이렇게 자신의 사본을 설치하면 본체가 밴될 수 있습니다. 권장: 닌텐도에 접속할 수 없는 emuMMC(90DNS 또는 Atmosphère의 DNS 차단). 이 안내는 세션마다 한 번 표시됩니다.",
+    "그래도 설치",
 };
 
 constexpr Strings kChinese{
@@ -2956,6 +3006,11 @@ constexpr Strings kChinese{
     "队列：正在安装和等待中的内容。浏览时也会继续。",
     "已安装：本次会话安装的内容（可撤销）和历史记录。",
     "%d / 3 · 按任意按钮跳过",
+    "安装之前",
+    "NXDock 没有在 emuMMC 上运行：这会安装到主机自己的系统（sysMMC）。",
+    "主机可以连接任天堂的服务器：没有 90DNS 或 DNS 屏蔽。",
+    "这样安装你自己的副本可能导致主机被封禁。建议：使用无法连接任天堂的 emuMMC（90DNS 或 Atmosphère 的 DNS 屏蔽）。每次运行只提示一次。",
+    "仍然安装",
 };
 
 // In the order of LanguageName.

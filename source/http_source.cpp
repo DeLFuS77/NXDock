@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
+#include "tls_pin.hpp"
 #include "http_source.hpp"
 #include "log.hpp"
 
@@ -79,6 +80,7 @@ CURL* NewHandle(const std::string& url, const std::string& key) {
         return nullptr;
     }
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    tls::Apply(curl, url);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "NXDock/" NXDOCK_VERSION);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
