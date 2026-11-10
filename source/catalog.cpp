@@ -8,6 +8,7 @@
 
 #include <yyjson.h>
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include "http.hpp"
 #include "i18n.hpp"
@@ -135,11 +136,59 @@ bool ParseCatalog(const std::string& json, std::vector<Game>& out) {
     return true;
 }
 
+bool ParsePush(const std::string& json, std::vector<PushItem>& out) {
+    out.clear();
+    yyjson_doc* doc = yyjson_read(json.data(), json.size(), 0);
+    if (!doc) {
+        return false;
+    }
+    yyjson_val* items = yyjson_obj_get(yyjson_doc_get_root(doc), "items");
+    if (!yyjson_is_arr(items)) {
+        yyjson_doc_free(doc);
+        return false;
+    }
+    size_t i, max;
+    yyjson_val* v;
+    yyjson_arr_foreach(items, i, max, v) {
+        PushItem p;
+        p.id = Str(v, "id");
+        p.file_id = Str(v, "fileId");
+        p.url = Str(v, "url");
+        p.game = Str(v, "game");
+        p.kind = Str(v, "kind");
+        p.format = Str(v, "format");
+        p.name = Str(v, "name");
+        p.from = Str(v, "from");
+        p.title_id = ParseTitleId(yyjson_get_str(yyjson_obj_get(v, "titleId")));
+        p.version = u32(yyjson_get_uint(yyjson_obj_get(v, "version")));
+        p.size = yyjson_get_uint(yyjson_obj_get(v, "size"));
+        // only a file of the app: a path on it, never another address
+        if (!p.id.empty() && p.url.size() > 1 && p.url[0] == '/' && p.url[1] != '/') {
+            out.push_back(std::move(p));
+        }
+    }
+    yyjson_doc_free(doc);
+    return true;
+}
+
+std::string InventoryJson(const std::vector<InstalledContent>& items) {
+    std::string out = "{\"items\":[";
+    char entry[160];
+    for (size_t i = 0; i < items.size(); i++) {
+        const auto& c = items[i];
+        const char* type = c.type == 0x81 ? "update" : c.type == 0x82 ? "dlc" : "game";
+        std::snprintf(entry, sizeof(entry), "%s{\"titleId\":\"%016llX\",\"type\":\"%s\",\"version\":%u,\"storage\":\"%s\"}",
+                      i ? "," : "", (unsigned long long)c.title_id, type, c.version, c.nand ? "nand" : "sd");
+        out += entry;
+    }
+    return out + "]}";
+}
+
 #ifdef __SWITCH__
 // What the console has, by application. A record of ns is not enough: ns keeps the record and
 // its metas of an archived game, or of one whose contents were removed, so a content counts only
 // when the meta database of its storage (SD card or internal memory) holds it.
-std::map<u64, InstalledState> ReadInstalled() {
+std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list) {
     std::map<u64, InstalledState> installed;
     if (R_FAILED(nsInitialize())) {
         return installed;
@@ -183,6 +232,11 @@ std::map<u64, InstalledState> ReadInstalled() {
                 for (s32 m = 0; m < metas_count; m++) {
                     if (!present(metas[m])) {
                         continue;
+                    }
+                    if (list && (metas[m].meta_type == NcmContentMetaType_Application || metas[m].meta_type == NcmContentMetaType_Patch ||
+                                 metas[m].meta_type == NcmContentMetaType_AddOnContent)) {
+                        list->push_back({metas[m].application_id, metas[m].meta_type, metas[m].version,
+                                         metas[m].storageID == NcmStorageId_BuiltInUser});
                     }
                     switch (metas[m].meta_type) {
                         case NcmContentMetaType_Application:

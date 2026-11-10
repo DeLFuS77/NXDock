@@ -12,6 +12,7 @@
 #include "history.hpp"
 #include "install_queue.hpp"
 #include "link.hpp"
+#include "push.hpp"
 #include "speedtest.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
@@ -137,7 +138,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -146,7 +147,15 @@ private:
         int entry = -1;                 // HistoryInfo: the row of the history
         int game = -1;                  // Verify: the game checked
         bool single = false;            // only Close (or Cancel): no action
+        std::vector<std::string> push;  // Push: the ids of what the web sent, to answer
+        std::string from;               // Push: who sent it
     };
+    // "Send to console" and the inventory (only when the user said yes)
+    std::unique_ptr<Push> m_push;
+    std::vector<PushItem> m_pushed;     // arrived, not asked about yet
+    unsigned m_inventory_sent = ~0u;    // the queue version the last inventory was read at
+    std::string m_inventory_url;
+    void FollowPush();
     std::string m_update_hint;
     Dialog m_dialog;
     double m_time = 0;

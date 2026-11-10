@@ -78,7 +78,27 @@ private:
 // Reads the catalog JSON of the app; false when it is not one. Tested on the computer.
 bool ParseCatalog(const std::string& json, std::vector<Game>& out);
 
-// What the console has installed, by application id.
-std::map<u64, InstalledState> ReadInstalled();
+// A file the library sends from the web ("Send to console"); the console asks before installing.
+struct PushItem {
+    std::string id, file_id, url, game, kind, format, name, from;
+    u64 title_id = 0;
+    u32 version = 0;
+    u64 size = 0;
+};
+// Reads the answer of /install/push/wait; false when it is not one. Tested on the computer.
+bool ParsePush(const std::string& json, std::vector<PushItem>& out);
+
+// One content on the console, for the inventory shared with the app (only when the user agrees).
+struct InstalledContent {
+    u64 title_id = 0;
+    unsigned char type = 0; // NcmContentMetaType: 0x80 game, 0x81 update, 0x82 DLC
+    u32 version = 0;
+    bool nand = false;
+};
+// The body of /install/inventory. Tested on the computer.
+std::string InventoryJson(const std::vector<InstalledContent>& items);
+
+// What the console has installed, by application id; with list, every content too.
+std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list = nullptr);
 
 } // namespace nxdock

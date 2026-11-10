@@ -138,6 +138,16 @@ constexpr Strings kEnglish{
     "Your library does not have this version: it cannot be repaired from it.",
     "Wait for the queue to finish, or empty it, first.",
     "repair",
+    "Your library sends you %d",
+    "Sent by %s from the web. It is installed to the SD card.",
+    "Install · %s",
+    "Not now",
+    "Share what is installed with your library?",
+    "Your library will know which games, updates and DLC this console has, and where. It shows what is missing or old on the web. Nothing else is sent, and it can be turned off in Settings.",
+    "Yes, share",
+    "No",
+    "Share what is installed",
+    "Yes",
 };
 
 constexpr Strings kSpanish{
@@ -271,6 +281,16 @@ constexpr Strings kSpanish{
     "Tu biblioteca no tiene esta versión: no se puede reparar desde ella.",
     "Espera antes a que acabe la cola, o vacíala.",
     "reparar",
+    "Tu biblioteca te envía %d",
+    "Enviado por %s desde la web. Se instala en la tarjeta SD.",
+    "Instalar · %s",
+    "Ahora no",
+    "¿Compartir lo instalado con tu biblioteca?",
+    "Tu biblioteca sabrá qué juegos, actualizaciones y DLC tiene esta consola, y dónde. Sirve para ver en la web qué falta o está viejo. No se manda nada más, y se puede quitar en Ajustes.",
+    "Sí, compartir",
+    "No",
+    "Compartir lo instalado",
+    "Sí",
 };
 
 constexpr Strings kFrench{
@@ -485,6 +505,16 @@ constexpr Strings kFrench{
     "Votre bibliothèque n'a pas cette version : impossible de réparer depuis elle.",
     "Attendez d'abord la fin de la file, ou videz-la.",
     "réparation",
+    "Votre bibliothèque vous envoie %d",
+    "Envoyé par %s depuis le web. Installé sur la carte SD.",
+    "Installer · %s",
+    "Pas maintenant",
+    "Partager ce qui est installé avec votre bibliothèque ?",
+    "Votre bibliothèque saura quels jeux, mises à jour et DLC cette console possède, et où. Le web montre ce qui manque ou est ancien. Rien d'autre n'est envoyé, et cela se désactive dans les paramètres.",
+    "Oui, partager",
+    "Non",
+    "Partager ce qui est installé",
+    "Oui",
 };
 
 constexpr Strings kGerman{
@@ -699,6 +729,16 @@ constexpr Strings kGerman{
     "Deine Bibliothek hat diese Version nicht: Aus ihr lässt sich nicht reparieren.",
     "Warte zuerst, bis die Warteschlange fertig ist, oder leere sie.",
     "Reparatur",
+    "Deine Bibliothek schickt dir %d",
+    "Von %s im Web gesendet. Es wird auf die SD-Karte installiert.",
+    "Installieren · %s",
+    "Jetzt nicht",
+    "Installiertes mit deiner Bibliothek teilen?",
+    "Deine Bibliothek erfährt, welche Spiele, Updates und DLC diese Konsole hat und wo. Im Web siehst du, was fehlt oder alt ist. Sonst wird nichts gesendet, und es lässt sich in den Einstellungen ausschalten.",
+    "Ja, teilen",
+    "Nein",
+    "Installiertes teilen",
+    "Ja",
 };
 
 constexpr Strings kItalian{
@@ -913,6 +953,16 @@ constexpr Strings kItalian{
     "La tua libreria non ha questa versione: non si può riparare da essa.",
     "Aspetta prima che la coda finisca, o svuotala.",
     "riparazione",
+    "La tua libreria ti invia %d",
+    "Inviato da %s dal web. Si installa sulla scheda SD.",
+    "Installa · %s",
+    "Non ora",
+    "Condividere ciò che è installato con la tua libreria?",
+    "La tua libreria saprà quali giochi, aggiornamenti e DLC ha questa console, e dove. Sul web vedi cosa manca o è vecchio. Non viene inviato nient'altro e si può disattivare nelle impostazioni.",
+    "Sì, condividi",
+    "No",
+    "Condividi ciò che è installato",
+    "Sì",
 };
 
 constexpr Strings kPortuguese{
@@ -1127,6 +1177,16 @@ constexpr Strings kPortuguese{
     "A tua biblioteca não tem esta versão: não se pode reparar a partir dela.",
     "Espera primeiro que a fila termine, ou esvazia-a.",
     "reparação",
+    "A tua biblioteca envia-te %d",
+    "Enviado por %s a partir da web. Instala-se no cartão SD.",
+    "Instalar · %s",
+    "Agora não",
+    "Partilhar o que está instalado com a tua biblioteca?",
+    "A tua biblioteca saberá que jogos, atualizações e DLC esta consola tem, e onde. Na web vês o que falta ou está antigo. Não se envia mais nada, e pode desligar-se nas definições.",
+    "Sim, partilhar",
+    "Não",
+    "Partilhar o que está instalado",
+    "Sim",
 };
 
 constexpr Strings kDutch{
@@ -1341,6 +1401,16 @@ constexpr Strings kDutch{
     "Je bibliotheek heeft deze versie niet: herstellen daaruit kan niet.",
     "Wacht eerst tot de wachtrij klaar is, of leeg hem.",
     "reparatie",
+    "Je bibliotheek stuurt je %d",
+    "Verstuurd door %s via het web. Het wordt op de SD-kaart geïnstalleerd.",
+    "Installeren · %s",
+    "Nu niet",
+    "Wat geïnstalleerd is delen met je bibliotheek?",
+    "Je bibliotheek weet dan welke games, updates en DLC deze console heeft, en waar. Op het web zie je wat ontbreekt of oud is. Er wordt niets anders verstuurd, en het kan uit in Instellingen.",
+    "Ja, delen",
+    "Nee",
+    "Geïnstalleerde delen",
+    "Ja",
 };
 
 constexpr Strings kRussian{
@@ -1555,6 +1625,16 @@ constexpr Strings kRussian{
     "В вашей библиотеке нет этой версии: исправить из неё нельзя.",
     "Сначала дождитесь окончания очереди или очистите её.",
     "исправление",
+    "Библиотека отправила вам: %d",
+    "Отправлено пользователем %s через веб. Устанавливается на SD-карту.",
+    "Установить · %s",
+    "Не сейчас",
+    "Поделиться установленным с библиотекой?",
+    "Библиотека будет знать, какие игры, обновления и DLC есть на этой консоли и где. В вебе видно, чего не хватает или что устарело. Больше ничего не отправляется, и это можно выключить в настройках.",
+    "Да, поделиться",
+    "Нет",
+    "Делиться установленным",
+    "Да",
 };
 
 constexpr Strings kJapanese{
@@ -1769,6 +1849,16 @@ constexpr Strings kJapanese{
     "ライブラリーにこのバージョンがないため、修復できません。",
     "先にキューが終わるのを待つか、キューを空にしてください。",
     "修復",
+    "ライブラリーから %d 件届きました",
+    "%s さんが Web から送信しました。SD カードにインストールします。",
+    "インストール · %s",
+    "今はしない",
+    "インストール済みの内容をライブラリーと共有しますか？",
+    "この本体にどのゲーム、更新データ、DLC がどこにあるかをライブラリーが把握し、足りないものや古いものを Web で確認できます。それ以外は送信されず、設定でオフにできます。",
+    "共有する",
+    "いいえ",
+    "インストール済みを共有",
+    "はい",
 };
 
 constexpr Strings kKorean{
@@ -1983,6 +2073,16 @@ constexpr Strings kKorean{
     "라이브러리에 이 버전이 없어 복구할 수 없습니다.",
     "먼저 대기열이 끝날 때까지 기다리거나 대기열을 비우세요.",
     "복구",
+    "라이브러리에서 %d개를 보냈습니다",
+    "%s님이 웹에서 보냈습니다. SD 카드에 설치됩니다.",
+    "설치 · %s",
+    "나중에",
+    "설치된 내용을 라이브러리와 공유할까요?",
+    "이 본체에 어떤 게임, 업데이트, DLC가 어디에 있는지 라이브러리가 알게 되어, 웹에서 빠졌거나 오래된 것을 볼 수 있습니다. 그 외에는 아무것도 보내지 않으며 설정에서 끌 수 있습니다.",
+    "네, 공유",
+    "아니요",
+    "설치된 내용 공유",
+    "네",
 };
 
 constexpr Strings kChinese{
@@ -2197,6 +2297,16 @@ constexpr Strings kChinese{
     "你的游戏库没有这个版本，无法从中修复。",
     "请先等待队列完成，或清空队列。",
     "修复",
+    "游戏库向你发送了 %d 项",
+    "由 %s 从网页发送。将安装到 SD 卡。",
+    "安装 · %s",
+    "暂不",
+    "与游戏库共享已安装的内容？",
+    "游戏库将知道这台主机有哪些游戏、更新和 DLC，以及它们在哪里，便于在网页上查看缺少或过旧的内容。不会发送其他任何信息，可在设置中关闭。",
+    "共享",
+    "否",
+    "共享已安装内容",
+    "是",
 };
 
 const Strings* g_strings = &kEnglish;

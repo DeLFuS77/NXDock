@@ -73,6 +73,7 @@ InstallPrefs InstallPrefs::Load() {
     while (std::fgets(line, sizeof(line), f)) {
         if (!std::strncmp(line, "connections=", 12)) p.connections = std::atoi(line + 12);
         else if (!std::strncmp(line, "download_test=", 14)) p.download_test = std::atoi(line + 14) != 0;
+        else if (!std::strncmp(line, "share_installed=", 16)) p.share_installed = std::atoi(line + 16);
     }
     std::fclose(f);
     return p;
@@ -88,6 +89,9 @@ bool InstallPrefs::Save() const {
     std::fprintf(f, "connections=%d\n", connections);
     if (download_test) {
         std::fprintf(f, "download_test=1\n");
+    }
+    if (share_installed >= 0) {
+        std::fprintf(f, "share_installed=%d\n", share_installed);
     }
     const bool ok = std::fclose(f) == 0;
     if (!ok) {

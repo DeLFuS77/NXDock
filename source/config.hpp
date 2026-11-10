@@ -24,6 +24,7 @@ struct Config {
 struct InstallPrefs {
     int connections = 0;        // best of the last speed test (1, 2 or 4); 0: never measured
     bool download_test = false; // download_test=1: only download and check, nothing is written
+    int share_installed = -1;   // share what is installed with the app: -1 not asked yet, 0 no, 1 yes
 
     static InstallPrefs Load();
     bool Save() const;

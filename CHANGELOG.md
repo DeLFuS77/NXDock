@@ -57,3 +57,9 @@
 - "Check" on the page of an installed game: every part on the console is read
   and compared with its SHA-256; "Repair" then downloads only the damaged
   parts from the library and checks them again.
+- "Send to console" from the web: what is sent shows on the console with who
+  sent it, and nothing is installed until A is pressed; "Not now" tells the
+  app it was declined.
+- Sharing what is installed with the library app, asked once the first time
+  and changed in Settings: the games, updates and DLC of the console and
+  where they are; nothing is sent when the answer is no.

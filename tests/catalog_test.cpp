@@ -55,6 +55,23 @@ int main() {
     Expect(!ParseCatalog("not json", games), "not JSON");
     Expect(!ParseCatalog(R"({"games":3})", games), "no list of games");
 
+    // what the web sends (/install/push/wait)
+    std::vector<PushItem> pushed;
+    Expect(ParsePush(R"({"items":[
+        {"id":"p1","fileId":"f1","url":"/install/f/f1/Game.nsz","game":"Game","titleId":"0100000000010000","kind":"game","version":0,"size":123,"format":"nsz","name":"Game.nsz","from":"ana"},
+        {"id":"p2","fileId":"f2","url":"http://elsewhere/x.nsp","game":"Game","kind":"update"},
+        {"id":"p3","fileId":"f3","url":"//elsewhere/x.nsp","game":"Game","kind":"update"}]})", pushed), "push: it reads");
+    Expect(pushed.size() == 1 && pushed[0].id == "p1" && pushed[0].from == "ana" && pushed[0].size == 123 &&
+               pushed[0].title_id == 0x0100000000010000ull && pushed[0].url == "/install/f/f1/Game.nsz",
+           "push: a file of the app only, never another address");
+    Expect(!ParsePush("nope", pushed) && !ParsePush(R"({"items":1})", pushed), "push: not an answer");
+
+    // the inventory, only sent when the user says yes
+    const std::string inv = InventoryJson({{0x0100000000010000ull, 0x80, 0, false}, {0x0100000000010800ull, 0x81, 65536, true}});
+    Expect(inv == R"({"items":[{"titleId":"0100000000010000","type":"game","version":0,"storage":"sd"},{"titleId":"0100000000010800","type":"update","version":65536,"storage":"nand"}]})",
+           "inventory: the JSON of the app");
+    Expect(InventoryJson({}) == R"({"items":[]})", "inventory: empty");
+
     std::printf(failures ? "%d failed\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }

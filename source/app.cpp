@@ -139,7 +139,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowLibrary, kRowForget, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowLibrary, kRowForget, kRowShare, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -204,6 +204,7 @@ bool App::Init() {
     m_prefs = InstallPrefs::Load();
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
+    m_push = std::make_unique<Push>();
     m_time = Now();
     return true;
 }
@@ -211,6 +212,7 @@ bool App::Init() {
 void App::Exit() {
     // a job running is cancelled and cleaned up before the network goes
     m_queue.reset();
+    m_push.reset();
     m_speed.Cancel();
     m_link.Stop();
     m_covers.Stop();
@@ -256,6 +258,14 @@ void App::ActivateSetting(int row) {
             }
             break;
         }
+        case kRowShare:
+            m_prefs.share_installed = m_prefs.share_installed == 1 ? 0 : 1;
+            m_prefs.Save();
+            if (m_prefs.share_installed == 0) {
+                m_push->SendInventory("{\"off\":true}"); // the app forgets it
+            }
+            m_inventory_sent = ~0u;
+            break;
         case kRowSpeed:
             if (m_speed.Running()) {
                 m_speed.Cancel();
@@ -429,7 +439,7 @@ void App::Tap(float x, float y, u64& down) {
                     m_installed_focus = it->index;
                 }
                 break;
-            case HitKind::DialogBack: m_dialog.kind = DialogKind::None; break;
+            case HitKind::DialogBack: down |= HidNpadButton_B; break; // as B: each question answers its own way
             case HitKind::DialogButton:
                 // a button of the question acts at once: tapping it is the choice
                 m_dialog.focus = it->index;
@@ -516,6 +526,7 @@ bool App::Frame() {
     Update(down, padGetButtons(&m_pad));
     FollowLink();
     FollowQueue();
+    FollowPush();
     CheckSdSpace();
 
     // Ease the grid toward where it should be (frame-rate independent).
@@ -1242,6 +1253,72 @@ bool App::RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>&
     return all && !out.empty();
 }
 
+void App::FollowPush() {
+    const Link::View link = m_link.Snapshot();
+    const Config c = m_link.CurrentConfig();
+    const bool connected = link.state == Link::State::Connected && c.Linked();
+    m_push->SetLink(connected ? c.url : std::string(), c.key);
+    if (!connected) {
+        return;
+    }
+    for (auto& item : m_push->Take()) {
+        m_pushed.push_back(std::move(item));
+    }
+    if (m_dialog.kind != DialogKind::None) {
+        return;
+    }
+    // once, the first time a library is linked: share what is installed? (2A)
+    if (m_prefs.share_installed < 0) {
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Share;
+        return;
+    }
+    // what the web sent: asked about, never installed without A (1A)
+    if (!m_pushed.empty()) {
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Push;
+        for (const auto& p : m_pushed) {
+            m_dialog.push.push_back(p.id);
+            if (m_dialog.from.empty()) m_dialog.from = p.from;
+            InstallJob job;
+            bool found = false;
+            for (const auto& g : m_games) {
+                for (const auto& f : g.files) {
+                    if (f.id == p.file_id) {
+                        job = JobFor(g, f);
+                        found = true;
+                    }
+                }
+            }
+            if (!found) {
+                const auto& s = Tr();
+                job.game = p.game;
+                job.label = p.kind == "update" ? std::string(s.update_word) + " v" + std::to_string(p.version)
+                          : p.kind == "dlc" ? p.name : std::string(s.base_game);
+                job.color_key = p.game;
+                job.file_id = p.file_id;
+                job.url = c.url + p.url;
+                job.key = c.key;
+                job.format = p.format;
+                job.kind = p.kind == "update" ? CatalogFile::Kind::Update : p.kind == "dlc" ? CatalogFile::Kind::Dlc : CatalogFile::Kind::Game;
+                job.title_id = p.title_id;
+                job.size = p.size;
+            }
+            m_dialog.jobs.push_back(std::move(job));
+        }
+        m_pushed.clear();
+        return;
+    }
+    // the inventory, when the user said yes: at the start and after every install or removal
+    if (m_prefs.share_installed == 1 && (m_inventory_sent != m_queue->Version() || m_inventory_url != c.url) && !m_queue->Busy()) {
+        m_inventory_sent = m_queue->Version();
+        m_inventory_url = c.url;
+        std::vector<InstalledContent> list;
+        ReadInstalled(&list);
+        m_push->SendInventory(InventoryJson(list));
+    }
+}
+
 void App::AddJobs(std::vector<InstallJob> jobs) {
     const auto& s = Tr();
     int added = 0, duplicate = 0;
@@ -1585,6 +1662,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.theme, t.dark ? s.dark : s.light, true},
         {s.library, library, linked},
         {s.forget, "", false},
+        {s.share_row, m_prefs.share_installed == 1 ? s.yes_word : s.no_word, m_prefs.share_installed == 1},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
@@ -1595,7 +1673,7 @@ void App::DrawSettings(NVGcontext* vg) {
         if (i == kRowAddress) {
             y += 8; // the ones by hand apart
         }
-        const bool dim = (i == kRowForget || i == kRowSpeed) && !linked;
+        const bool dim = (i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked;
         nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
         Panel(vg, t, x, y, w, h, 14);
         if (i == m_setting) {
@@ -2202,6 +2280,7 @@ void App::DrawDialog(NVGcontext* vg) {
     std::vector<Line> lines;
     bool can = true, bar = false;
     bool verify_bar = false, verify_running = false;
+    std::string cancel_label = s.cancel;
     float verify_frac = 0;
     std::string verify_text;
     u64 size = 0;
@@ -2304,6 +2383,27 @@ void App::DrawDialog(NVGcontext* vg) {
             }
             break;
         }
+        case DialogKind::Push: {
+            for (const auto& j : m_dialog.jobs) {
+                size += j.size;
+                lines.push_back({j.game + " · " + j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+            }
+            char text[160];
+            std::snprintf(text, sizeof(text), s.push_title, int(m_dialog.jobs.size()));
+            title = text;
+            std::snprintf(text, sizeof(text), s.push_from, m_dialog.from.c_str());
+            body = text;
+            std::snprintf(text, sizeof(text), s.push_install, SizeText(size).c_str());
+            primary = text;
+            cancel_label = s.not_now;
+            break;
+        }
+        case DialogKind::Share:
+            title = s.share_title;
+            body = s.share_body;
+            primary = s.share_yes;
+            cancel_label = s.no_word;
+            break;
         case DialogKind::ClearHistory:
             title = s.clear_title;
             body = s.clear_body;
@@ -2454,7 +2554,7 @@ void App::DrawDialog(NVGcontext* vg) {
     float bx = x + w - pad;
     struct Button { const char* glyph; std::string label; bool primary; int index; };
     std::vector<Button> buttons;
-    buttons.push_back({ui::glyph::B, info ? s.close : s.cancel, false, 0});
+    buttons.push_back({ui::glyph::B, info ? s.close : cancel_label, false, 0});
     if (!info) buttons.push_back({ui::glyph::A, primary, true, 1});
     for (auto it = buttons.rbegin(); it != buttons.rend(); ++it) {
         const float bw = ui::TextWidth(vg, 18, it->label.c_str()) + 78;
@@ -2482,7 +2582,7 @@ void App::DrawDialog(NVGcontext* vg) {
 
     // its own hint bar, over the one of the screen
     std::vector<ui::HitRect> rects;
-    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.choose, HidNpadButton_A}, {ui::glyph::B, info ? s.close : s.cancel, HidNpadButton_B}}, rects);
+    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.choose, HidNpadButton_A}, {ui::glyph::B, info ? s.close : cancel_label.c_str(), HidNpadButton_B}}, rects);
     AddHints(rects);
 }
 
@@ -2498,7 +2598,14 @@ void App::UpdateDialog(u64 down, u64 held) {
         if (Repeat(down, held, HidNpadButton_AnyLeft)) m_dialog.focus = 0;
         if (Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.focus = 1; // a disabled action falls back when drawn
     }
-    if (down & HidNpadButton_B) {
+    const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
+    if (declined) {
+        if (m_dialog.kind == DialogKind::Push) {
+            for (const auto& id : m_dialog.push) m_push->Answer(id, false);
+        } else if (m_dialog.kind == DialogKind::Share) {
+            m_prefs.share_installed = 0;
+            m_prefs.Save();
+        }
         m_dialog.kind = DialogKind::None;
         return;
     }
@@ -2524,6 +2631,15 @@ void App::ConfirmDialog() {
         }
         case DialogKind::UpdateAll:
             AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::Push:
+            for (const auto& id : m_dialog.push) m_push->Answer(id, true);
+            AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::Share:
+            m_prefs.share_installed = 1;
+            m_prefs.Save();
+            m_inventory_sent = ~0u;
             break;
         case DialogKind::Verify: {
             std::vector<InstallJob> repairs;
