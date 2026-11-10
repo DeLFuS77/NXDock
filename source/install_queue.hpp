@@ -44,6 +44,7 @@ struct InstallJob {
     bool firmware_ok = false; // the user chose to install it although the firmware is older
     std::vector<NcmContentId> repair; // a repair: these damaged parts go, and only what is missing comes
     u32 version = 0;          // an update: its version
+    bool downgrade = false;   // an older update in place of the one installed (20A)
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took

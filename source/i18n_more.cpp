@@ -336,6 +336,15 @@ constexpr More kEnglish{
     .mr_body = "The new version is another build of the game. After updating, NXDock opens Cheats and mods to look for the ones of the new version.",
     .mr_go = "Update, then look for new ones",
     .mr_not_now = "Do not update",
+    .ver_hint = "Version",
+    .ver_title = "Versions in the library",
+    .ver_installed = "Installed",
+    .ver_back_fmt = "Go back to %s",
+    .ver_install_fmt = "Install %s",
+    .ver_note = "A save used with a newer version may not open in an older one. The save goes to the library first: if the game does not open it, bring that copy back from Saves.",
+    .dg_title_fmt = "Go back to %s?",
+    .dg_body_fmt = "%s goes and %s comes in its place, all or nothing: if anything fails, the console keeps the version it has.",
+    .dg_go = "Go back",
 };
 
 constexpr More kSpanish{
@@ -665,6 +674,15 @@ constexpr More kSpanish{
     .mr_body = "La versión nueva es otra compilación del juego. Al acabar de actualizar, NXDock abre Trucos y mods para buscar los de la versión nueva.",
     .mr_go = "Actualizar y buscar los nuevos",
     .mr_not_now = "No actualizar",
+    .ver_hint = "Versión",
+    .ver_title = "Versiones en la biblioteca",
+    .ver_installed = "Instalada",
+    .ver_back_fmt = "Volver a %s",
+    .ver_install_fmt = "Instalar %s",
+    .ver_note = "Una partida usada con una versión nueva puede no abrirse en una más antigua. La partida va antes a la biblioteca: si el juego no la abre, recupera esa copia desde Partidas.",
+    .dg_title_fmt = "¿Volver a %s?",
+    .dg_body_fmt = "Se quita %s y se pone %s en su lugar, todo o nada: si algo falla, la consola se queda con la versión que tiene.",
+    .dg_go = "Volver",
 };
 
 constexpr More kFrench{
@@ -994,6 +1012,15 @@ constexpr More kFrench{
     .mr_body = "La nouvelle version est une autre compilation du jeu. Après la mise à jour, NXDock ouvre Codes et mods pour chercher ceux de la nouvelle version.",
     .mr_go = "Mettre à jour et chercher les nouveaux",
     .mr_not_now = "Ne pas mettre à jour",
+    .ver_hint = "Version",
+    .ver_title = "Versions dans la bibliothèque",
+    .ver_installed = "Installée",
+    .ver_back_fmt = "Revenir à %s",
+    .ver_install_fmt = "Installer %s",
+    .ver_note = "Une sauvegarde utilisée avec une version plus récente peut ne pas s'ouvrir avec une plus ancienne. La sauvegarde part d'abord vers la bibliothèque : si le jeu ne l'ouvre pas, récupère cette copie depuis Sauvegardes.",
+    .dg_title_fmt = "Revenir à %s ?",
+    .dg_body_fmt = "%s part et %s prend sa place, tout ou rien : si quelque chose échoue, la console garde sa version.",
+    .dg_go = "Revenir",
 };
 
 constexpr More kGerman{
@@ -1323,6 +1350,15 @@ constexpr More kGerman{
     .mr_body = "Die neue Version ist ein anderer Build des Spiels. Nach dem Update öffnet NXDock Cheats und Mods, um die der neuen Version zu suchen.",
     .mr_go = "Aktualisieren, dann neue suchen",
     .mr_not_now = "Nicht aktualisieren",
+    .ver_hint = "Version",
+    .ver_title = "Versionen in der Bibliothek",
+    .ver_installed = "Installiert",
+    .ver_back_fmt = "Zurück zu %s",
+    .ver_install_fmt = "%s installieren",
+    .ver_note = "Ein mit einer neueren Version genutzter Spielstand lässt sich in einer älteren vielleicht nicht öffnen. Der Spielstand geht zuerst in die Bibliothek: Öffnet das Spiel ihn nicht, hol diese Kopie unter Spielstände zurück.",
+    .dg_title_fmt = "Zurück zu %s?",
+    .dg_body_fmt = "%s geht und %s kommt an seine Stelle, alles oder nichts: Wenn etwas fehlschlägt, behält die Konsole ihre Version.",
+    .dg_go = "Zurück",
 };
 
 constexpr More kItalian{
@@ -1652,6 +1688,15 @@ constexpr More kItalian{
     .mr_body = "La nuova versione è un'altra build del gioco. Dopo l'aggiornamento, NXDock apre Trucchi e mod per cercare quelli della nuova versione.",
     .mr_go = "Aggiorna e cerca i nuovi",
     .mr_not_now = "Non aggiornare",
+    .ver_hint = "Versione",
+    .ver_title = "Versioni nella libreria",
+    .ver_installed = "Installata",
+    .ver_back_fmt = "Torna a %s",
+    .ver_install_fmt = "Installa %s",
+    .ver_note = "Un salvataggio usato con una versione più nuova potrebbe non aprirsi con una più vecchia. Il salvataggio va prima nella libreria: se il gioco non lo apre, recupera quella copia da Salvataggi.",
+    .dg_title_fmt = "Tornare a %s?",
+    .dg_body_fmt = "%s se ne va e %s prende il suo posto, tutto o niente: se qualcosa non va, la console tiene la versione che ha.",
+    .dg_go = "Torna indietro",
 };
 
 constexpr More kPortuguese{
@@ -1981,6 +2026,15 @@ constexpr More kPortuguese{
     .mr_body = "A nova versão é outra build do jogo. Ao terminar de atualizar, o NXDock abre Trapaças e mods para procurar os da nova versão.",
     .mr_go = "Atualizar e procurar os novos",
     .mr_not_now = "Não atualizar",
+    .ver_hint = "Versão",
+    .ver_title = "Versões na biblioteca",
+    .ver_installed = "Instalada",
+    .ver_back_fmt = "Voltar para %s",
+    .ver_install_fmt = "Instalar %s",
+    .ver_note = "Um save usado com uma versão mais nova pode não abrir numa mais antiga. O save vai antes para a biblioteca: se o jogo não o abrir, recupere essa cópia em Saves.",
+    .dg_title_fmt = "Voltar para %s?",
+    .dg_body_fmt = "%s sai e %s entra no lugar, tudo ou nada: se algo falhar, o console fica com a versão que tem.",
+    .dg_go = "Voltar",
 };
 
 constexpr More kDutch{
@@ -2310,6 +2364,15 @@ constexpr More kDutch{
     .mr_body = "De nieuwe versie is een andere build van het spel. Na het bijwerken opent NXDock Cheats en mods om die van de nieuwe versie te zoeken.",
     .mr_go = "Bijwerken en nieuwe zoeken",
     .mr_not_now = "Niet bijwerken",
+    .ver_hint = "Versie",
+    .ver_title = "Versies in de bibliotheek",
+    .ver_installed = "Geïnstalleerd",
+    .ver_back_fmt = "Terug naar %s",
+    .ver_install_fmt = "%s installeren",
+    .ver_note = "Een opslagbestand van een nieuwere versie opent misschien niet in een oudere. Het opslagbestand gaat eerst naar de bibliotheek: opent het spel het niet, haal die kopie dan terug via Opslagbestanden.",
+    .dg_title_fmt = "Terug naar %s?",
+    .dg_body_fmt = "%s gaat weg en %s komt ervoor in de plaats, alles of niets: als er iets misgaat, houdt de console zijn versie.",
+    .dg_go = "Teruggaan",
 };
 
 constexpr More kRussian{
@@ -2639,6 +2702,15 @@ constexpr More kRussian{
     .mr_body = "Новая версия — другая сборка игры. После обновления NXDock откроет «Читы и моды», чтобы найти их для новой версии.",
     .mr_go = "Обновить и найти новые",
     .mr_not_now = "Не обновлять",
+    .ver_hint = "Версия",
+    .ver_title = "Версии в библиотеке",
+    .ver_installed = "Установлена",
+    .ver_back_fmt = "Вернуться к %s",
+    .ver_install_fmt = "Установить %s",
+    .ver_note = "Сохранение, использованное в новой версии, может не открыться в старой. Сохранение сначала копируется в библиотеку: если игра его не откроет, верните эту копию в разделе «Сохранения».",
+    .dg_title_fmt = "Вернуться к %s?",
+    .dg_body_fmt = "%s удаляется, и на её место ставится %s — всё или ничего: если что-то не так, на консоли останется прежняя версия.",
+    .dg_go = "Вернуться",
 };
 
 constexpr More kJapanese{
@@ -2968,6 +3040,15 @@ constexpr More kJapanese{
     .mr_body = "新しいバージョンはゲームの別のビルドです。更新が終わると、NXDock は新しいバージョン用を探すために「チートと MOD」を開きます。",
     .mr_go = "更新して新しいものを探す",
     .mr_not_now = "更新しない",
+    .ver_hint = "バージョン",
+    .ver_title = "ライブラリにあるバージョン",
+    .ver_installed = "インストール済み",
+    .ver_back_fmt = "%s に戻す",
+    .ver_install_fmt = "%s をインストール",
+    .ver_note = "新しいバージョンで使ったセーブデータは、古いバージョンで開けないことがあります。セーブデータは先にライブラリへコピーされます。ゲームが開けない場合は「セーブデータ」からそのコピーを戻してください。",
+    .dg_title_fmt = "%s に戻しますか？",
+    .dg_body_fmt = "%s を消して %s を入れます（すべてか何もしないか）。失敗したら、本体は今のバージョンのままです。",
+    .dg_go = "戻す",
 };
 
 constexpr More kKorean{
@@ -3297,6 +3378,15 @@ constexpr More kKorean{
     .mr_body = "새 버전은 게임의 다른 빌드입니다. 업데이트가 끝나면 NXDock이 새 버전용을 찾도록 치트와 모드를 엽니다.",
     .mr_go = "업데이트하고 새 것 찾기",
     .mr_not_now = "업데이트하지 않기",
+    .ver_hint = "버전",
+    .ver_title = "라이브러리에 있는 버전",
+    .ver_installed = "설치됨",
+    .ver_back_fmt = "%s로 되돌리기",
+    .ver_install_fmt = "%s 설치",
+    .ver_note = "새 버전에서 쓴 세이브는 이전 버전에서 열리지 않을 수 있습니다. 세이브는 먼저 라이브러리로 복사됩니다. 게임이 열지 못하면 세이브에서 그 복사본을 되돌리세요.",
+    .dg_title_fmt = "%s로 되돌릴까요?",
+    .dg_body_fmt = "%s를 지우고 그 자리에 %s를 넣습니다(전부 아니면 전무). 실패하면 본체는 지금 버전을 유지합니다.",
+    .dg_go = "되돌리기",
 };
 
 constexpr More kChinese{
@@ -3626,6 +3716,15 @@ constexpr More kChinese{
     .mr_body = "新版本是游戏的另一个构建。更新完成后，NXDock 会打开“金手指和模组”，查找新版本用的。",
     .mr_go = "更新，然后查找新的",
     .mr_not_now = "不更新",
+    .ver_hint = "版本",
+    .ver_title = "游戏库中的版本",
+    .ver_installed = "已安装",
+    .ver_back_fmt = "回到 %s",
+    .ver_install_fmt = "安装 %s",
+    .ver_note = "在新版本中用过的存档可能无法在旧版本中打开。存档会先复制到游戏库：如果游戏打不开，可以在“存档”中恢复那份副本。",
+    .dg_title_fmt = "回到 %s？",
+    .dg_body_fmt = "删除 %s，换成 %s，要么全部完成要么不做：如果出错，主机保留现在的版本。",
+    .dg_go = "回到旧版本",
 };
 
 // In the order of LanguageName in i18n.cpp.

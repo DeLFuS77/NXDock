@@ -761,6 +761,9 @@ void App::Tap(float x, float y, u64& down) {
                     m_shop_focus = it->index;
                 }
                 break;
+            case HitKind::VersionChip:
+                down |= HidNpadButton_Minus;
+                break;
             case HitKind::SdChoice:
                 if (it->index >= 2 || m_sd_choice == it->index) {
                     down |= HidNpadButton_A;
@@ -801,6 +804,14 @@ void App::Tap(float x, float y, u64& down) {
                 }
                 break;
             case HitKind::DialogBack: down |= HidNpadButton_B; break; // as B: each question answers its own way
+            case HitKind::DialogLine:
+                if (m_dialog.entry == it->index) {
+                    m_dialog.focus = 1;
+                    down |= HidNpadButton_A;
+                } else {
+                    m_dialog.entry = it->index;
+                }
+                break;
             case HitKind::DialogButton:
                 // a button of the question acts at once: tapping it is the choice
                 m_dialog.focus = it->index;
@@ -1736,6 +1747,10 @@ void App::UpdateDetail(u64 down, u64 held) {
             Notice(Tr().verify_wait);
         }
     }
+    if ((down & HidNpadButton_Minus) && g.installed.base && !m_shop_active) {
+        OpenVersions(); // another version of the update (20A)
+        return;
+    }
     if ((down & HidNpadButton_X) && g.installed.base && !m_shop_active) {
         // the cheats and mods of this game; B comes back here
         OpenMods();
@@ -1965,6 +1980,7 @@ void App::DrawDetail(NVGcontext* vg) {
     facts.push_back({s.format, FormatOf(g), t.text});
     facts.push_back({s.will_take, SizeText(picked_size), t.text});
     if (firmware) facts.push_back({s.firmware, FirmwareText(firmware) + " " + s.or_newer, t.text});
+    const bool versions = g.installed.base && !m_shop_active && !VersionRows(g).empty();
     if (g.installed.base) {
         facts.push_back({s.on_console, g.installed.patch ? "v" + std::to_string(g.installed.patch) : std::string("v0"), t.ok});
     } else {
@@ -1972,12 +1988,18 @@ void App::DrawDetail(NVGcontext* vg) {
     }
     float fx = rx;
     const float fy = cy + 62;
-    for (const auto& f : facts) {
-        const float w = std::max(ui::TextWidth(vg, 14, f.label), ui::TextWidth(vg, 17, f.value.c_str())) + 28;
+    for (size_t i = 0; i < facts.size(); i++) {
+        const auto& f = facts[i];
+        const bool chip = versions && i + 1 == facts.size(); // the version on the console: − changes it (20A)
+        const float w = std::max(ui::TextWidth(vg, 14, f.label), ui::TextWidth(vg, 17, f.value.c_str())) + 28 + (chip ? 34 : 0);
         ui::FillRound(vg, fx, fy, w, 56, 10, Hex(0, t.dark ? 0.25f : 0.04f));
-        ui::StrokeRound(vg, fx + .5f, fy + .5f, w - 1, 55, 10, t.line, 1);
+        ui::StrokeRound(vg, fx + .5f, fy + .5f, w - 1, 55, 10, chip ? t.work : t.line, chip ? 1.5f : 1.f);
         ui::Text(vg, fx + 14, fy + 18, 14, t.muted, f.label);
         ui::Text(vg, fx + 14, fy + 39, 17, f.color, f.value.c_str());
+        if (chip) {
+            ui::Symbol(vg, t, fx + w - 22, fy + 28, 18, ui::glyph::Minus, t.work, HidNpadButton_Minus);
+            AddHit(fx, fy, w, 56, HitKind::VersionChip, 0);
+        }
         fx += w + 10;
     }
 
@@ -2085,8 +2107,33 @@ void App::DrawDetail(NVGcontext* vg) {
     if (g.installed.base && !m_shop_active) {
         hints.push_back({ui::glyph::X, TrM().t_mods, HidNpadButton_X}); // its cheats and mods (10A)
     }
+    if (versions) hints.push_back({ui::glyph::Minus, TrM().ver_hint, HidNpadButton_Minus}); // another version (20A)
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
+}
+
+std::vector<int> App::VersionRows(const Game& g) const {
+    std::vector<int> rows;
+    for (int i = 0; i < int(g.files.size()); i++) {
+        if (g.files[i].kind == CatalogFile::Kind::Update) rows.push_back(i);
+    }
+    std::sort(rows.begin(), rows.end(), [&g](int a, int b) { return g.files[a].version > g.files[b].version; });
+    return rows;
+}
+
+void App::OpenVersions() {
+    const Game& g = m_games[m_detail_game];
+    const auto rows = VersionRows(g);
+    if (rows.empty() || !g.installed.base) return;
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::Versions;
+    m_dialog.game = m_detail_game;
+    m_dialog.focus = 1;
+    // the focus on the version installed, or the newest
+    m_dialog.entry = 0;
+    for (int r = 0; r < int(rows.size()); r++) {
+        if (g.files[rows[r]].version == g.installed.patch) m_dialog.entry = r;
+    }
 }
 
 namespace {
@@ -3448,6 +3495,8 @@ void App::DrawDialog(NVGcontext* vg) {
         std::string text, tag, right;
         NVGcolor color;
         int mark = 0; // 1: fine, 2: a warning (the check before installing)
+        bool focus = false; // the row in focus (the versions of a game, 20A)
+        int hit = -1;       // a row that answers to touch
     };
     std::string title, body, note, primary, error;
     std::vector<Line> lines;
@@ -3616,6 +3665,51 @@ void App::DrawDialog(NVGcontext* vg) {
             title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             error = m_dialog.from;
             break;
+        case DialogKind::Versions: {
+            const More& m = TrM();
+            const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
+            const auto rows = VersionRows(g);
+            m_dialog.entry = std::clamp(m_dialog.entry, 0, std::max(0, int(rows.size()) - 1));
+            title = m.ver_title;
+            body = g.name;
+            // a window of five around the focus
+            const int first = std::clamp(m_dialog.entry - 2, 0, std::max(0, int(rows.size()) - 5));
+            for (int r = first; r < int(rows.size()) && r < first + 5; r++) {
+                const CatalogFile& f = g.files[rows[r]];
+                const bool here = f.version == g.installed.patch;
+                Line l{std::string(s.update_word) + " v" + std::to_string(f.version), here ? s.installed_tag : "",
+                       Upper(f.format) + " \xC2\xB7 " + SizeText(f.size), t.text};
+                l.focus = r == m_dialog.entry;
+                l.hit = r;
+                lines.push_back(l);
+            }
+            const CatalogFile& chosen = g.files[rows[size_t(m_dialog.entry)]];
+            char text[96];
+            if (chosen.version == g.installed.patch) {
+                primary = m.ver_installed;
+                can = false;
+            } else if (chosen.version < g.installed.patch) {
+                std::snprintf(text, sizeof(text), m.ver_back_fmt, ("v" + std::to_string(chosen.version)).c_str());
+                primary = text;
+                note = m.ver_note;
+            } else {
+                std::snprintf(text, sizeof(text), m.ver_install_fmt, ("v" + std::to_string(chosen.version)).c_str());
+                primary = text;
+            }
+            break;
+        }
+        case DialogKind::Downgrade: {
+            const More& m = TrM();
+            char text[200];
+            std::snprintf(text, sizeof(text), m.dg_title_fmt, m_dialog.jobs.empty() ? "" : ("v" + std::to_string(m_dialog.jobs[0].version)).c_str());
+            title = text;
+            std::snprintf(text, sizeof(text), m.dg_body_fmt, ("v" + std::to_string(m_dialog.size)).c_str(),
+                          m_dialog.jobs.empty() ? "" : ("v" + std::to_string(m_dialog.jobs[0].version)).c_str());
+            body = text;
+            note = m.ver_note;
+            primary = m.dg_go;
+            break;
+        }
         case DialogKind::ModsAsk: {
             const More& m = TrM();
             title = m.mr_title;
@@ -3747,6 +3841,11 @@ void App::DrawDialog(NVGcontext* vg) {
         for (int i = 0; i < shown; i++) {
             const Line& l = lines[i];
             const float ly = cy + 6 + i * 40 + 20;
+            if (l.focus) {
+                ui::FillRound(vg, x + pad + 4, ly - 18, iw - 8, 36, 8, t.panel);
+                ui::StrokeRound(vg, x + pad + 4, ly - 18, iw - 8, 36, 8, t.work, 2.5f);
+            }
+            if (l.hit >= 0) AddHit(x + pad, ly - 20, iw, 40, HitKind::DialogLine, l.hit);
             if (i > 0) {
                 nvgBeginPath(vg);
                 nvgRect(vg, x + pad + 14, ly - 20, iw - 28, 1);
@@ -3904,6 +4003,18 @@ void App::UpdateDialog(u64 down, u64 held) {
         m_dialog.kind = DialogKind::None;
         return;
     }
+    if (m_dialog.kind == DialogKind::Versions) {
+        const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
+        const int n = int(VersionRows(g).size());
+        if (Repeat(down, held, HidNpadButton_AnyUp) && m_dialog.entry > 0) {
+            m_dialog.entry--;
+            m_dialog.focus = 1;
+        }
+        if (Repeat(down, held, HidNpadButton_AnyDown) && m_dialog.entry < n - 1) {
+            m_dialog.entry++;
+            m_dialog.focus = 1;
+        }
+    }
     if (m_dialog.kind == DialogKind::Where) {
         // Cancel, Internal memory, SD card, from left to right
         static constexpr int kOrder[] = {0, 2, 1};
@@ -3964,6 +4075,30 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::SaveCopyAsk:
             m_queue->Answer(true);
+            break;
+        case DialogKind::Versions: {
+            const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
+            const auto rows = VersionRows(g);
+            if (rows.empty()) break;
+            const CatalogFile& f = g.files[rows[size_t(std::clamp(m_dialog.entry, 0, int(rows.size()) - 1))]];
+            if (f.version == g.installed.patch) break;
+            InstallJob job = JobFor(g, f);
+            job.nand = g.installed.base_nand; // where the game is, as its update goes there too
+            if (f.version > g.installed.patch) {
+                AddJobs({job}); // a newer one: a plain update
+                break;
+            }
+            // an older one: asked once more, with what it means for the save
+            job.downgrade = true;
+            const u32 now = g.installed.patch;
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::Downgrade;
+            m_dialog.jobs = {job};
+            m_dialog.size = now;
+            return;
+        }
+        case DialogKind::Downgrade:
+            AddJobs(std::move(m_dialog.jobs));
             break;
         case DialogKind::ModsAsk:
             // the update goes on; when it ends, Cheats and mods opens for the new version

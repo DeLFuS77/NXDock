@@ -1356,7 +1356,7 @@ Result Yati::Setup(const ConfigOverride& override) {
     // NXDock: Sphaira's settings are not there; these are NXDock's choices. Nothing is skipped
     // or converted, every NCA is checked, and the user's prod.keys is never read.
     config.sd_card_install = override.sd_card_install.value_or(true);
-    config.allow_downgrade = false;
+    config.allow_downgrade = override.allow_downgrade.value_or(false);
     config.skip_if_already_installed = false;
     config.ticket_only = false;
     config.skip_nca_hash_verify = false;

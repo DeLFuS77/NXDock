@@ -551,7 +551,7 @@ void InstallQueue::RunJob(InstallJob& job) {
         go_on = ModsBefore(job.title_id & ~0x1FFFull, job.version, job.game);
     }
     if (go_on && (job.kind == CatalogFile::Kind::Update || !job.repair.empty())) {
-        go_on = CopyBefore(job.title_id & ~0x1FFFull, job.repair.empty() ? 0 : 1, job.version, job.game);
+        go_on = CopyBefore(job.title_id & ~0x1FFFull, job.downgrade ? 3 : job.repair.empty() ? 0 : 1, job.version, job.game);
     }
     Result rc = go_on ? Result(0) : Result(Result_TransferCancelled);
     if (go_on) {
@@ -601,6 +601,8 @@ void InstallQueue::RunJob(InstallJob& job) {
                 config.sd_card_install = !job.nand;
                 // the check before installing warned and the user went on anyway (2A)
                 config.allow_newer_firmware = job.firmware_ok;
+                // going back to an older version, asked for on the page of the game (20A)
+                if (job.downgrade) config.allow_downgrade = true;
                 if (!job.repair.empty()) {
                     // a repair: the damaged parts go first; only what is missing then comes
                     config.repair = true;

@@ -47,7 +47,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -364,7 +364,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -389,6 +389,9 @@ private:
     std::string m_inventory_url;
     void FollowPush();
     void FollowQueueAsk(); // a copy of the saves that failed: go on? (18A)
+    // the versions of a game the library has, to go back to an older one (20A)
+    void OpenVersions();
+    std::vector<int> VersionRows(const Game& g) const; // its updates, the newest first
     unsigned long long m_mods_after = 0; // after its update ends, Cheats and mods opens for it (19A)
     std::string m_mods_after_name;
     // emuMMC and 90DNS, read once; the warning comes before the first install of a session

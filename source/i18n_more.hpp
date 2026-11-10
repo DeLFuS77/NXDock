@@ -75,6 +75,8 @@ struct More {
         *sc_go_on, *sc_go_remove;
     // cheats and mods that an update breaks (phase 19)
     const char *mr_title, *mr_cheats_fmt, *mr_patches_fmt, *mr_exefs, *mr_body, *mr_go, *mr_not_now;
+    // another version of a game (phase 20)
+    const char *ver_hint, *ver_title, *ver_installed, *ver_back_fmt, *ver_install_fmt, *ver_note, *dg_title_fmt, *dg_body_fmt, *dg_go;
 };
 
 const More& TrM();
