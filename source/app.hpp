@@ -12,6 +12,7 @@
 #include "history.hpp"
 #include "install_queue.hpp"
 #include "link.hpp"
+#include "precheck.hpp"
 #include "push.hpp"
 #include "sound.hpp"
 #include "safety.hpp"
@@ -234,7 +235,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -245,6 +246,7 @@ private:
         bool single = false;            // only Close (or Cancel): no action
         std::vector<std::string> push;  // Push: the ids of what the web sent, to answer
         std::string from;               // Push: who sent it
+        PreCheck check;                 // PreCheck: the firmware, the keys and Atmosphère
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;
@@ -254,6 +256,7 @@ private:
     void FollowPush();
     // emuMMC and 90DNS, read once; the warning comes before the first install of a session
     std::unique_ptr<Safety> m_safety;
+    SystemInfo m_sysinfo;           // the firmware and Atmosphère, for the check before installing
     bool m_risk_ok = false;
     std::string m_update_hint;
     Dialog m_dialog;

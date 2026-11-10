@@ -91,6 +91,10 @@ struct ConfigOverride {
 
     // NXDock: see Config::repair.
     std::optional<bool> repair{};
+
+    // NXDock: installs content that needs a newer firmware than the console's, after the
+    // check before installing warned about it and the user went on.
+    bool allow_newer_firmware{};
 };
 
 Result InstallFromContainer(ui::ProgressBox* pbox, container::Base* container, const ConfigOverride& override = {});

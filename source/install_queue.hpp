@@ -33,6 +33,9 @@ struct InstallJob {
     u64 title_id = 0;
     u64 size = 0;
     bool nand = false; // to the internal memory (asked first, on the page of the game)
+    u32 required_system = 0; // the firmware it needs, from the library (cnmt form), 0 unknown
+    bool checked = false;     // the check before installing was shown for it (2A)
+    bool firmware_ok = false; // the user chose to install it although the firmware is older
     std::vector<NcmContentId> repair; // a repair: these damaged parts go, and only what is missing comes
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
@@ -158,6 +161,8 @@ private:
 bool IsCancelled(unsigned rc);
 
 // The message shown for a failed install, in the console language.
-std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand = false);
+// Packed as errors.hpp says (PackError): title, what happened, what to do and the code.
+std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand = false,
+                             bool install = true);
 
 } // namespace nxdock

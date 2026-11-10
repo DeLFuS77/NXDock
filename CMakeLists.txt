@@ -101,6 +101,10 @@ add_executable(nxdock
     source/wizard.cpp
     source/gfx.cpp
     source/i18n.cpp
+    source/i18n_more.cpp
+    source/errors.cpp
+    source/precheck.cpp
+    source/system_info.cpp
     source/ui.cpp
 )
 

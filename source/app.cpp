@@ -2,6 +2,9 @@
 // Copyright (C) 2026 DeLFuS77
 #include "app.hpp"
 
+#include "errors.hpp"
+#include "i18n_more.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -210,6 +213,62 @@ float TextBoxHeight(NVGcontext* vg, float w, float size, const char* str) {
     return b[3] - b[1];
 }
 
+// The title of a packed error (errors.hpp), or the whole line of an older one.
+std::string ErrorTitle(const std::string& packed) {
+    const ErrorText e = UnpackError(packed);
+    return e.title.empty() ? e.what : e.title;
+}
+
+// The error card (1A): the title in red, what happened, what to do, and the code, small.
+// Returns its height; draws nothing when `draw` is false.
+float ErrorCard(NVGcontext* vg, const Theme& t, float x, float y, float w, const std::string& packed, bool draw) {
+    const ErrorText e = UnpackError(packed);
+    const More& m = TrM();
+    const float pad = 18, iw = w - 2 * pad;
+    float h = pad;
+    const float title_y = y + h + 12;
+    h += e.title.empty() ? 0 : 34;
+    const float what_h = e.what.empty() ? 0 : TextBoxHeight(vg, iw, 16, e.what.c_str());
+    const float what_y = y + h;
+    h += e.what.empty() ? 0 : 18 + what_h + 10;
+    const float todo_h = e.todo.empty() ? 0 : TextBoxHeight(vg, iw, 16, e.todo.c_str());
+    const float todo_y = y + h;
+    h += e.todo.empty() ? 0 : 18 + todo_h + 10;
+    const float code_y = y + h + 8;
+    h += e.code.empty() ? 0 : 22;
+    h += pad - 6;
+    if (!draw) {
+        return h;
+    }
+    ui::FillRound(vg, x, y, w, h, 14, t.panel);
+    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, 14, t.line, 1);
+    if (!e.title.empty()) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, x + pad + 10, title_y, 10);
+        nvgFillColor(vg, t.err);
+        nvgFill(vg);
+        ui::Text(vg, x + pad + 10, title_y + 1, 15, t.panel, "\xC3\x97", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgSave(vg);
+        nvgScissor(vg, x + pad + 28, title_y - 16, iw - 28, 32);
+        ui::Text(vg, x + pad + 30, title_y, 19, t.err, e.title.c_str());
+        nvgRestore(vg);
+    }
+    if (!e.what.empty()) {
+        ui::Text(vg, x + pad, what_y + 8, 13, t.muted, Upper(m.what_happened).c_str());
+        TextBox(vg, x + pad, what_y + 18, iw, 16, t.text, e.what.c_str());
+    }
+    if (!e.todo.empty()) {
+        ui::Text(vg, x + pad, todo_y + 8, 13, t.muted, Upper(m.what_to_do).c_str());
+        TextBox(vg, x + pad, todo_y + 18, iw, 16, t.text, e.todo.c_str());
+    }
+    if (!e.code.empty()) {
+        char line[96];
+        std::snprintf(line, sizeof(line), m.code_line, e.code.c_str());
+        ui::Text(vg, x + pad, code_y, 13, t.muted, line);
+    }
+    return h;
+}
+
 std::string Clip(std::string text, size_t max) {
     if (text.size() > max) {
         text = text.substr(0, max - 1) + "…";
@@ -253,6 +312,7 @@ bool App::Init() {
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_push = std::make_unique<Push>();
     m_safety = std::make_unique<Safety>();
+    m_sysinfo = ReadSystemInfo();
     m_time = Now();
     m_last_input = m_time;
     if (!m_ui.wizard_done) {
@@ -1851,11 +1911,8 @@ void App::EnqueuePicked() {
     const auto& s = Tr();
     const Game& g = m_games[m_detail_game];
     const Config c = m_link.CurrentConfig();
-    const u32 hos = hosversionGet();
-    const u32 console = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
     int picked = 0;
     std::vector<InstallJob> jobs;
-    std::string firmware_note;
     // the game first, then the update, then the DLC
     for (const auto kind : {CatalogFile::Kind::Game, CatalogFile::Kind::Update, CatalogFile::Kind::Dlc}) {
         for (size_t i = 0; i < g.files.size(); i++) {
@@ -1870,12 +1927,7 @@ void App::EnqueuePicked() {
                 case CatalogFile::Kind::Update: label = std::string(s.update_word) + " v" + std::to_string(f.version); break;
                 case CatalogFile::Kind::Dlc: label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
             }
-            if (f.required_system && (f.required_system & 0xFFFF0000) > console) {
-                char text[160];
-                std::snprintf(text, sizeof(text), s.needs_firmware, label.c_str(), FirmwareText(f.required_system).c_str());
-                firmware_note = text;
-                continue;
-            }
+            // a newer firmware than the console's is told by the check before installing (2A)
             InstallJob job = JobFor(g, f);
             job.label = label;
             job.nand = m_to_nand;
@@ -1884,10 +1936,6 @@ void App::EnqueuePicked() {
     }
     if (!picked) {
         Notice(s.nothing_picked);
-        return;
-    }
-    if (!firmware_note.empty()) {
-        Notice(firmware_note);
         return;
     }
     if (jobs.empty()) {
@@ -1933,6 +1981,7 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
     job.kind = f.kind;
     job.title_id = f.title_id;
     job.size = f.size;
+    job.required_system = f.required_system;
     return job;
 }
 
@@ -2076,6 +2125,27 @@ void App::FollowPush() {
 
 void App::AddJobs(std::vector<InstallJob> jobs) {
     const auto& s = Tr();
+    // the firmware, the keys and Atmosphère against what the contents ask for (2A): a window
+    // only when something does not fit; NXDock never installs firmware or sigpatches
+    u32 required = 0;
+    bool unchecked = false;
+    for (auto& j : jobs) {
+        if (!j.checked) {
+            unchecked = true;
+            required = std::max(required, j.required_system);
+        }
+    }
+    if (unchecked) {
+        const PreCheck check = CheckBeforeInstall(m_sysinfo, required);
+        for (auto& j : jobs) j.checked = true;
+        if (check.Warns()) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::PreCheck;
+            m_dialog.jobs = std::move(jobs);
+            m_dialog.check = check;
+            return;
+        }
+    }
     if (!m_risk_ok && m_safety && m_safety->Risky() && !jobs.empty()) {
         // not on an emuMMC, or Nintendo reachable: said once, before the first install
         m_dialog = Dialog{};
@@ -2322,7 +2392,14 @@ void App::DrawQueue(NVGcontext* vg) {
 
     // Waiting, then done; the list scrolls to keep the row in focus in sight.
     const int first_row = running ? 1 : 0;
-    const float list_top = y, list_bottom = 640;
+    // a failed row in focus shows what happened and what to do under the list (1A)
+    const InstallJob& focused = rows[m_queue_focus];
+    const bool card = focused.state == InstallJob::State::Failed && !focused.error.empty();
+    const float card_h = card ? ErrorCard(vg, t, 48, 0, kWidth - 96, focused.error, false) : 0;
+    const float list_top = y, list_bottom = card ? std::max(y + 100, 650 - card_h - 12) : 640;
+    if (card) {
+        ErrorCard(vg, t, 48, 650 - card_h, kWidth - 96, focused.error, true);
+    }
     const float pitch = 54;
     const int visible = std::max(1, int((list_bottom - list_top - 34) / pitch));
     const int focus_in_list = std::max(0, m_queue_focus - first_row);
@@ -2367,7 +2444,7 @@ void App::DrawQueue(NVGcontext* vg) {
             // why, in place of the figures
             nvgSave(vg);
             nvgScissor(vg, 730, y, 340, 44);
-            ui::Text(vg, 1070, y + 22, 14, j.state == InstallJob::State::Failed ? t.err : t.muted, j.error.c_str(),
+            ui::Text(vg, 1070, y + 22, 14, j.state == InstallJob::State::Failed ? t.err : t.muted, ErrorTitle(j.error).c_str(),
                      NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
             nvgRestore(vg);
         } else {
@@ -2860,7 +2937,7 @@ void App::DrawSession(NVGcontext* vg) {
         nvgScissor(vg, 134, y, 540, pitch);
         ui::Text(vg, 134, y + 23, 18, t.text, i.game.c_str());
         if (i.state == SessionItem::State::Failed && !i.error.empty()) {
-            ui::Text(vg, 134, y + 47, 14, t.err, i.error.c_str()); // why it could not be removed
+            ui::Text(vg, 134, y + 47, 14, t.err, ErrorTitle(i.error).c_str()); // why it could not be removed
         } else {
             ui::Text(vg, 134, y + 47, 14, t.muted, (i.label + " · " + Upper(i.format)).c_str());
         }
@@ -3004,7 +3081,7 @@ void App::DrawHistory(NVGcontext* vg) {
         nvgScissor(vg, c_name, y, c_where - c_name - 16, pitch);
         ui::Text(vg, c_name, cy - 10, 16, t.text, e.game.c_str());
         if (e.result == HistoryEntry::Result::Failed && !e.error.empty()) {
-            ui::Text(vg, c_name, cy + 12, 13, t.err, e.error.c_str());
+            ui::Text(vg, c_name, cy + 12, 13, t.err, ErrorTitle(e.error).c_str());
         } else {
             ui::Text(vg, c_name, cy + 12, 13, t.muted, (e.label + " · " + Upper(e.format)).c_str());
         }
@@ -3089,6 +3166,7 @@ void App::DrawDialog(NVGcontext* vg) {
     struct Line {
         std::string text, tag, right;
         NVGcolor color;
+        int mark = 0; // 1: fine, 2: a warning (the check before installing)
     };
     std::string title, body, note, primary, error;
     std::vector<Line> lines;
@@ -3166,7 +3244,7 @@ void App::DrawDialog(NVGcontext* vg) {
             m_dialog.single = true;
             if (v.done) {
                 if (R_FAILED(v.rc) && !IsCancelled(v.rc)) {
-                    error = InstallErrorText(v.rc, 0, 0, -1);
+                    error = InstallErrorText(v.rc, 0, 0, -1, false, false);
                 }
                 bool bad = false;
                 for (const auto& c : v.result) {
@@ -3225,6 +3303,29 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = s.risk_go;
             break;
         }
+        case DialogKind::PreCheck: {
+            const More& m = TrM();
+            title = m.pc_title;
+            if (!m_dialog.jobs.empty()) {
+                const auto& j0 = m_dialog.jobs.front();
+                body = j0.game + " \xC2\xB7 " + j0.label;
+                if (m_dialog.jobs.size() > 1) {
+                    char text[256];
+                    std::snprintf(text, sizeof(text), m.pc_and_more, body.c_str(), int(m_dialog.jobs.size()) - 1);
+                    body = text;
+                }
+            }
+            const auto add = [&](const char* name, const PreCheck::Line& l) {
+                const int mark = l.state == PreCheck::State::Fine ? 1 : l.state == PreCheck::State::Warn ? 2 : 0;
+                lines.push_back({name, "", l.right, mark == 2 ? t.warn : t.muted, mark});
+            };
+            add(m.pc_firmware, m_dialog.check.firmware);
+            add(m.pc_keys, m_dialog.check.keys);
+            add(m.pc_ams, m_dialog.check.atmosphere);
+            note = m.pc_note;
+            primary = m.pc_go;
+            break;
+        }
         case DialogKind::Share:
             title = s.share_title;
             body = s.share_body;
@@ -3273,7 +3374,7 @@ void App::DrawDialog(NVGcontext* vg) {
     const float body_h = body.empty() ? 0 : TextBoxHeight(vg, iw, 17, body.c_str()) + 16;
     const float note_h = note.empty() ? 0 : TextBoxHeight(vg, iw, 15, note.c_str()) + 14;
     const float list_h = lines.empty() ? 0 : shown * 40 + (more ? 30 : 0) + 12 + 16;
-    const float err_h = error.empty() ? 0 : TextBoxHeight(vg, iw, 15, error.c_str()) + 14;
+    const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
     h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + 60 + pad - 8;
     const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
     nvgBeginPath(vg);
@@ -3309,10 +3410,32 @@ void App::DrawDialog(NVGcontext* vg) {
             }
             const float rw = ui::TextWidth(vg, 15, l.right.c_str());
             float tx = x + pad + 16;
+            if (l.mark) {
+                // a filled tick, or a warning triangle in amber
+                const float mx = tx + 10;
+                if (l.mark == 1) {
+                    nvgBeginPath(vg);
+                    nvgCircle(vg, mx, ly, 10);
+                    nvgFillColor(vg, t.ok);
+                    nvgFill(vg);
+                    ui::CheckMark(vg, mx, ly, 10, t.panel, 2.2f);
+                } else {
+                    nvgBeginPath(vg);
+                    nvgMoveTo(vg, mx, ly - 10);
+                    nvgLineTo(vg, mx + 11, ly + 9);
+                    nvgLineTo(vg, mx - 11, ly + 9);
+                    nvgClosePath(vg);
+                    nvgFillColor(vg, t.warn);
+                    nvgFill(vg);
+                    ui::Text(vg, mx, ly + 2, 13, t.panel, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                }
+                tx += 30;
+            }
             nvgSave(vg);
             nvgScissor(vg, tx, ly - 20, iw - 32 - rw - 140, 40);
             tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, l.text.c_str());
-            const bool colored = m_dialog.kind == DialogKind::HistoryInfo || m_dialog.kind == DialogKind::Verify;
+            const bool colored = m_dialog.kind == DialogKind::HistoryInfo || m_dialog.kind == DialogKind::Verify ||
+                                 m_dialog.kind == DialogKind::PreCheck;
             nvgRestore(vg);
             if (!l.tag.empty()) {
                 const float tw = ui::TextWidth(vg, 13, l.tag.c_str()) + 16;
@@ -3375,7 +3498,7 @@ void App::DrawDialog(NVGcontext* vg) {
         cy += 54;
     }
     if (!error.empty()) {
-        TextBox(vg, x + pad, cy, iw, 15, t.err, error.c_str());
+        ErrorCard(vg, t, x + pad, cy, iw, error, true);
         cy += err_h;
     }
     if (!note.empty()) {
@@ -3500,6 +3623,11 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::Risk:
             m_risk_ok = true;
+            AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::PreCheck:
+            // the user goes on: what needs a newer firmware is installed all the same
+            for (auto& j : m_dialog.jobs) j.firmware_ok = true;
             AddJobs(std::move(m_dialog.jobs));
             break;
         case DialogKind::Share:

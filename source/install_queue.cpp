@@ -2,6 +2,7 @@
 // Copyright (C) 2026 DeLFuS77
 #include "install_queue.hpp"
 
+#include "errors.hpp"
 #include "history.hpp"
 #include "http_source.hpp"
 #include "i18n.hpp"
@@ -29,16 +30,6 @@ using sphaira::ui::ProgressBox;
 
 double Now() {
     return double(armTicksToNs(armGetSystemTick())) / 1e9;
-}
-
-std::string Size(u64 bytes) {
-    char t[32];
-    if (bytes >= 1024ULL * 1024 * 1024) {
-        std::snprintf(t, sizeof(t), "%.1f GB", double(bytes) / (1024.0 * 1024 * 1024));
-    } else {
-        std::snprintf(t, sizeof(t), "%.0f MB", double(bytes) / (1024.0 * 1024));
-    }
-    return t;
 }
 
 // The download-only check, for an emulator that cannot install: every NCA of the NSP is read
@@ -144,52 +135,16 @@ bool IsCancelled(unsigned rc) {
     return R_MODULE(rc) == Module_NXDock && R_DESCRIPTION(rc) == u32(NXDockResult::TransferCancelled);
 }
 
-std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand) {
-    const auto& s = Tr();
-    char text[256];
-    const u32 desc = R_DESCRIPTION(rc);
-    if (R_MODULE(rc) == Module_NXDock) {
-        switch (NXDockResult(desc)) {
-            case NXDockResult::TransferCancelled: return s.err_cancelled;
-            case NXDockResult::NotEnoughSpace:
-                std::snprintf(text, sizeof(text), nand ? s.err_space_nand : s.err_space, Size(needed).c_str(), free_bytes >= 0 ? Size(u64(free_bytes)).c_str() : "?");
-                return text;
-            case NXDockResult::FirmwareTooOld: {
-                char fw[24];
-                std::snprintf(fw, sizeof(fw), "%u.%u.%u", firmware >> 26, (firmware >> 20) & 0x3F, (firmware >> 16) & 0xF);
-                std::snprintf(text, sizeof(text), s.err_firmware, fw);
-                return text;
-            }
-            case NXDockResult::NetworkLost: return s.err_network;
-            case NXDockResult::YatiHttpReadFailed: return s.err_network;
-            case NXDockResult::ServerRefused: return s.err_refused;
-            case NXDockResult::ServerChanged: return s.err_changed;
-            case NXDockResult::YatiInvalidNcaSha256: return s.err_sha;
-            case NXDockResult::YatiNczSectionNotFound:
-            case NXDockResult::YatiInvalidNczSectionCount:
-            case NXDockResult::YatiNczBlockNotFound:
-            case NXDockResult::YatiInvalidNczBlockVersion:
-            case NXDockResult::YatiInvalidNczBlockType:
-            case NXDockResult::YatiInvalidNczBlockTotal:
-            case NXDockResult::YatiInvalidNczBlockSizeExponent:
-            case NXDockResult::YatiInvalidNczZstdError:
-            case NXDockResult::NczBadTable:
-            case NXDockResult::NczLz4Rebuild: return s.err_ncz;
-            case NXDockResult::YatiTicketNotFound:
-            case NXDockResult::YatiCertNotFound: return s.err_ticket;
-            case NXDockResult::OutOfMemory: return s.err_memory;
-            case NXDockResult::NczExperimental: return s.err_experimental;
-            case NXDockResult::UnknownContainer:
-            case NXDockResult::NspBadMagic:
-            case NXDockResult::NspInvalidHeader:
-            case NXDockResult::XciBadMagic:
-            case NXDockResult::XciSecurePartitionNotFound: return s.err_container;
-            case NXDockResult::GameRunning: return s.err_game_running;
-            default: break;
-        }
-    }
-    std::snprintf(text, sizeof(text), s.err_other, 2000 + R_MODULE(rc), desc);
-    return text;
+std::string InstallErrorText(unsigned rc, unsigned long long needed, unsigned firmware, long long free_bytes, bool nand, bool install) {
+    ErrorContext ctx;
+    ctx.needed = needed;
+    ctx.firmware = firmware;
+    const u32 hos = hosversionGet();
+    ctx.console_firmware = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
+    ctx.free_bytes = free_bytes;
+    ctx.nand = nand;
+    ctx.install = install;
+    return PackError(ExplainError(rc, ctx));
 }
 
 InstallQueue::InstallQueue() {
@@ -512,6 +467,8 @@ void InstallQueue::RunJob(InstallJob& job) {
                 sphaira::yati::ConfigOverride config;
                 // the internal memory only for a job the user confirmed on the page of the game
                 config.sd_card_install = !job.nand;
+                // the check before installing warned and the user went on anyway (2A)
+                config.allow_newer_firmware = job.firmware_ok;
                 if (!job.repair.empty()) {
                     // a repair: the damaged parts go first; only what is missing then comes
                     config.repair = true;
@@ -624,7 +581,7 @@ void InstallQueue::RunUndo() {
             entry.result = HistoryEntry::Result::Removed;
         } else {
             item.state = SessionItem::State::Failed;
-            item.error = InstallErrorText(rc, 0, 0, -1);
+            item.error = InstallErrorText(rc, 0, 0, -1, nand, false);
             entry.result = HistoryEntry::Result::Failed;
             entry.error = item.error;
         }

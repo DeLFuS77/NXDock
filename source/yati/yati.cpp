@@ -401,6 +401,8 @@ struct Yati {
 
     std::unique_ptr<container::Base> container{};
     Config config{};
+    // NXDock: see ConfigOverride::allow_newer_firmware.
+    bool allow_newer_firmware{};
     keys::Keys keys{};
 
     // tracks what Setup() actually managed to acquire. these services are
@@ -1364,6 +1366,7 @@ Result Yati::Setup(const ConfigOverride& override) {
     config.lower_system_version = false;
     config.title_ids = override.title_ids;
     config.repair = override.repair.value_or(false);
+    allow_newer_firmware = override.allow_newer_firmware;
     storage_id = config.sd_card_install ? NcmStorageId_SdCard : NcmStorageId_BuiltInUser;
 
     R_TRY(source->GetOpenResult());
@@ -1894,7 +1897,7 @@ Result Yati::CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span
     const u32 hos = hosversionGet();
     const u32 current = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
     log_write("[NXDock] needs %zu bytes in %u ncas, firmware 0x%X, console 0x%X\n", size_t(needed), ncas, firmware, current);
-    if (firmware && (firmware & 0xFFFF0000) > current) {
+    if (firmware && (firmware & 0xFFFF0000) > current && !allow_newer_firmware) {
         pbox->SetNeeded(needed, firmware);
         R_THROW(Result_FirmwareTooOld);
     }

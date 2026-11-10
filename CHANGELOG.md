@@ -111,3 +111,9 @@
   server with another key is refused before anything is sent.
 - "Recently added" in Options: the library newest first, from the date the
   library app gives for each game.
+- Clear errors: a failed install says what happened and what to do, with its
+  code below, in the queue (under the row in focus) and in the history.
+- A check before installing: the firmware, the keys of the console and the
+  version of Atmosphère against what the queued games ask for. A window shows
+  the three lines only when something does not fit, with "Install anyway";
+  NXDock never installs firmware or sigpatches.
