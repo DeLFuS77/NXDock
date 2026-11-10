@@ -46,6 +46,7 @@ struct SessionItem {
     std::string game, label, format, cover, color_key;
     bool nand = false;
     u64 size = 0;                        // bytes it took
+    long long when = 0;                  // when it was installed, seconds since 1970
     std::vector<NcmContentMetaKey> keys; // what it registered
     State state = State::Installed;
     std::string error;                   // why it could not be removed

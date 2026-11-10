@@ -38,7 +38,17 @@
   - all or nothing: the free space and the firmware are checked first, every
     part is checked against its SHA-256 before anything is registered, and a
     failed or cancelled install leaves nothing behind;
-  - XCI, XCZ and the internal memory come in a later step.
 - The language of the console: English, Spanish, French, German, Italian,
   Portuguese, Dutch, Russian, Japanese, Korean and Chinese, as the library
   app; English for any other.
+- XCI and XCZ install from the library as NSP and NSZ do; the blocks of an
+  XCZ are decompressed on three threads too.
+- The internal memory: chosen on the page of a game, it always asks first,
+  with what goes there and how much room the internal memory has before and
+  after; when it does not fit, nothing can be started.
+- "Undo all" in the Installed tab: what NXDock installed since it was opened
+  can be removed again, one by one or all at once, always after a question.
+  Save data is not touched; the game NXDock was opened from is never removed.
+- The history of installs, in the Installed tab and on the SD card: date,
+  game, where, size, time, speed and result of each, with why a failed one
+  failed, a summary on top, and a question before it is cleared.

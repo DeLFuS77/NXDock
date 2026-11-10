@@ -6,9 +6,11 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <ctime>
 #include <string>
 #include "i18n.hpp"
 #include "net.hpp"
+#include "uninstall.hpp"
 
 namespace nxdock {
 namespace {
@@ -138,6 +140,44 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
 enum SettingRow { kRowTheme, kRowLibrary, kRowForget, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+
+// When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
+// "08/11 22:14".
+std::string WhenText(long long when) {
+    if (when <= 0) {
+        return "—";
+    }
+    TimeCalendarTime at{}, now{};
+    TimeCalendarAdditionalInfo info{};
+    if (R_FAILED(timeToCalendarTimeWithMyRule(u64(when), &at, &info)) ||
+        R_FAILED(timeToCalendarTimeWithMyRule(u64(std::time(nullptr)), &now, &info))) {
+        return "—";
+    }
+    char text[48];
+    const auto& s = Tr();
+    // yesterday: the day before today, also across a month
+    TimeCalendarTime yesterday{};
+    timeToCalendarTimeWithMyRule(u64(std::time(nullptr) - 86400), &yesterday, &info);
+    if (at.year == now.year && at.month == now.month && at.day == now.day) {
+        std::snprintf(text, sizeof(text), "%s %02u:%02u", s.today, at.hour, at.minute);
+    } else if (at.year == yesterday.year && at.month == yesterday.month && at.day == yesterday.day) {
+        std::snprintf(text, sizeof(text), "%s %02u:%02u", s.yesterday, at.hour, at.minute);
+    } else {
+        std::snprintf(text, sizeof(text), "%02u/%02u %02u:%02u", at.day, at.month, at.hour, at.minute);
+    }
+    return text;
+}
+
+// The height of text over several lines inside a width.
+float TextBoxHeight(NVGcontext* vg, float w, float size, const char* str) {
+    nvgFontFace(vg, "ui");
+    nvgFontSize(vg, size);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgTextLineHeight(vg, 1.3f);
+    float b[4];
+    nvgTextBoxBounds(vg, 0, 0, w, str, nullptr, b);
+    return b[3] - b[1];
+}
 
 std::string Clip(std::string text, size_t max) {
     if (text.size() > max) {
@@ -376,12 +416,35 @@ void App::Tap(float x, float y, u64& down) {
                     m_queue_focus = it->index;
                 }
                 break;
+            case HitKind::InstalledView:
+                if (m_installed_view != it->index) {
+                    m_installed_view = it->index;
+                    m_installed_focus = 0;
+                }
+                break;
+            case HitKind::InstalledRow:
+                if (m_installed_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_installed_focus = it->index;
+                }
+                break;
+            case HitKind::DialogBack: m_dialog.kind = DialogKind::None; break;
+            case HitKind::DialogButton:
+                // a button of the question acts at once: tapping it is the choice
+                m_dialog.focus = it->index;
+                down |= HidNpadButton_A;
+                break;
         }
         return;
     }
 }
 
 void App::Update(u64 down, u64 held) {
+    if (m_dialog.kind != DialogKind::None) {
+        UpdateDialog(down, held);
+        return;
+    }
     if (down & HidNpadButton_Plus) {
         // leaving stops an install (nothing is left half done): the second + leaves
         if (m_queue && m_queue->Busy() && m_time - m_quit_asked > 4) {
@@ -421,6 +484,9 @@ void App::Update(u64 down, u64 held) {
         }
         case Tab::Queue:
             UpdateQueue(down, held);
+            break;
+        case Tab::Installed:
+            UpdateInstalled(down, held);
             break;
         case Tab::Settings:
             if (Repeat(down, held, up) && m_setting > 0) m_setting--;
@@ -500,10 +566,13 @@ void App::Draw(NVGcontext* vg) {
             break;
         }
         case Tab::Queue: DrawQueue(vg); break;
+        case Tab::Installed: DrawInstalled(vg); break;
         case Tab::Settings: DrawSettings(vg); break;
-        default: DrawComingSoon(vg); break;
     }
     AddHints(m_hint_rects);
+    if (m_dialog.kind != DialogKind::None) {
+        DrawDialog(vg);
+    }
     if (m_time < m_notice_until && !m_notice.empty()) {
         // a short notice above the hint bar
         const float w = ui::TextWidth(vg, 16, m_notice.c_str()) + 48;
@@ -552,6 +621,7 @@ void App::CheckSdSpace() {
         }
         fsFsClose(&fs);
     }
+    StorageSpace(NcmStorageId_BuiltInUser, m_nand_free_bytes, m_nand_total_bytes);
 }
 
 // Starts the catalog and the covers of the library linked, and takes a new catalog when it comes.
@@ -933,11 +1003,12 @@ void App::DrawDetail(NVGcontext* vg) {
     ui::Text(vg, bx + bw / 2, dy + 22, 20, t.on_work, install, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     nvgGlobalAlpha(vg, 1.f);
     AddHit(bx, dy - 4, bw, 52, HitKind::Install, int(rows.size()));
-    if (m_sd_free_bytes >= 0 && !m_to_nand) {
-        char line[128];
-        const u64 left = u64(m_sd_free_bytes) > picked_size ? u64(m_sd_free_bytes) - picked_size : 0;
-        std::snprintf(line, sizeof(line), s.space_line, m_sd_free.c_str(), SizeText(left).c_str());
-        ui::Text(vg, rx, dy + 72, 15, t.muted, line);
+    const s64 free_here = m_to_nand ? m_nand_free_bytes : m_sd_free_bytes;
+    if (free_here >= 0) {
+        char line[160];
+        const u64 left = u64(free_here) > picked_size ? u64(free_here) - picked_size : 0;
+        std::snprintf(line, sizeof(line), m_to_nand ? s.space_line_nand : s.space_line, SizeText(u64(free_here)).c_str(), SizeText(left).c_str());
+        ui::Text(vg, rx, dy + 72, 15, u64(free_here) < picked_size ? t.err : t.muted, line);
     }
 
     ui::HintBar(vg, t, nullptr,
@@ -992,16 +1063,12 @@ float JobFraction(const InstallQueue::Live& l) {
 
 void App::EnqueuePicked() {
     const auto& s = Tr();
-    if (m_to_nand) {
-        // never to the internal memory without asking: it comes, with its question, later
-        Notice(s.internal_soon);
-        return;
-    }
     const Game& g = m_games[m_detail_game];
     const Config c = m_link.CurrentConfig();
     const u32 hos = hosversionGet();
     const u32 console = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
-    int added = 0, duplicate = 0, picked = 0;
+    int picked = 0;
+    std::vector<InstallJob> jobs;
     std::string firmware_note;
     // the game first, then the update, then the DLC
     for (const auto kind : {CatalogFile::Kind::Game, CatalogFile::Kind::Update, CatalogFile::Kind::Dlc}) {
@@ -1035,25 +1102,49 @@ void App::EnqueuePicked() {
             job.kind = f.kind;
             job.title_id = f.title_id;
             job.size = f.size;
-            if (m_queue->Add(std::move(job))) {
-                added++;
-            } else {
-                duplicate++;
-            }
+            job.nand = m_to_nand;
+            jobs.push_back(std::move(job));
         }
     }
     if (!picked) {
         Notice(s.nothing_picked);
-    } else if (!firmware_note.empty()) {
+        return;
+    }
+    if (!firmware_note.empty()) {
         Notice(firmware_note);
-    } else if (added) {
-        Notice(s.added_to_queue);
-    } else if (duplicate) {
-        Notice(s.already_in_queue);
+        return;
+    }
+    if (jobs.empty()) {
+        return;
+    }
+    if (m_to_nand) {
+        // never to the internal memory without asking: the question (1A), Cancel in focus
+        m_sd_checked = -100;
+        CheckSdSpace();
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Nand;
+        m_dialog.jobs = std::move(jobs);
+        return;
+    }
+    AddJobs(std::move(jobs));
+}
+
+void App::AddJobs(std::vector<InstallJob> jobs) {
+    const auto& s = Tr();
+    int added = 0, duplicate = 0;
+    for (auto& job : jobs) {
+        if (m_queue->Add(std::move(job))) {
+            added++;
+        } else {
+            duplicate++;
+        }
     }
     if (added) {
+        Notice(s.added_to_queue);
         // back to the library: the strip shows the install going on
         m_detail = false;
+    } else if (duplicate) {
+        Notice(m_queue->Undoing() ? s.removing : s.already_in_queue);
     }
 }
 
@@ -1152,8 +1243,8 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
         std::snprintf(figures, sizeof(figures), "%s… · %s %.0f MB/s", s.preparing, s.network, live.net_rate);
     } else {
         const double left = live.write_rate > 0.1 ? double(live.total - std::min(live.total, live.written)) / (live.write_rate * 1024 * 1024) : -1;
-        std::snprintf(figures, sizeof(figures), "%d %% · %s %.0f · %s %.0f · SD %.0f MB/s · %u/%u%s%s", int(frac * 100), s.network,
-                      live.net_rate, s.decompress, live.ready_rate, live.write_rate, live.checked, live.ncas,
+        std::snprintf(figures, sizeof(figures), "%d %% · %s %.0f · %s %.0f · %s %.0f MB/s · %u/%u%s%s", int(frac * 100), s.network,
+                      live.net_rate, s.decompress, live.ready_rate, it->nand ? s.internal_short : "SD", live.write_rate, live.checked, live.ncas,
                       left >= 0 ? " · " : "", left >= 0 ? (std::string(s.left) + " " + Duration(left)).c_str() : "");
     }
     const float fw = ui::TextWidth(vg, 15, figures);
@@ -1195,7 +1286,7 @@ void App::DrawQueue(NVGcontext* vg) {
         nvgSave(vg);
         nvgScissor(vg, cx, py + 16, pw - 168 - 140, 48);
         const float nw = ui::Text(vg, cx, py + 40, 24, t.text, j.game.c_str()) - cx;
-        const std::string sub = j.label + " · " + Upper(j.format) + " · SD";
+        const std::string sub = j.label + " · " + Upper(j.format) + " · " + (j.nand ? s.internal : "SD");
         ui::Text(vg, cx + nw + 14, py + 41, 16, t.muted, sub.c_str());
         nvgRestore(vg);
 
@@ -1232,7 +1323,7 @@ void App::DrawQueue(NVGcontext* vg) {
             lanes.push_back({title, t.violet, v, "MB/s", -1, std::max(0, live.threads)});
         }
         std::snprintf(v, sizeof(v), "%.0f", live.write_rate);
-        lanes.push_back({s.write_sd, t.orange, v, "MB/s", live.total ? float(double(live.written) / double(live.total)) : 0.f, -1});
+        lanes.push_back({j.nand ? s.write_nand : s.write_sd, t.orange, v, "MB/s", live.total ? float(double(live.written) / double(live.total)) : 0.f, -1});
         std::snprintf(v, sizeof(v), "%u", live.checked);
         lanes.push_back({s.check_sha, t.ok, v, std::string(s.parts_of) + " " + std::to_string(live.ncas),
                          live.ncas ? float(live.checked) / float(live.ncas) : 0.f, -1});
@@ -1311,7 +1402,7 @@ void App::DrawQueue(NVGcontext* vg) {
         nvgScissor(vg, 122, y, 600, 44);
         ui::Text(vg, 122, y + 22, 17, t.text, FileLabel(j).c_str());
         nvgRestore(vg);
-        std::string info = Upper(j.format) + " · " + SizeText(j.size) + " · SD";
+        std::string info = Upper(j.format) + " · " + SizeText(j.size) + " · " + (j.nand ? s.internal_short : "SD");
         if (j.state == InstallJob::State::Done) info += " · " + Duration(j.seconds);
         if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
             // why, in place of the figures
@@ -1599,12 +1690,660 @@ void App::DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h) {
     }
 }
 
-void App::DrawComingSoon(NVGcontext* vg) {
+namespace {
+
+// Room an install to the internal memory needs over its size, as the install core asks.
+constexpr u64 kNandMargin = 64ull * 1024 * 1024;
+
+bool Undoable(const SessionItem& item) {
+    return item.state == SessionItem::State::Installed || item.state == SessionItem::State::Failed;
+}
+
+// A time for a column: 8:52, 1:02:10.
+std::string ShortDuration(double seconds) {
+    char text[24];
+    const int sec = int(seconds + 0.5);
+    if (sec >= 3600) {
+        std::snprintf(text, sizeof(text), "%d:%02d:%02d", sec / 3600, (sec / 60) % 60, sec % 60);
+    } else {
+        std::snprintf(text, sizeof(text), "%d:%02d", sec / 60, sec % 60);
+    }
+    return text;
+}
+
+const char* WhereText(bool nand) {
+    return nand ? Tr().internal : "SD";
+}
+
+std::string SpeedText(double mbs) {
+    if (mbs <= 0) {
+        return "—";
+    }
+    char text[24];
+    std::snprintf(text, sizeof(text), "%.1f MB/s", mbs);
+    return text;
+}
+
+// What a list of the session frees, on each storage: "7.0 GB on the SD card · 4.2 GB in the internal memory".
+std::string FreedText(const std::vector<SessionItem>& items) {
+    const auto& s = Tr();
+    u64 sd = 0, nand = 0;
+    for (const auto& i : items) {
+        (i.nand ? nand : sd) += i.size;
+    }
+    std::string out;
+    char part[96];
+    if (sd) {
+        std::snprintf(part, sizeof(part), s.freed_sd, SizeText(sd).c_str());
+        out = part;
+    }
+    if (nand) {
+        std::snprintf(part, sizeof(part), s.freed_nand, SizeText(nand).c_str());
+        out += (out.empty() ? "" : " · ") + std::string(part);
+    }
+    return out;
+}
+
+// A round mark before a result: a tick, a cross, or nothing.
+void ResultMark(NVGcontext* vg, const Theme& t, float cx, float cy, HistoryEntry::Result r) {
+    if (r == HistoryEntry::Result::Installed) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, 9);
+        nvgFillColor(vg, t.ok);
+        nvgFill(vg);
+        ui::CheckMark(vg, cx, cy, 10, t.panel, 2.2f);
+    } else if (r == HistoryEntry::Result::Failed) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, 9);
+        nvgFillColor(vg, t.err);
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, cx - 3.5f, cy - 3.5f);
+        nvgLineTo(vg, cx + 3.5f, cy + 3.5f);
+        nvgMoveTo(vg, cx + 3.5f, cy - 3.5f);
+        nvgLineTo(vg, cx - 3.5f, cy + 3.5f);
+        nvgStrokeColor(vg, t.panel);
+        nvgStrokeWidth(vg, 2.2f);
+        nvgStroke(vg);
+    } else {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, 8);
+        nvgStrokeColor(vg, t.muted);
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
+    }
+}
+
+const char* ResultText(HistoryEntry::Result r) {
+    const auto& s = Tr();
+    switch (r) {
+        case HistoryEntry::Result::Installed: return s.res_installed;
+        case HistoryEntry::Result::Failed: return s.failed;
+        case HistoryEntry::Result::Cancelled: return s.cancelled;
+        case HistoryEntry::Result::Removed: return s.removed;
+    }
+    return "";
+}
+
+NVGcolor ResultColor(const Theme& t, HistoryEntry::Result r) {
+    switch (r) {
+        case HistoryEntry::Result::Installed: return t.ok;
+        case HistoryEntry::Result::Failed: return t.err;
+        default: return t.muted;
+    }
+}
+
+// The glyphs of ZL and ZR side by side, for the hint that switches views.
+const char* ViewGlyphs() {
+    static const std::string glyphs = std::string(ui::glyph::ZL) + " " + ui::glyph::ZR;
+    return glyphs.c_str();
+}
+
+} // namespace
+
+void App::DrawInstalled(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
-    ui::Spinner(vg, kWidth / 2, 330, 18, t.work, m_time);
-    ui::Text(vg, kWidth / 2, 384, 20, t.muted, s.coming_soon, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    ui::HintBar(vg, t, nullptr, {{ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
+    if (m_history_version != m_queue->Version()) {
+        m_history = History(HistoryPath()).Load();
+        m_history_version = m_queue->Version();
+    }
+    const int session = int(m_queue->Session().size());
+    const char* names[] = {s.this_session, s.history};
+    const int counts[] = {session, int(m_history.size())};
+    float x = 48;
+    for (int i = 0; i < 2; i++) {
+        char chip[64];
+        std::snprintf(chip, sizeof(chip), "%s · %d", names[i], counts[i]);
+        const float w = ui::Chip(vg, t, x, 92, chip, i == m_installed_view);
+        AddHit(x - 4, 82, w + 8, 54, HitKind::InstalledView, i);
+        x += w + 10;
+    }
+    if (m_installed_view == 0) {
+        DrawSession(vg);
+    } else {
+        DrawHistory(vg);
+    }
+}
+
+void App::DrawSession(NVGcontext* vg) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    const auto items = m_queue->Session();
+    if (items.empty()) {
+        ui::Text(vg, kWidth / 2, 330, 22, t.text, s.session_empty, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, kWidth / 2, 366, 16, t.muted, s.session_empty_hint, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::HintBar(vg, t, nullptr, {{ViewGlyphs(), s.view_switch, HidNpadButton_ZR}, {ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
+        return;
+    }
+    m_installed_focus = std::clamp(m_installed_focus, 0, int(items.size()) - 1);
+    const float top = 148, pitch = 72;
+    const int visible = 5;
+    const int first = std::clamp(m_installed_focus - visible + 1, 0, std::max(0, int(items.size()) - visible));
+    for (int r = first; r < int(items.size()) && r < first + visible; r++) {
+        const SessionItem& i = items[r];
+        const float y = top + (r - first) * pitch;
+        if (r == m_installed_focus) {
+            ui::FillRound(vg, 48, y, kWidth - 96, pitch - 6, 12, t.panel2);
+            ui::Focus(vg, t, 48, y, kWidth - 96, pitch - 6, 12, m_time);
+        }
+        AddHit(48, y, kWidth - 96, pitch - 6, HitKind::InstalledRow, r);
+        const bool gone = i.state == SessionItem::State::Removed;
+        nvgGlobalAlpha(vg, gone ? 0.5f : 1.f);
+        ui::Cover(vg, t, 62, y + 5, 56, PlaceholderColor(i.color_key), Initial(i.game).c_str(), nullptr, false, false, 9, m_covers.Get(i.cover));
+        nvgSave(vg);
+        nvgScissor(vg, 134, y, 540, pitch);
+        ui::Text(vg, 134, y + 23, 18, t.text, i.game.c_str());
+        if (i.state == SessionItem::State::Failed && !i.error.empty()) {
+            ui::Text(vg, 134, y + 47, 14, t.err, i.error.c_str()); // why it could not be removed
+        } else {
+            ui::Text(vg, 134, y + 47, 14, t.muted, (i.label + " · " + Upper(i.format)).c_str());
+        }
+        nvgRestore(vg);
+        ui::Text(vg, 690, y + 33, 16, t.muted, WhereText(i.nand));
+        ui::Text(vg, 930, y + 33, 16, t.muted, SizeText(i.size).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        const std::string when = WhenText(i.when);
+        const size_t space = when.rfind(' ');
+        ui::Text(vg, 960, y + 33, 16, t.muted, space == std::string::npos ? when.c_str() : when.substr(space + 1).c_str());
+        const float ry = y + 33;
+        switch (i.state) {
+            case SessionItem::State::Installed: {
+                const float w = ui::TextWidth(vg, 15, s.res_installed);
+                ui::Text(vg, 1218, ry, 15, t.ok, s.res_installed, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                ResultMark(vg, t, 1218 - w - 14, ry, HistoryEntry::Result::Installed);
+                break;
+            }
+            case SessionItem::State::Removing: {
+                const float w = ui::TextWidth(vg, 15, s.removing);
+                ui::Text(vg, 1218, ry, 15, t.work, s.removing, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                ui::Spinner(vg, 1218 - w - 16, ry, 8, t.work, m_time);
+                break;
+            }
+            case SessionItem::State::Removed:
+                ui::Text(vg, 1218, ry, 15, t.muted, s.removed, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                break;
+            case SessionItem::State::Failed:
+                ui::Text(vg, 1218, ry, 15, t.err, s.remove_failed, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                break;
+        }
+        nvgGlobalAlpha(vg, 1.f);
+    }
+
+    // Undo all, below the list
+    std::vector<SessionItem> left;
+    for (const auto& i : items) {
+        if (Undoable(i)) left.push_back(i);
+    }
+    const float by = 520, bh = 72;
+    Panel(vg, t, 48, by, kWidth - 96, bh, 14);
+    if (!left.empty()) {
+        char text[256];
+        std::snprintf(text, sizeof(text), s.undo_bar, FreedText(left).c_str());
+        const float bw = ui::TextWidth(vg, 18, s.undo_all) + 76, bx = kWidth - 48 - 16 - bw;
+        nvgSave(vg);
+        nvgScissor(vg, 70, by, bx - 90, bh);
+        ui::Text(vg, 70, by + bh / 2, 16, t.muted, text);
+        nvgRestore(vg);
+        ui::FillRound(vg, bx, by + 12, bw, bh - 24, 12, t.work);
+        ui::Text(vg, bx + 22, by + bh / 2 + 1, 24, t.on_work, ui::glyph::Y, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, bx + 54, by + bh / 2, 18, t.on_work, s.undo_all);
+        m_hint_rects.push_back({bx, by + 4, bw, bh - 8, HidNpadButton_Y});
+    } else {
+        ui::Text(vg, 70, by + bh / 2, 16, t.muted, m_queue->Undoing() ? s.removing : s.session_empty_hint);
+    }
+
+    std::vector<ui::Hint> hints;
+    if (Undoable(items[m_installed_focus])) {
+        hints.push_back({ui::glyph::X, s.remove_this, HidNpadButton_X});
+    }
+    if (!left.empty()) {
+        hints.push_back({ui::glyph::Y, s.undo_all, HidNpadButton_Y});
+    }
+    hints.push_back({ViewGlyphs(), s.view_switch, HidNpadButton_ZR});
+    hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
+    ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
+}
+
+void App::DrawHistory(NVGcontext* vg) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    if (m_history.empty()) {
+        ui::Text(vg, kWidth / 2, 340, 22, t.muted, s.history_empty, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::HintBar(vg, t, nullptr, {{ViewGlyphs(), s.view_switch, HidNpadButton_ZR}, {ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
+        return;
+    }
+    // the summary: how many installed, how much, how fast
+    int installed = 0;
+    u64 bytes = 0;
+    double seconds = 0, best = 0;
+    for (const auto& e : m_history) {
+        if (e.result != HistoryEntry::Result::Installed) continue;
+        installed++;
+        bytes += e.size;
+        seconds += e.seconds;
+        best = std::max(best, e.Speed());
+    }
+    char part[96];
+    float sx = 50;
+    const auto summary = [&](const char* value, const char* rest, bool value_first) {
+        if (value_first) {
+            sx = ui::Text(vg, sx, 152, 16, t.text, value) + 6;
+            sx = ui::Text(vg, sx, 152, 16, t.muted, rest) + 26;
+        } else {
+            sx = ui::Text(vg, sx, 152, 16, t.muted, rest) + 6;
+            sx = ui::Text(vg, sx, 152, 16, t.text, value) + 26;
+        }
+    };
+    std::snprintf(part, sizeof(part), s.hist_installed, installed);
+    ui::Text(vg, sx, 152, 16, t.text, part);
+    sx += ui::TextWidth(vg, 16, part) + 26;
+    std::snprintf(part, sizeof(part), s.hist_total, SizeText(bytes).c_str());
+    ui::Text(vg, sx, 152, 16, t.text, part);
+    sx += ui::TextWidth(vg, 16, part) + 26;
+    if (seconds > 0.5) {
+        summary(SpeedText(double(bytes) / seconds / (1024.0 * 1024.0)).c_str(), s.hist_avg, false);
+        summary(SpeedText(best).c_str(), s.hist_best, false);
+    }
+
+    // the columns
+    const float top = 178;
+    const float c_date = 62, c_cover = 186, c_name = 242, c_where = 662, c_size = 830, c_time = 912, c_speed = 1026, c_result = 1050;
+    ui::Text(vg, c_date, top, 13, t.muted, s.col_date);
+    ui::Text(vg, c_name, top, 13, t.muted, s.col_game);
+    ui::Text(vg, c_where, top, 13, t.muted, s.col_where);
+    ui::Text(vg, c_size, top, 13, t.muted, s.col_size, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    ui::Text(vg, c_time, top, 13, t.muted, s.col_time, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    ui::Text(vg, c_speed, top, 13, t.muted, s.col_speed, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    ui::Text(vg, c_result, top, 13, t.muted, s.col_result);
+
+    m_installed_focus = std::clamp(m_installed_focus, 0, int(m_history.size()) - 1);
+    const float list_top = 196, pitch = 64;
+    const int visible = 7;
+    const int first = std::clamp(m_installed_focus - visible + 1, 0, std::max(0, int(m_history.size()) - visible));
+    for (int r = first; r < int(m_history.size()) && r < first + visible; r++) {
+        const HistoryEntry& e = m_history[r];
+        const float y = list_top + (r - first) * pitch, cy = y + pitch / 2 - 3;
+        if (r == m_installed_focus) {
+            ui::FillRound(vg, 48, y, kWidth - 96, pitch - 6, 10, t.panel2);
+            ui::Focus(vg, t, 48, y, kWidth - 96, pitch - 6, 10, m_time);
+        } else if (r > first) {
+            nvgBeginPath(vg);
+            nvgRect(vg, 58, y - 3, kWidth - 116, 1);
+            nvgFillColor(vg, t.line);
+            nvgFill(vg);
+        }
+        AddHit(48, y, kWidth - 96, pitch - 6, HitKind::InstalledRow, r);
+        ui::Text(vg, c_date, cy, 15, t.muted, WhenText(e.when).c_str());
+        ui::Cover(vg, t, c_cover, cy - 22, 44, PlaceholderColor(e.game), Initial(e.game).c_str(), nullptr, false, false, 8, 0);
+        nvgSave(vg);
+        nvgScissor(vg, c_name, y, c_where - c_name - 16, pitch);
+        ui::Text(vg, c_name, cy - 10, 16, t.text, e.game.c_str());
+        if (e.result == HistoryEntry::Result::Failed && !e.error.empty()) {
+            ui::Text(vg, c_name, cy + 12, 13, t.err, e.error.c_str());
+        } else {
+            ui::Text(vg, c_name, cy + 12, 13, t.muted, (e.label + " · " + Upper(e.format)).c_str());
+        }
+        nvgRestore(vg);
+        ui::Text(vg, c_where, cy, 15, t.muted, e.nand ? s.internal_short : "SD");
+        ui::Text(vg, c_size, cy, 15, t.muted, SizeText(e.size).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        const bool done = e.result == HistoryEntry::Result::Installed;
+        ui::Text(vg, c_time, cy, 15, t.muted, e.seconds > 0 && e.result != HistoryEntry::Result::Removed ? ShortDuration(e.seconds).c_str() : "—",
+                 NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, c_speed, cy, 15, t.muted, done ? SpeedText(e.Speed()).c_str() : "—", NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        ResultMark(vg, t, c_result + 9, cy, e.result);
+        nvgSave(vg);
+        nvgScissor(vg, c_result + 24, y, 1232 - c_result - 24, pitch);
+        ui::Text(vg, c_result + 26, cy, 15, ResultColor(t, e.result), ResultText(e.result));
+        nvgRestore(vg);
+    }
+    ui::HintBar(vg, t, nullptr,
+                {{ui::glyph::A, s.details, HidNpadButton_A}, {ui::glyph::Minus, s.clear_history, HidNpadButton_Minus},
+                 {ViewGlyphs(), s.view_switch, HidNpadButton_ZR}, {ui::glyph::B, s.back, HidNpadButton_B}},
+                m_hint_rects);
+}
+
+void App::AskUndo(std::vector<int> jobs) {
+    if (m_queue->Busy() || m_queue->Undoing()) {
+        Notice(Tr().undo_wait_queue);
+        return;
+    }
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::Undo;
+    m_dialog.undo = std::move(jobs);
+}
+
+void App::UpdateInstalled(u64 down, u64 held) {
+    if (down & (HidNpadButton_ZL | HidNpadButton_ZR)) {
+        m_installed_view ^= 1;
+        m_installed_focus = 0;
+        return;
+    }
+    if (Repeat(down, held, HidNpadButton_AnyUp) && m_installed_focus > 0) m_installed_focus--;
+    if (Repeat(down, held, HidNpadButton_AnyDown)) m_installed_focus++; // clamped when drawn
+    if (m_installed_view == 0) {
+        const auto items = m_queue->Session();
+        if (items.empty()) {
+            return;
+        }
+        m_installed_focus = std::clamp(m_installed_focus, 0, int(items.size()) - 1);
+        const SessionItem& item = items[m_installed_focus];
+        if ((down & HidNpadButton_X) && Undoable(item)) {
+            AskUndo({item.job});
+        }
+        if ((down & HidNpadButton_Y) && std::any_of(items.begin(), items.end(), Undoable)) {
+            AskUndo({});
+        }
+    } else {
+        if (m_history.empty()) {
+            return;
+        }
+        m_installed_focus = std::clamp(m_installed_focus, 0, int(m_history.size()) - 1);
+        if (down & HidNpadButton_A) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::HistoryInfo;
+            m_dialog.entry = m_installed_focus;
+        }
+        if (down & HidNpadButton_Minus) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::ClearHistory;
+        }
+    }
+}
+
+void App::DrawDialog(NVGcontext* vg) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    // everything behind goes dark; a tap there is Cancel
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.55f));
+    nvgFill(vg);
+    AddHit(0, 0, kWidth, kHeight, HitKind::DialogBack);
+
+    struct Line {
+        std::string text, tag, right;
+        NVGcolor color;
+    };
+    std::string title, body, note, primary, error;
+    std::vector<Line> lines;
+    bool can = true, bar = false;
+    u64 size = 0;
+    switch (m_dialog.kind) {
+        case DialogKind::Nand: {
+            title = s.nand_title;
+            body = s.nand_body;
+            for (const auto& j : m_dialog.jobs) {
+                size += j.size;
+                lines.push_back({j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+            }
+            primary = s.nand_confirm;
+            bar = m_nand_total_bytes > 0 && m_nand_free_bytes >= 0; // unknown: no bar
+            if (m_nand_free_bytes >= 0 && size + kNandMargin > u64(m_nand_free_bytes)) {
+                can = false;
+                char text[128];
+                std::snprintf(text, sizeof(text), s.nand_no_room, SizeText(size + kNandMargin - u64(m_nand_free_bytes)).c_str());
+                error = text;
+            }
+            break;
+        }
+        case DialogKind::Undo: {
+            const auto items = m_queue->Session();
+            std::vector<SessionItem> chosen;
+            for (const auto& i : items) {
+                const bool wanted = m_dialog.undo.empty() || std::find(m_dialog.undo.begin(), m_dialog.undo.end(), i.job) != m_dialog.undo.end();
+                if (wanted && Undoable(i)) chosen.push_back(i);
+            }
+            title = m_dialog.undo.empty() ? s.undo_title : s.undo_one_title;
+            for (const auto& i : chosen) {
+                size += i.size;
+                lines.push_back({i.game + " · " + i.label, WhereText(i.nand), SizeText(i.size), t.text});
+            }
+            note = s.undo_note;
+            char text[96];
+            std::snprintf(text, sizeof(text), s.undo_confirm, int(chosen.size()), SizeText(size).c_str());
+            primary = text;
+            can = !chosen.empty();
+            break;
+        }
+        case DialogKind::ClearHistory:
+            title = s.clear_title;
+            body = s.clear_body;
+            primary = s.clear_confirm;
+            break;
+        case DialogKind::HistoryInfo: {
+            if (m_dialog.entry < 0 || m_dialog.entry >= int(m_history.size())) {
+                m_dialog.kind = DialogKind::None;
+                return;
+            }
+            const HistoryEntry& e = m_history[m_dialog.entry];
+            title = e.game;
+            lines.push_back({e.label + " · " + Upper(e.format), "", e.nand ? s.internal : s.sd_card, t.text});
+            lines.push_back({s.col_date, "", WhenText(e.when), t.text});
+            lines.push_back({s.col_size, "", SizeText(e.size), t.text});
+            if (e.written) lines.push_back({s.col_written, "", SizeText(e.written), t.text});
+            if (e.seconds > 0) lines.push_back({s.col_time, "", Duration(e.seconds), t.text});
+            if (e.result == HistoryEntry::Result::Installed) lines.push_back({s.col_speed, "", SpeedText(e.Speed()), t.text});
+            lines.push_back({s.col_result, "", ResultText(e.result), ResultColor(t, e.result)});
+            if (e.result == HistoryEntry::Result::Failed) error = e.error;
+            break;
+        }
+        case DialogKind::None: return;
+    }
+
+    // the layout, from the top
+    const float w = 740, pad = 32, iw = w - 2 * pad;
+    const int shown = std::min<int>(int(lines.size()), m_dialog.kind == DialogKind::HistoryInfo ? 8 : 5);
+    const bool more = int(lines.size()) > shown;
+    float h = pad + 40;
+    const float body_h = body.empty() ? 0 : TextBoxHeight(vg, iw, 17, body.c_str()) + 16;
+    const float note_h = note.empty() ? 0 : TextBoxHeight(vg, iw, 15, note.c_str()) + 14;
+    const float list_h = lines.empty() ? 0 : shown * 40 + (more ? 30 : 0) + 12 + 16;
+    const float err_h = error.empty() ? 0 : TextBoxHeight(vg, iw, 15, error.c_str()) + 14;
+    h += body_h + list_h + (bar ? 64 : 0) + err_h + note_h + 60 + pad - 8;
+    const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, x - 10, y + 6, w + 20, h + 20, 22);
+    nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 10, w, h, 18, 40, nvgRGBAf(0, 0, 0, 0.5f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    Panel(vg, t, x, y, w, h, 18);
+    // a tap on the panel itself does nothing
+    AddHit(x, y, w, h, HitKind::Button);
+
+    float cy = y + pad;
+    nvgSave(vg);
+    nvgScissor(vg, x + pad, cy - 4, iw, 44);
+    ui::Text(vg, x + pad, cy + 16, 26, t.text, title.c_str());
+    nvgRestore(vg);
+    cy += 44;
+    if (!body.empty()) {
+        TextBox(vg, x + pad, cy, iw, 17, t.muted, body.c_str());
+        cy += body_h;
+    }
+    if (!lines.empty()) {
+        const float lh = shown * 40 + (more ? 30 : 0) + 12;
+        ui::FillRound(vg, x + pad, cy, iw, lh, 12, t.panel2);
+        ui::StrokeRound(vg, x + pad + .5f, cy + .5f, iw - 1, lh - 1, 12, t.line, 1);
+        for (int i = 0; i < shown; i++) {
+            const Line& l = lines[i];
+            const float ly = cy + 6 + i * 40 + 20;
+            if (i > 0) {
+                nvgBeginPath(vg);
+                nvgRect(vg, x + pad + 14, ly - 20, iw - 28, 1);
+                nvgFillColor(vg, t.line);
+                nvgFill(vg);
+            }
+            const float rw = ui::TextWidth(vg, 15, l.right.c_str());
+            float tx = x + pad + 16;
+            nvgSave(vg);
+            nvgScissor(vg, tx, ly - 20, iw - 32 - rw - 140, 40);
+            tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, l.text.c_str());
+            nvgRestore(vg);
+            if (!l.tag.empty()) {
+                const float tw = ui::TextWidth(vg, 13, l.tag.c_str()) + 16;
+                const float tagx = std::min(tx + 12, x + pad + iw - 16 - rw - 16 - tw);
+                ui::StrokeRound(vg, tagx, ly - 11, tw, 22, 6, t.line, 1);
+                ui::Text(vg, tagx + tw / 2, ly, 13, t.muted, l.tag.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            }
+            ui::Text(vg, x + pad + iw - 16, ly, 15, m_dialog.kind == DialogKind::HistoryInfo ? l.color : t.muted, l.right.c_str(),
+                     NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
+        if (more) {
+            char text[48];
+            std::snprintf(text, sizeof(text), s.more_count, int(lines.size()) - shown);
+            ui::Text(vg, x + pad + 16, cy + 6 + shown * 40 + 14, 15, t.muted, text);
+        }
+        cy += lh + 16;
+    }
+    if (bar) {
+        // the internal memory: used, this install, free after
+        const float bw = iw, bh = 18;
+        ui::FillRound(vg, x + pad, cy, bw, bh, 9, t.panel2);
+        if (m_nand_total_bytes > 0 && m_nand_free_bytes >= 0) {
+            const double total = double(m_nand_total_bytes);
+            const double used = std::max(0.0, total - double(m_nand_free_bytes));
+            const float uw = float(used / total) * bw;
+            const float tw = std::min(bw - uw, float(double(size) / total) * bw);
+            nvgSave(vg);
+            nvgIntersectScissor(vg, x + pad, cy, bw, bh);
+            NVGcolor used_c = t.muted;
+            used_c.a = 0.45f;
+            ui::FillRound(vg, x + pad, cy, uw + 9, bh, 9, used_c);
+            nvgBeginPath(vg);
+            nvgRect(vg, x + pad + uw, cy, tw, bh);
+            nvgFillColor(vg, can ? t.work : t.err);
+            nvgFill(vg);
+            nvgRestore(vg);
+            ui::StrokeRound(vg, x + pad + .5f, cy + .5f, bw - 1, bh - 1, 9, t.line, 1);
+            char a[64], b[64], c[96];
+            std::snprintf(a, sizeof(a), s.used_fmt, SizeText(u64(used)).c_str());
+            std::snprintf(b, sizeof(b), s.will_take_fmt, SizeText(size).c_str());
+            const u64 after = u64(m_nand_free_bytes) > size ? u64(m_nand_free_bytes) - size : 0;
+            std::snprintf(c, sizeof(c), s.free_after_fmt, SizeText(after).c_str(), SizeText(u64(m_nand_total_bytes)).c_str());
+            float lx = x + pad;
+            const float ly = cy + bh + 20;
+            ui::FillRound(vg, lx, ly - 6, 12, 12, 3, used_c);
+            lx = ui::Text(vg, lx + 18, ly, 15, t.muted, a) + 22;
+            ui::FillRound(vg, lx, ly - 6, 12, 12, 3, can ? t.work : t.err);
+            lx = ui::Text(vg, lx + 18, ly, 15, t.muted, b) + 22;
+            ui::FillRound(vg, lx, ly - 6, 12, 12, 3, t.panel2);
+            ui::StrokeRound(vg, lx + .5f, ly - 5.5f, 11, 11, 3, t.line, 1);
+            ui::Text(vg, lx + 18, ly, 15, t.muted, c);
+        } else {
+            ui::Text(vg, x + pad, cy + bh / 2, 15, t.muted, "?");
+        }
+        cy += 64;
+    }
+    if (!error.empty()) {
+        TextBox(vg, x + pad, cy, iw, 15, t.err, error.c_str());
+        cy += err_h;
+    }
+    if (!note.empty()) {
+        TextBox(vg, x + pad, cy, iw, 15, t.muted, note.c_str());
+        cy += note_h;
+    }
+
+    // the buttons: Cancel (or Close) first in focus, the action on the right
+    const bool info = m_dialog.kind == DialogKind::HistoryInfo;
+    if (!can && m_dialog.focus == 1) m_dialog.focus = 0;
+    const float bh = 52, by = y + h - pad - bh + 8;
+    float bx = x + w - pad;
+    struct Button { const char* glyph; std::string label; bool primary; int index; };
+    std::vector<Button> buttons;
+    buttons.push_back({ui::glyph::B, info ? s.close : s.cancel, false, 0});
+    if (!info) buttons.push_back({ui::glyph::A, primary, true, 1});
+    for (auto it = buttons.rbegin(); it != buttons.rend(); ++it) {
+        const float bw = ui::TextWidth(vg, 18, it->label.c_str()) + 78;
+        bx -= bw;
+        const bool enabled = !it->primary || can;
+        nvgGlobalAlpha(vg, enabled ? 1.f : 0.4f);
+        if (m_dialog.focus == it->index) {
+            ui::Focus(vg, t, bx, by, bw, bh, 12, m_time);
+        }
+        if (it->primary) {
+            ui::FillRound(vg, bx, by, bw, bh, 12, t.work);
+        } else {
+            ui::FillRound(vg, bx, by, bw, bh, 12, t.panel2);
+            ui::StrokeRound(vg, bx + 1, by + 1, bw - 2, bh - 2, 12, t.line, 2);
+        }
+        const NVGcolor fg = it->primary ? t.on_work : t.text;
+        ui::Text(vg, bx + 22, by + bh / 2 + 1, 24, fg, it->glyph, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, bx + 56, by + bh / 2, 18, fg, it->label.c_str());
+        nvgGlobalAlpha(vg, 1.f);
+        if (enabled) {
+            AddHit(bx, by, bw, bh, HitKind::DialogButton, it->index);
+        }
+        bx -= 14;
+    }
+
+    // its own hint bar, over the one of the screen
+    std::vector<ui::HitRect> rects;
+    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.choose, HidNpadButton_A}, {ui::glyph::B, info ? s.close : s.cancel, HidNpadButton_B}}, rects);
+    AddHints(rects);
+}
+
+void App::UpdateDialog(u64 down, u64 held) {
+    const bool info = m_dialog.kind == DialogKind::HistoryInfo;
+    if (!info) {
+        if (Repeat(down, held, HidNpadButton_AnyLeft)) m_dialog.focus = 0;
+        if (Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.focus = 1; // a disabled action falls back when drawn
+    }
+    if (down & HidNpadButton_B) {
+        m_dialog.kind = DialogKind::None;
+        return;
+    }
+    if (down & HidNpadButton_A) {
+        if (m_dialog.focus == 1 && !info) {
+            ConfirmDialog();
+        }
+        m_dialog.kind = DialogKind::None;
+    }
+}
+
+void App::ConfirmDialog() {
+    switch (m_dialog.kind) {
+        case DialogKind::Nand: {
+            // checked again at the moment of the choice: nothing goes there when it does not fit
+            u64 size = 0;
+            for (const auto& j : m_dialog.jobs) size += j.size;
+            if (m_nand_free_bytes >= 0 && size + kNandMargin > u64(m_nand_free_bytes)) {
+                return;
+            }
+            AddJobs(std::move(m_dialog.jobs));
+            break;
+        }
+        case DialogKind::Undo:
+            if (!m_queue->StartUndo(m_dialog.undo)) {
+                Notice(Tr().undo_wait_queue);
+            }
+            break;
+        case DialogKind::ClearHistory:
+            History(HistoryPath()).Clear();
+            m_history.clear();
+            m_history_version = ~0u;
+            m_installed_focus = 0;
+            break;
+        default: break;
+    }
 }
 
 } // namespace nxdock

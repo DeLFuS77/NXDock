@@ -17,5 +17,7 @@ u64 OwnProgramId();
 
 // Free bytes of a storage, from ncm; -1 when it does not answer.
 s64 StorageFreeSpace(NcmStorageId storage);
+// Free and total bytes of a storage; false when ncm does not answer.
+bool StorageSpace(NcmStorageId storage, s64& free_bytes, s64& total_bytes);
 
 } // namespace nxdock

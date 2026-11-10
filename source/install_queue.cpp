@@ -473,6 +473,7 @@ void InstallQueue::RunJob(InstallJob& job) {
         item.color_key = job.color_key;
         item.nand = job.nand;
         item.size = job.written;
+        item.when = entry.when;
         item.keys = box.Registered();
         if (!item.keys.empty()) {
             m_session.push_back(std::move(item));

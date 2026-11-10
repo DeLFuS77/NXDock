@@ -39,6 +39,7 @@ struct Strings {
     const char *installing_name, *in_queue_count, *preparing, *registering, *not_compressed;
     const char *failed, *cancelled, *thread_one, *clear_done, *download_test, *queue_done_hint, *leave_while_installing;
     const char *err_container, *err_game_running, *err_space_nand;
+    const char *nand_title, *nand_body, *used_fmt, *will_take_fmt, *free_after_fmt, *nand_no_room, *nand_confirm, *space_line_nand, *write_nand, *internal_short, *this_session, *history, *view_switch, *session_empty, *session_empty_hint, *undo_all, *remove_this, *freed_sd, *freed_nand, *undo_bar, *undo_title, *undo_one_title, *undo_note, *undo_confirm, *removing, *removed, *remove_failed, *undo_wait_queue, *more_count, *hist_installed, *hist_total, *hist_avg, *hist_best, *col_date, *col_game, *col_where, *col_size, *col_time, *col_speed, *col_result, *today, *yesterday, *res_installed, *history_empty, *clear_history, *clear_title, *clear_body, *clear_confirm, *details, *close, *col_written;
 };
 
 // Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,

@@ -9,6 +9,7 @@
 #include "config.hpp"
 #include "covers.hpp"
 #include "gfx.hpp"
+#include "history.hpp"
 #include "install_queue.hpp"
 #include "link.hpp"
 #include "speedtest.hpp"
@@ -28,7 +29,8 @@ public:
 
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
-    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow };
+    enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
+                         InstalledView, InstalledRow, DialogBack, DialogButton };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -54,14 +56,25 @@ private:
     void DrawQueue(NVGcontext* vg);
     void UpdateQueue(u64 down, u64 held);
     void DrawQueueStrip(NVGcontext* vg, float y);
-    // The marked files of the page of a game go to the queue.
+    // The marked files of the page of a game go to the queue; to the internal memory, only after
+    // the question (1A).
     void EnqueuePicked();
+    void AddJobs(std::vector<InstallJob> jobs);
+    // The Installed tab (2A, 3A): what this session installed, and the history.
+    void DrawInstalled(NVGcontext* vg);
+    void UpdateInstalled(u64 down, u64 held);
+    void DrawSession(NVGcontext* vg);
+    void DrawHistory(NVGcontext* vg);
+    void AskUndo(std::vector<int> jobs);
+    // A question over everything, with Cancel in focus first.
+    void DrawDialog(NVGcontext* vg);
+    void UpdateDialog(u64 down, u64 held);
+    void ConfirmDialog();
     // Applies what a finished job installed, and the speed test to the downloads.
     void FollowQueue();
     void DrawSettings(NVGcontext* vg);
     void DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h);
     void ActivateSetting(int row);
-    void DrawComingSoon(NVGcontext* vg);
     void DrawTouchFeedback(NVGcontext* vg);
 
     // Repeats a held direction like the HOME menu does.
@@ -98,6 +111,7 @@ private:
     bool m_to_nand = false;
     std::string m_sd_free;
     s64 m_sd_free_bytes = -1;
+    s64 m_nand_free_bytes = -1, m_nand_total_bytes = -1;
     double m_sd_checked = -100;
     std::string m_notice;
     double m_notice_until = 0;
@@ -110,6 +124,21 @@ private:
     unsigned m_queue_version = 0;
     int m_queue_focus = 0;          // row in focus on the queue screen
     double m_quit_asked = -100;     // + while installing asks first
+    // the Installed tab
+    int m_installed_view = 0;       // 0: this session, 1: the history
+    int m_installed_focus = 0;
+    std::vector<HistoryEntry> m_history;
+    unsigned m_history_version = ~0u;
+    // the question shown over everything, if any
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo };
+    struct Dialog {
+        DialogKind kind = DialogKind::None;
+        int focus = 0;                  // 0: Cancel (or Close), 1: the action
+        std::vector<InstallJob> jobs;   // Nand: what goes to the internal memory
+        std::vector<int> undo;          // Undo: the jobs whose install goes; empty: all
+        int entry = -1;                 // HistoryInfo: the row of the history
+    };
+    Dialog m_dialog;
     double m_time = 0;
     double m_next_repeat = 0;
     u64 m_held_dir = 0;

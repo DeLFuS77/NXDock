@@ -21,20 +21,29 @@ u64 OwnProgramId() {
     return id;
 }
 
-s64 StorageFreeSpace(NcmStorageId storage) {
-    s64 free_space = -1;
+bool StorageSpace(NcmStorageId storage, s64& free_bytes, s64& total_bytes) {
+    free_bytes = total_bytes = -1;
     if (R_FAILED(ncmInitialize())) {
-        return -1;
+        return false;
     }
     NcmContentStorage cs{};
+    bool ok = false;
     if (R_SUCCEEDED(ncmOpenContentStorage(&cs, storage))) {
-        if (R_FAILED(ncmContentStorageGetFreeSpaceSize(&cs, &free_space))) {
-            free_space = -1;
-        }
+        ok = R_SUCCEEDED(ncmContentStorageGetFreeSpaceSize(&cs, &free_bytes)) &&
+             R_SUCCEEDED(ncmContentStorageGetTotalSpaceSize(&cs, &total_bytes));
         ncmContentStorageClose(&cs);
     }
     ncmExit();
-    return free_space;
+    if (!ok) {
+        free_bytes = total_bytes = -1;
+    }
+    return ok;
+}
+
+s64 StorageFreeSpace(NcmStorageId storage) {
+    s64 free_bytes, total_bytes;
+    StorageSpace(storage, free_bytes, total_bytes);
+    return free_bytes;
 }
 
 Result RemoveInstalled(const NcmContentMetaKey& key, NcmStorageId storage) {
