@@ -364,7 +364,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -388,6 +388,7 @@ private:
     unsigned m_inventory_sent = ~0u;    // the queue version the last inventory was read at
     std::string m_inventory_url;
     void FollowPush();
+    void FollowQueueAsk(); // a copy of the saves that failed: go on? (18A)
     // emuMMC and 90DNS, read once; the warning comes before the first install of a session
     std::unique_ptr<Safety> m_safety;
     SystemInfo m_sysinfo;           // the firmware and Atmosphère, for the check before installing

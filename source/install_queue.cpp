@@ -261,6 +261,57 @@ std::vector<SessionItem> InstallQueue::Session() {
     return {m_session.rbegin(), m_session.rend()};
 }
 
+void InstallQueue::SetSaveCopy(SaveCopy fn) {
+    std::lock_guard lock(m_mutex);
+    m_save_copy = std::move(fn);
+}
+
+InstallQueue::Ask InstallQueue::PendingAsk() {
+    std::lock_guard lock(m_mutex);
+    return m_ask;
+}
+
+void InstallQueue::Answer(bool go_on) {
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_ask.waiting) return;
+        m_answered = true;
+        m_go_on = go_on;
+    }
+    m_cv.notify_all();
+}
+
+// Before a change to a game: the saves of its users to the library (18A). False when the copy
+// failed and the user chose not to go on.
+bool InstallQueue::CopyBefore(u64 app, int why, u32 to, const std::string& game) {
+    SaveCopy fn;
+    u32 current = 0;
+    {
+        std::lock_guard lock(m_mutex);
+        fn = m_save_copy;
+        auto it = m_installed.find(app);
+        if (it != m_installed.end()) current = it->second.patch;
+    }
+    if (!fn) return true;
+    m_copy_done = 0;
+    m_copy_total = 0;
+    m_copying = true;
+    const std::string error = fn(app, why, to, current, [this](u64 d, u64 t) {
+        m_copy_done = d;
+        m_copy_total = t;
+    });
+    m_copying = false;
+    if (error.empty()) return true;
+    log_write("[NXDock] the saves of %016lX could not be copied\n", app);
+    std::unique_lock lock(m_mutex);
+    m_ask = Ask{true, game, error, why};
+    m_answered = false;
+    m_version++;
+    m_cv.wait(lock, [this] { return m_answered || m_quit; });
+    m_ask = Ask{};
+    return m_answered && m_go_on;
+}
+
 bool InstallQueue::StartUndo(std::vector<int> jobs) {
     {
         std::lock_guard lock(m_mutex);
@@ -350,6 +401,9 @@ InstallQueue::Live InstallQueue::GetLive() {
     l.checked = m_box->NcasChecked();
     l.ncas = m_box->NcasTotal();
     l.saved = m_box->SavedBytes();
+    l.copying_save = m_copying;
+    l.copy_done = m_copy_done;
+    l.copy_total = m_copy_total;
     l.threads = m_box->Threads();
     l.connections = m_connections;
     const double now = Now();
@@ -453,8 +507,13 @@ void InstallQueue::RunJob(InstallJob& job) {
     options.connections = ConnectionsFor(connections, applet);
     options.piece = applet ? 1024 * 1024 : 8 * 1024 * 1024;
     options.ahead = 2;
-    Result rc = 0;
-    {
+    // the saves first, before an update or a repair (18A); a failed copy asks the user
+    bool go_on = true;
+    if (job.kind == CatalogFile::Kind::Update || !job.repair.empty()) {
+        go_on = CopyBefore(job.title_id & ~0x1FFFull, job.repair.empty() ? 0 : 1, job.version, job.game);
+    }
+    Result rc = go_on ? Result(0) : Result(Result_TransferCancelled);
+    if (go_on) {
         // the source of the file, from where it comes
         std::unique_ptr<sphaira::yati::source::Base> holder;
         s64 size = 0;
@@ -596,6 +655,17 @@ void InstallQueue::RunUndo() {
             nand = m_session[*it].nand;
         }
         Result rc = 0;
+        std::string game;
+        {
+            std::lock_guard lock(m_mutex);
+            game = m_session[*it].game;
+        }
+        // the saves first (18A): a removal the user did not want to go on with leaves it as it was
+        if (!keys.empty() && !CopyBefore(keys.front().id & ~0x1FFFull, 2, 0, game)) {
+            std::lock_guard lock(m_mutex);
+            m_session[*it].state = SessionItem::State::Installed;
+            continue;
+        }
         for (const auto& key : keys) {
             const Result r = RemoveInstalled(key, nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
             if (R_FAILED(r) && R_SUCCEEDED(rc)) {

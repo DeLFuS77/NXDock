@@ -323,6 +323,49 @@ bool Vault::StartList(const std::string& url, const std::string& key) {
     return true;
 }
 
+std::string CopySavesBefore(const std::string& url, const std::string& key, unsigned long long app_id, unsigned current,
+                            const std::string& note, const std::function<void(unsigned long long, unsigned long long)>& progress) {
+    const More& m = TrM();
+    // which users have a save of the game
+    std::vector<std::array<unsigned char, 16>> with;
+    FsSaveDataInfoReader reader;
+    if (R_SUCCEEDED(fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User))) {
+        FsSaveDataInfo info[32];
+        while (true) {
+            s64 n = 0;
+            if (R_FAILED(fsSaveDataInfoReaderRead(&reader, info, 32, &n)) || n == 0) break;
+            for (s64 i = 0; i < n; i++) {
+                if (info[i].save_data_type != FsSaveDataType_Account || info[i].application_id != app_id) continue;
+                std::array<unsigned char, 16> uid;
+                std::memcpy(uid.data(), &info[i].uid, 16);
+                with.push_back(uid);
+            }
+        }
+        fsSaveDataInfoReaderClose(&reader);
+    }
+    if (with.empty()) return {};
+    Vault names; // its folder, and the names of the users
+    const auto users = names.Users();
+    const std::string zip_path = std::string(kTmp) + "/before-change.zip";
+    for (const auto& uid : with) {
+        std::string name;
+        for (const auto& u : users) {
+            if (std::memcmp(u.uid, uid.data(), 16) == 0) name = u.name;
+        }
+        Result rc = SaveToZip(uid.data(), app_id, zip_path, [&progress](u64 d, u64 t) { if (progress) progress(d, t); });
+        if (R_FAILED(rc)) {
+            std::remove(zip_path.c_str());
+            return VaultError(m.v_copy_failed, m.v_copy_failed_d, rc);
+        }
+        const std::string target = url + "/install/saves/" + TitleHex(app_id) + "?note=" + Encode(note) + "&version=" + std::to_string(current) +
+                                   "&account=" + Encode(name);
+        const auto r = Upload(target, key, zip_path, [&progress](u64 d, u64 t) { if (progress) progress(d, t); });
+        std::remove(zip_path.c_str());
+        if (r.status != 200) return HttpError(r);
+    }
+    return {};
+}
+
 bool Vault::StartBackup(const std::string& url, const std::string& key, const User& user, unsigned long long app_id, unsigned version,
                         const std::string& note) {
     if (Busy()) return false;

@@ -26,6 +26,13 @@ std::vector<LibrarySave> ParseSaves(const std::string& json);
 // "0100000000010000" from a title id, and back.
 std::string TitleHex(unsigned long long id);
 
+// The saves of every user of the console for a game, copied to the library with a note, before
+// a change to the game (18A): an update, a repair, a removal or going back to an older version.
+// On the caller's thread. Empty when it went well or there was nothing to copy; else the error,
+// packed (errors.hpp). `current` is the version installed now, kept with the copy.
+std::string CopySavesBefore(const std::string& url, const std::string& key, unsigned long long app_id, unsigned current,
+                            const std::string& note, const std::function<void(unsigned long long, unsigned long long)>& progress);
+
 // The vault of saves (6A): the saves of a user of the console, copied to the library app as a
 // zip with a note, and a copy brought back. Restoring always asks first and sends a copy of the
 // save it replaces to the library before.

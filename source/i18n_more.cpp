@@ -319,6 +319,16 @@ constexpr More kEnglish{
     .sd_stopped_t = "Check stopped",
     .sd_stopped = "The test files were deleted; nothing is left behind.",
     .sd_speeds_fmt = "Write %.1f MB/s · read %.1f MB/s · took %s",
+    .sc_row = "Copy the save before updating, repairing or removing",
+    .sc_note_update = "Before updating to %s",
+    .sc_note_repair = "Before repairing",
+    .sc_note_remove = "Before removing",
+    .sc_note_back = "Before going back to %s",
+    .sc_copying = "Copying the save to the library",
+    .sc_ask_title = "The save of %s could not be copied",
+    .sc_ask_body = "Nothing has changed yet. Go on without a copy of the save, or stop here?",
+    .sc_go_on = "Go on without a copy",
+    .sc_go_remove = "Remove without a copy",
 };
 
 constexpr More kSpanish{
@@ -631,6 +641,16 @@ constexpr More kSpanish{
     .sd_stopped_t = "Prueba parada",
     .sd_stopped = "Los archivos de prueba se borraron; no queda nada.",
     .sd_speeds_fmt = "Escritura %.1f MB/s · lectura %.1f MB/s · tardó %s",
+    .sc_row = "Copiar la partida antes de actualizar, reparar o quitar",
+    .sc_note_update = "Antes de actualizar a %s",
+    .sc_note_repair = "Antes de reparar",
+    .sc_note_remove = "Antes de quitar",
+    .sc_note_back = "Antes de volver a %s",
+    .sc_copying = "Copiando la partida a la biblioteca",
+    .sc_ask_title = "No se pudo copiar la partida de %s",
+    .sc_ask_body = "Aún no ha cambiado nada. ¿Sigues sin copia de la partida o lo dejas aquí?",
+    .sc_go_on = "Seguir sin copia",
+    .sc_go_remove = "Quitar sin copia",
 };
 
 constexpr More kFrench{
@@ -943,6 +963,16 @@ constexpr More kFrench{
     .sd_stopped_t = "Vérification arrêtée",
     .sd_stopped = "Les fichiers de test ont été supprimés ; il ne reste rien.",
     .sd_speeds_fmt = "Écriture %.1f Mo/s · lecture %.1f Mo/s · durée %s",
+    .sc_row = "Copier la sauvegarde avant de mettre à jour, réparer ou supprimer",
+    .sc_note_update = "Avant la mise à jour en %s",
+    .sc_note_repair = "Avant la réparation",
+    .sc_note_remove = "Avant la suppression",
+    .sc_note_back = "Avant le retour à %s",
+    .sc_copying = "Copie de la sauvegarde vers la bibliothèque",
+    .sc_ask_title = "La sauvegarde de %s n'a pas pu être copiée",
+    .sc_ask_body = "Rien n'a encore changé. Continuer sans copie de la sauvegarde, ou s'arrêter ici ?",
+    .sc_go_on = "Continuer sans copie",
+    .sc_go_remove = "Supprimer sans copie",
 };
 
 constexpr More kGerman{
@@ -1255,6 +1285,16 @@ constexpr More kGerman{
     .sd_stopped_t = "Prüfung angehalten",
     .sd_stopped = "Die Testdateien wurden gelöscht; nichts bleibt zurück.",
     .sd_speeds_fmt = "Schreiben %.1f MB/s · Lesen %.1f MB/s · Dauer %s",
+    .sc_row = "Spielstand vor Update, Reparatur oder Entfernen kopieren",
+    .sc_note_update = "Vor dem Update auf %s",
+    .sc_note_repair = "Vor der Reparatur",
+    .sc_note_remove = "Vor dem Entfernen",
+    .sc_note_back = "Vor der Rückkehr zu %s",
+    .sc_copying = "Spielstand wird in die Bibliothek kopiert",
+    .sc_ask_title = "Der Spielstand von %s ließ sich nicht kopieren",
+    .sc_ask_body = "Noch hat sich nichts geändert. Ohne Kopie des Spielstands weitermachen oder hier aufhören?",
+    .sc_go_on = "Ohne Kopie weiter",
+    .sc_go_remove = "Ohne Kopie entfernen",
 };
 
 constexpr More kItalian{
@@ -1567,6 +1607,16 @@ constexpr More kItalian{
     .sd_stopped_t = "Controllo fermato",
     .sd_stopped = "I file di prova sono stati eliminati; non resta nulla.",
     .sd_speeds_fmt = "Scrittura %.1f MB/s · lettura %.1f MB/s · durata %s",
+    .sc_row = "Copia il salvataggio prima di aggiornare, riparare o rimuovere",
+    .sc_note_update = "Prima dell'aggiornamento a %s",
+    .sc_note_repair = "Prima della riparazione",
+    .sc_note_remove = "Prima della rimozione",
+    .sc_note_back = "Prima di tornare a %s",
+    .sc_copying = "Copia del salvataggio nella libreria",
+    .sc_ask_title = "Non è stato possibile copiare il salvataggio di %s",
+    .sc_ask_body = "Non è ancora cambiato nulla. Continuare senza copia del salvataggio o fermarsi qui?",
+    .sc_go_on = "Continua senza copia",
+    .sc_go_remove = "Rimuovi senza copia",
 };
 
 constexpr More kPortuguese{
@@ -1879,6 +1929,16 @@ constexpr More kPortuguese{
     .sd_stopped_t = "Verificação parada",
     .sd_stopped = "Os arquivos de teste foram apagados; não sobra nada.",
     .sd_speeds_fmt = "Escrita %.1f MB/s · leitura %.1f MB/s · levou %s",
+    .sc_row = "Copiar o save antes de atualizar, reparar ou remover",
+    .sc_note_update = "Antes de atualizar para %s",
+    .sc_note_repair = "Antes de reparar",
+    .sc_note_remove = "Antes de remover",
+    .sc_note_back = "Antes de voltar para %s",
+    .sc_copying = "Copiando o save para a biblioteca",
+    .sc_ask_title = "Não foi possível copiar o save de %s",
+    .sc_ask_body = "Nada mudou ainda. Continuar sem cópia do save ou parar aqui?",
+    .sc_go_on = "Continuar sem cópia",
+    .sc_go_remove = "Remover sem cópia",
 };
 
 constexpr More kDutch{
@@ -2191,6 +2251,16 @@ constexpr More kDutch{
     .sd_stopped_t = "Controle gestopt",
     .sd_stopped = "De testbestanden zijn verwijderd; er blijft niets achter.",
     .sd_speeds_fmt = "Schrijven %.1f MB/s · lezen %.1f MB/s · duurde %s",
+    .sc_row = "Opslagbestand kopiëren voor bijwerken, repareren of verwijderen",
+    .sc_note_update = "Voor het bijwerken naar %s",
+    .sc_note_repair = "Voor het repareren",
+    .sc_note_remove = "Voor het verwijderen",
+    .sc_note_back = "Voor het teruggaan naar %s",
+    .sc_copying = "Opslagbestand naar de bibliotheek kopiëren",
+    .sc_ask_title = "Het opslagbestand van %s kon niet worden gekopieerd",
+    .sc_ask_body = "Er is nog niets veranderd. Doorgaan zonder kopie van het opslagbestand, of hier stoppen?",
+    .sc_go_on = "Doorgaan zonder kopie",
+    .sc_go_remove = "Verwijderen zonder kopie",
 };
 
 constexpr More kRussian{
@@ -2503,6 +2573,16 @@ constexpr More kRussian{
     .sd_stopped_t = "Проверка остановлена",
     .sd_stopped = "Тестовые файлы удалены; ничего не осталось.",
     .sd_speeds_fmt = "Запись %.1f МБ/с · чтение %.1f МБ/с · заняло %s",
+    .sc_row = "Копировать сохранение перед обновлением, восстановлением или удалением",
+    .sc_note_update = "Перед обновлением до %s",
+    .sc_note_repair = "Перед восстановлением",
+    .sc_note_remove = "Перед удалением",
+    .sc_note_back = "Перед возвратом к %s",
+    .sc_copying = "Сохранение копируется в библиотеку",
+    .sc_ask_title = "Не удалось скопировать сохранение %s",
+    .sc_ask_body = "Пока ничего не изменилось. Продолжить без копии сохранения или остановиться?",
+    .sc_go_on = "Продолжить без копии",
+    .sc_go_remove = "Удалить без копии",
 };
 
 constexpr More kJapanese{
@@ -2815,6 +2895,16 @@ constexpr More kJapanese{
     .sd_stopped_t = "チェックを止めました",
     .sd_stopped = "テスト用ファイルは削除しました。何も残っていません。",
     .sd_speeds_fmt = "書き込み %.1f MB/s · 読み込み %.1f MB/s · %s",
+    .sc_row = "更新・修復・削除の前にセーブデータをコピー",
+    .sc_note_update = "%s への更新前",
+    .sc_note_repair = "修復前",
+    .sc_note_remove = "削除前",
+    .sc_note_back = "%s に戻す前",
+    .sc_copying = "セーブデータをライブラリにコピー中",
+    .sc_ask_title = "%s のセーブデータをコピーできませんでした",
+    .sc_ask_body = "まだ何も変わっていません。セーブデータのコピーなしで続けますか、ここでやめますか？",
+    .sc_go_on = "コピーなしで続ける",
+    .sc_go_remove = "コピーなしで削除",
 };
 
 constexpr More kKorean{
@@ -3127,6 +3217,16 @@ constexpr More kKorean{
     .sd_stopped_t = "검사를 멈췄습니다",
     .sd_stopped = "테스트 파일을 지웠습니다. 남은 것이 없습니다.",
     .sd_speeds_fmt = "쓰기 %.1f MB/s · 읽기 %.1f MB/s · %s 걸림",
+    .sc_row = "업데이트·복구·삭제 전에 세이브 복사",
+    .sc_note_update = "%s 업데이트 전",
+    .sc_note_repair = "복구 전",
+    .sc_note_remove = "삭제 전",
+    .sc_note_back = "%s로 되돌리기 전",
+    .sc_copying = "세이브를 라이브러리로 복사하는 중",
+    .sc_ask_title = "%s의 세이브를 복사하지 못했습니다",
+    .sc_ask_body = "아직 바뀐 것은 없습니다. 세이브 복사 없이 계속할까요, 여기서 멈출까요?",
+    .sc_go_on = "복사 없이 계속",
+    .sc_go_remove = "복사 없이 삭제",
 };
 
 constexpr More kChinese{
@@ -3439,6 +3539,16 @@ constexpr More kChinese{
     .sd_stopped_t = "已停止检查",
     .sd_stopped = "测试文件已删除，没有留下任何东西。",
     .sd_speeds_fmt = "写入 %.1f MB/s · 读取 %.1f MB/s · 用时 %s",
+    .sc_row = "更新、修复或删除前复制存档",
+    .sc_note_update = "更新到 %s 之前",
+    .sc_note_repair = "修复之前",
+    .sc_note_remove = "删除之前",
+    .sc_note_back = "回到 %s 之前",
+    .sc_copying = "正在把存档复制到游戏库",
+    .sc_ask_title = "无法复制 %s 的存档",
+    .sc_ask_body = "目前还没有任何改动。不复制存档继续，还是在这里停止？",
+    .sc_go_on = "不复制，继续",
+    .sc_go_remove = "不复制，删除",
 };
 
 // In the order of LanguageName in i18n.cpp.

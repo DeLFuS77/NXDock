@@ -3,6 +3,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <condition_variable>
 #include <map>
 #include <memory>
@@ -42,6 +43,7 @@ struct InstallJob {
     bool checked = false;     // the check before installing was shown for it (2A)
     bool firmware_ok = false; // the user chose to install it although the firmware is older
     std::vector<NcmContentId> repair; // a repair: these damaged parts go, and only what is missing comes
+    u32 version = 0;          // an update: its version
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took
@@ -80,6 +82,8 @@ public:
         u32 checked = 0;       // NCAs whose SHA-256 matched
         u32 ncas = 0;          // NCAs to install
         u64 saved = 0;         // bytes the console had already (16A)
+        bool copying_save = false; // the saves go to the library first (18A)
+        u64 copy_done = 0, copy_total = 0;
         int threads = -1;      // decompression threads: 3 for NCZBLOCK, 1 solid, 0 none, -1 unknown
         int connections = 0;
         double net_rate = 0, ready_rate = 0, write_rate = 0; // MB/s
@@ -116,6 +120,20 @@ public:
     bool StartUndo(std::vector<int> jobs = {});
     bool Undoing();
 
+    // The copy of the saves before a change to a game (18A), set by the interface: the app id,
+    // why (0 an update, 1 a repair, 2 a removal, 3 going back), the version it goes to, the one
+    // installed now and the progress. Empty when it went well or was not needed.
+    using SaveCopy = std::function<std::string(u64 app, int why, u32 to, u32 current, std::function<void(u64, u64)> progress)>;
+    void SetSaveCopy(SaveCopy fn);
+    // A copy that failed waits for the user: go on without it, or not.
+    struct Ask {
+        bool waiting = false;
+        std::string game, error; // the error packed (errors.hpp)
+        int why = 0;
+    };
+    Ask PendingAsk();
+    void Answer(bool go_on);
+
     // Checks every part of a game on the queue's thread; false while something installs.
     struct VerifyView {
         bool running = false, done = false;
@@ -133,6 +151,7 @@ private:
     void RunJob(InstallJob& job);
     void RunUndo();
     void RunVerify();
+    bool CopyBefore(u64 app, int why, u32 to, const std::string& game);
 
     std::thread m_thread;
     std::mutex m_mutex;
@@ -152,6 +171,11 @@ private:
     Result m_verify_rc = 0;
     VerifyProgress m_verify_progress;
     std::vector<VerifiedContent> m_verify_result;
+    SaveCopy m_save_copy;
+    Ask m_ask;
+    bool m_answered = false, m_go_on = false;
+    std::atomic<bool> m_copying{false};
+    std::atomic<u64> m_copy_done{0}, m_copy_total{0};
 
     // the running job
     sphaira::ui::ProgressBox* m_box = nullptr;

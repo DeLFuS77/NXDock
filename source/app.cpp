@@ -180,7 +180,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowSaveCopy, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -318,6 +318,22 @@ bool App::Init() {
     InitRumble();
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
+    // the saves to the library before an update, a repair or a removal (18A), when it is on and
+    // a library is linked; on the queue's thread
+    m_queue->SetSaveCopy([this](u64 app, int why, u32 to, u32 current, std::function<void(u64, u64)> progress) -> std::string {
+        if (!m_ui.save_copy) return {};
+        const Config c = m_link.CurrentConfig();
+        if (!c.Linked()) return {};
+        const More& m = TrM();
+        char note[160];
+        switch (why) {
+            case 0: std::snprintf(note, sizeof(note), m.sc_note_update, ("v" + std::to_string(to)).c_str()); break;
+            case 1: std::snprintf(note, sizeof(note), "%s", m.sc_note_repair); break;
+            case 3: std::snprintf(note, sizeof(note), m.sc_note_back, ("v" + std::to_string(to)).c_str()); break;
+            default: std::snprintf(note, sizeof(note), "%s", m.sc_note_remove); break;
+        }
+        return CopySavesBefore(c.url, c.key, app, current, note, progress);
+    });
     m_push = std::make_unique<Push>();
     m_safety = std::make_unique<Safety>();
     m_sysinfo = ReadSystemInfo();
@@ -391,6 +407,10 @@ void App::ActivateSetting(int row) {
             break;
         case kRowScreenOff:
             m_ui.screen_off_auto = !m_ui.screen_off_auto;
+            m_ui.Save();
+            break;
+        case kRowSaveCopy:
+            m_ui.save_copy = !m_ui.save_copy;
             m_ui.Save();
             break;
         case kRowAnim:
@@ -880,6 +900,7 @@ bool App::Frame() {
     FollowFinish();
     FollowUsb();
     FollowPush();
+    FollowQueueAsk();
     CheckSdSpace();
     CheckBattery();
 
@@ -2139,6 +2160,7 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
         case CatalogFile::Kind::Update: job.label = std::string(s.update_word) + " v" + std::to_string(f.version); break;
         case CatalogFile::Kind::Dlc: job.label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
     }
+    job.version = f.version;
     job.cover = g.cover;
     job.color_key = g.key;
     job.file_id = f.id;
@@ -2223,6 +2245,17 @@ bool App::RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>&
         out.push_back(std::move(job));
     }
     return all && !out.empty();
+}
+
+void App::FollowQueueAsk() {
+    if (!m_queue || m_dialog.kind != DialogKind::None || m_wizard) return;
+    const auto ask = m_queue->PendingAsk();
+    if (!ask.waiting) return;
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::SaveCopyAsk;
+    m_dialog.text = ask.game;
+    m_dialog.from = ask.error;
+    m_dialog.entry = ask.why;
 }
 
 void App::FollowPush() {
@@ -2434,7 +2467,9 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     // the four stages, as figures: network, decompress, write, check
     char figures[200];
     const float frac = JobFraction(live);
-    if (live.phase >= 3) {
+    if (live.copying_save) {
+        std::snprintf(figures, sizeof(figures), "%s…", TrM().sc_copying);
+    } else if (live.phase >= 3) {
         std::snprintf(figures, sizeof(figures), "%s…", s.registering);
     } else if (live.total == 0) {
         std::snprintf(figures, sizeof(figures), "%s… · %s %.0f MB/s", s.preparing, s.network, live.net_rate);
@@ -2492,7 +2527,9 @@ void App::DrawQueue(NVGcontext* vg) {
         std::snprintf(pct, sizeof(pct), "%d %%", int(frac * 100));
         ui::Text(vg, px + pw - 24, py + 40, 26, t.text, pct, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         char eta[160];
-        if (live.phase >= 3) {
+        if (live.copying_save) {
+            std::snprintf(eta, sizeof(eta), "%s… %s", TrM().sc_copying, live.copy_total ? (SizeText(live.copy_done) + " / " + SizeText(live.copy_total)).c_str() : "");
+        } else if (live.phase >= 3) {
             std::snprintf(eta, sizeof(eta), "%s…", s.registering);
         } else if (live.total == 0) {
             std::snprintf(eta, sizeof(eta), "%s… · %s", s.preparing, Duration(live.elapsed).c_str());
@@ -2698,6 +2735,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.wiz_row, s.wiz_repeat, true},
         {TrM().so_auto_row, m_ui.screen_off_auto ? s.yes_word : s.no_word, m_ui.screen_off_auto},
         {TrM().anim_row, m_ui.anim == 2 ? TrM().anim_none : m_ui.anim == 1 ? TrM().anim_soft : TrM().anim_full, m_ui.anim != 2},
+        {TrM().sc_row, m_ui.save_copy ? s.yes_word : s.no_word, m_ui.save_copy},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
@@ -3522,6 +3560,16 @@ void App::DrawDialog(NVGcontext* vg) {
             title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             error = m_dialog.from;
             break;
+        case DialogKind::SaveCopyAsk: {
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.sc_ask_title, m_dialog.text.c_str());
+            title = text;
+            body = m.sc_ask_body;
+            error = m_dialog.from;
+            primary = m_dialog.entry == 2 ? m.sc_go_remove : m.sc_go_on;
+            break;
+        }
         case DialogKind::MtpNand: {
             const More& m = TrM();
             title = m.nand_q_title;
@@ -3813,7 +3861,9 @@ void App::UpdateDialog(u64 down, u64 held) {
     }
     const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
     if (declined) {
-        if (m_dialog.kind == DialogKind::Push) {
+        if (m_dialog.kind == DialogKind::SaveCopyAsk) {
+            m_queue->Answer(false);
+        } else if (m_dialog.kind == DialogKind::Push) {
             for (const auto& id : m_dialog.push) m_push->Answer(id, false);
         } else if (m_dialog.kind == DialogKind::Share) {
             m_prefs.share_installed = 0;
@@ -3847,6 +3897,9 @@ void App::ConfirmDialog() {
         }
         case DialogKind::UpdateAll:
             AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::SaveCopyAsk:
+            m_queue->Answer(true);
             break;
         case DialogKind::Where:
             for (auto& j : m_dialog.jobs) j.nand = false;

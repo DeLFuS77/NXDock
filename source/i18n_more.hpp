@@ -70,6 +70,9 @@ struct More {
         *sd_left, *sd_keep_on, *sd_free_fmt, *sd_key_free, *sd_key_written, *sd_key_ok, *sd_key_bad, *sd_good_t, *sd_good_d,
         *sd_fake_t, *sd_fake_d, *sd_bad_t, *sd_bad_d, *sd_full_t, *sd_full_d, *sd_failed_t, *sd_failed_d, *sd_stopped_t,
         *sd_stopped, *sd_speeds_fmt;
+    // the saves copied before a change to a game (phase 18)
+    const char *sc_row, *sc_note_update, *sc_note_repair, *sc_note_remove, *sc_note_back, *sc_copying, *sc_ask_title, *sc_ask_body,
+        *sc_go_on, *sc_go_remove;
 };
 
 const More& TrM();
