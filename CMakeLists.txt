@@ -130,6 +130,8 @@ add_executable(nxdock
     source/more_vault.cpp
     source/more_space.cpp
     source/more_shop.cpp
+    source/more_mods.cpp
+    source/mods.cpp
     source/shop.cpp
     source/shop_load.cpp
     source/space.cpp

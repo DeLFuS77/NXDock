@@ -14,6 +14,7 @@
 #include "install_queue.hpp"
 #include "link.hpp"
 #include "precheck.hpp"
+#include "mods.hpp"
 #include "shop.hpp"
 #include "space.hpp"
 #include "vault.hpp"
@@ -44,7 +45,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -156,6 +157,25 @@ private:
     int m_shop_focus = 0, m_shop_opening = -1;
     bool m_shop_active = false;   // the library shows a shop
     std::string m_shop_name, m_shop_key;
+    // cheats and mods (10A, more_mods.cpp)
+    void OpenMods();
+    void OpenModsGame(unsigned long long app_id, const std::string& name);
+    void DrawMods(NVGcontext* vg);
+    void UpdateMods(u64 down, u64 held);
+    struct Cheats {
+        ~Cheats();
+        std::thread thread;
+        std::mutex mutex;
+        bool done = false, found = false;
+        std::vector<std::string> names;
+        std::string build, text;
+    };
+    Cheats m_cheats;
+    std::vector<ModPackage> m_mods;
+    unsigned long long m_mods_app = 0;
+    std::string m_mods_name;
+    unsigned m_mods_version = 0;
+    int m_mods_game = -1, m_mods_pick = 0, m_mods_side = 0, m_mods_focus = 0;
     // saver mode: dark after a minute without input while installing
     void DrawSaver(NVGcontext* vg);
     double m_last_input = 0;

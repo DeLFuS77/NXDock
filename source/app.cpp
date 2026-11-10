@@ -669,6 +669,16 @@ void App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::MoreSide:
                 break;
+            case HitKind::ModRow: {
+                const int side = it->index >= 100 ? 1 : 0, row = it->index >= 100 ? it->index - 100 : 0;
+                if (m_mods_side == side && m_mods_focus == row) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_mods_side = side;
+                    m_mods_focus = row;
+                }
+                break;
+            }
             case HitKind::ShopRow:
                 if (m_shop_focus == it->index) {
                     down |= HidNpadButton_A;
@@ -684,6 +694,11 @@ void App::Tap(float x, float y, u64& down) {
                 }
                 break;
             case HitKind::PickRow:
+                if (m_more == MoreScreen::Mods) {
+                    if (m_mods_pick == it->index) down |= HidNpadButton_A;
+                    else m_mods_pick = it->index;
+                    break;
+                }
                 if (m_pick_focus == it->index) {
                     down |= m_pick_kind == 0 ? HidNpadButton_Y : HidNpadButton_A;
                 } else {

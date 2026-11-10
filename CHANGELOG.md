@@ -150,3 +150,10 @@
   (its name in the top bar; B goes back to the library app). A user and a
   password are typed on the console. An encrypted index is told apart and
   explained: only Tinfoil has its key.
+- Cheats and mods (More › Cheats and mods): for a game installed, the
+  cheats the library app has for the version on the console, and the .zip
+  mod packages of sdmc:/switch/NXDock/mods/<title ID>/ (or any zip in mods/
+  with files for it), each with a switch. Mods go to
+  atmosphere/contents/<title ID>; what each package writes is written down
+  and removing takes away only that. A file of another mod, or one that was
+  there before, is never written over.
