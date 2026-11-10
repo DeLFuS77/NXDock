@@ -1,0 +1,68 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem!
+
+        **Never attach or paste `prod.keys`, `title.keys`, the key of a paired console or any console key**: they are
+        not needed and must not be shared. Remove keys and passwords from logs and screenshots before posting.
+  - type: input
+    id: version
+    attributes:
+      label: NXDock version
+      description: Shown in Settings, e.g. 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Installing from
+      options:
+        - Switch Library Manager Web (over the network)
+        - SD card or USB disk
+        - Computer over MTP
+        - Computer over USB (NS-USBloader)
+        - A shop (Tinfoil or Ownfoil kind)
+        - Not about installing
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Console
+      description: Firmware, Atmosphère version, and SD card or internal memory, e.g. 20.1.0, Atmosphère 1.9.0, SD card
+  - type: input
+    id: file
+    attributes:
+      label: File
+      description: The format (NSP, NSZ, XCI, XCZ) and whether it is a game, an update or a DLC. No game names needed.
+  - type: input
+    id: app
+    attributes:
+      label: Switch Library Manager Web version
+      description: When installing from the library app, its version (bottom of every page)
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect and what happened instead? Add the code NXDock shows under the error.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        The end of `sdmc:/switch/NXDock/install.log`, and the lines of the install in `sdmc:/switch/NXDock/history.tsv`.
+        Check that they contain no keys.
+      render: text
+  - type: checkboxes
+    id: keys
+    attributes:
+      label: Keys
+      options:
+        - label: I did not include any console keys in this report
+          required: true

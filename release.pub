@@ -1,0 +1,2 @@
+# The public keys the releases of NXDock are signed with (minisign), written by
+# tools/releasekey. Check a download with: minisign -Vm SHA256SUMS.txt -p release.pub

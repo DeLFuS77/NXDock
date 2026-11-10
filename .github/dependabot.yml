@@ -1,0 +1,21 @@
+# Weekly dependency updates, minor and patch versions grouped in one pull request per ecosystem to
+# keep the noise low. The libraries of the console come from devkitPro's container and the
+# revisions CMakeLists.txt fetches, which are updated by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # the tools that sign the releases
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]

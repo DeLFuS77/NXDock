@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/DeLFuS77/NXDock#readme
+    about: Requirements, installing NXDock and pairing it with the library app are explained in the README.
+  - name: Discord
+    url: https://discord.gg/acQVZSEBR
+    about: Questions, help and chat with other users, shared with Switch Library Manager Web and NXPress.

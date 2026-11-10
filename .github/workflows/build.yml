@@ -1,20 +1,170 @@
-name: build
+name: Build
+
+# Builds NXDock.nro with devkitPro on every push and pull request, inside the official
+# devkitpro/devkita64 container, with the same scripts as on a computer (tools/build.sh and
+# tools/test.sh), and runs the tests that need no console and those of the release tools. The
+# program is kept as an artifact of the run; for a version tag (1.2.3), the release is made with
+# it and the matching section of CHANGELOG.md, as a draft: the maintainer signs it on their own
+# computer and publishes it (go run ./tools/releasesign <tag>), so the key of the releases is
+# never on GitHub. Once published, announce.yml sends the notes to Discord.
 
 on:
   push:
+    branches:
+      - main
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  nro:
-    runs-on: ubuntu-latest
-    container: devkitpro/devkita64:latest
+  build:
+    name: NXDock.nro
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Build
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # a version tag must be the version CMakeLists.txt gives NXDock, the one it shows
+      - name: Version
         run: |
-          /opt/devkitpro/portlibs/switch/bin/aarch64-none-elf-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j"$(nproc)"
-      - uses: actions/upload-artifact@v4
+          version=$(sed -n 's/^project(NXDock VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ -z "${version}" ]; then
+            echo "No version in CMakeLists.txt" >&2
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "${version}" ]; then
+            echo "The tag ${GITHUB_REF_NAME} is not the version of CMakeLists.txt (${version})" >&2
+            exit 1
+          fi
+          echo "VERSION=${version}" >> "${GITHUB_ENV}"
+
+      # devkitpro/devkita64 through Docker, as tools/build.sh runs it on a computer
+      - name: Build
+        run: sh tools/build.sh
+
+      - name: Test
+        run: sh tools/test.sh
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # the tools that sign the releases on the computer of the maintainer
+      - name: Test the release tools
+        run: |
+          go vet ./tools/...
+          go test ./tools/...
+
+      # NXDock.nro on its own, and a zip with it in its folder, to unpack at the root of the SD card
+      - name: Package
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" build
+          mkdir -p dist sd/switch/NXDock
+          cp build/NXDock.nro dist/NXDock.nro
+          cp build/NXDock.nro sd/switch/NXDock/NXDock.nro
+          (cd sd && zip -r -X "../dist/NXDock-sd.zip" switch)
+          ls -l dist
+
+      - name: Keep the program
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: NXDock
-          path: build/NXDock.nro
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      # signed provenance of the files (Sigstore), checked with "gh attestation verify"
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Extract release notes
+        run: |
+          # the section between "## <tag>" and the next "## " heading
+          awk -v version="${GITHUB_REF_NAME}" '
+            $0 == "## " version { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "No section for ${GITHUB_REF_NAME} in CHANGELOG.md" >&2
+            exit 1
+          fi
+
+      - name: Get the program
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: NXDock
+          path: dist
+
+      # NXDock.nro keeps its name, so a new version goes in place of the old one on the SD card; the
+      # zip is named after the version
+      - name: Name them after the version
+        run: |
+          cd dist
+          mv NXDock-sd.zip "NXDock-${GITHUB_REF_NAME}-sd.zip"
+          sha256sum NXDock.nro NXDock-*.zip > SHA256SUMS.txt
+          ls -l
+
+      # proof that each file was built by this workflow from this tag, which releasesign checks
+      # before the maintainer signs the checksums
+      - name: Attest the files
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/NXDock.nro
+            dist/NXDock-*.zip
+
+      - name: Keep the provenance with the release
+        run: cp "${{ steps.attest.outputs.bundle-path }}" "dist/NXDock-${GITHUB_REF_NAME}.intoto.jsonl"
+
+      - name: Add how to download
+        run: |
+          cat >> release-notes.md <<EOF
+
+          ### Downloads
+
+          | File | What it is |
+          |---|---|
+          | \`NXDock-${GITHUB_REF_NAME}-sd.zip\` | Unpack it at the root of the SD card: it puts \`switch/NXDock/NXDock.nro\` in place |
+          | \`NXDock.nro\` | The program on its own, for \`sdmc:/switch/NXDock/\` |
+
+          Open it from the Homebrew Menu. It needs a console that runs homebrew (Atmosphère) and, to install
+          from your library, [Switch Library Manager Web](https://github.com/DeLFuS77/switch-library-manager-web)
+          with "Install over the network" turned on. For your own games and consoles only.
+          \`SHA256SUMS.txt\` has the checksums of the files, and
+          \`gh attestation verify <file> -R DeLFuS77/NXDock\` proves a file was built here.
+          \`SHA256SUMS.txt.minisig\` is their signature with the key of NXDock:
+          \`minisign -Vm SHA256SUMS.txt -p release.pub\`, with \`release.pub\` of the repository.
+          EOF
+
+      # a draft: nobody sees it until the maintainer signs and publishes it
+      - name: Create the draft of the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --draft \
+            --title "NXDock ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            dist/NXDock.nro dist/NXDock-*.zip dist/NXDock-*.intoto.jsonl dist/SHA256SUMS.txt
+          echo "Sign and publish it on your computer: go run ./tools/releasesign ${GITHUB_REF_NAME}"
