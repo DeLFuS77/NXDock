@@ -125,11 +125,16 @@ public:
     // installed now and the progress. Empty when it went well or was not needed.
     using SaveCopy = std::function<std::string(u64 app, int why, u32 to, u32 current, std::function<void(u64, u64)> progress)>;
     void SetSaveCopy(SaveCopy fn);
+    // Before an update (19A): what of the cheats and mods stops working with the new version, as
+    // text for the question; empty when nothing does (or it cannot be told).
+    using ModsCheck = std::function<std::string(u64 app, u32 from, u32 to)>;
+    void SetModsCheck(ModsCheck fn);
     // A copy that failed waits for the user: go on without it, or not.
     struct Ask {
         bool waiting = false;
-        std::string game, error; // the error packed (errors.hpp)
-        int why = 0;
+        std::string game, error; // the error packed (errors.hpp); for the mods, what stops working
+        int why = 0;             // as SaveCopy's; 10: cheats and mods that stop working
+        u64 app = 0;
     };
     Ask PendingAsk();
     void Answer(bool go_on);
@@ -152,6 +157,8 @@ private:
     void RunUndo();
     void RunVerify();
     bool CopyBefore(u64 app, int why, u32 to, const std::string& game);
+    bool AskAbout(const Ask& ask);
+    bool ModsBefore(u64 app, u32 to, const std::string& game);
 
     std::thread m_thread;
     std::mutex m_mutex;
@@ -172,6 +179,7 @@ private:
     VerifyProgress m_verify_progress;
     std::vector<VerifiedContent> m_verify_result;
     SaveCopy m_save_copy;
+    ModsCheck m_mods_check;
     Ask m_ask;
     bool m_answered = false, m_go_on = false;
     std::atomic<bool> m_copying{false};

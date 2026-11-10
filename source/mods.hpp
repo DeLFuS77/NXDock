@@ -36,6 +36,20 @@ bool InstallMod(const ModPackage& pkg, unsigned long long title_id, const std::s
 // Takes away what the package put, and the folders left empty.
 bool RemoveMod(const ModPackage& pkg, unsigned long long title_id, const std::string& contents_dir, const std::string& state_dir);
 
+// What stops working when a game goes from one build to another (19A): its cheat files when none
+// is for the new build, IPS patches of exefs_patches made for the old build, and the exefs files
+// of its mods (made for one version). `atmosphere` is sdmc:/atmosphere (a folder on the
+// computer in the tests). Builds are 16 (or more) hexadecimal digits; an empty new build tells
+// nothing, an empty old one counts what is not for the new.
+struct ModsAtRisk {
+    int cheats = 0;     // cheat files, none of them for the new build
+    int patches = 0;    // exefs_patches/*/<old build>.ips
+    bool exefs = false; // contents/<id>/exefs has files
+    bool Any() const { return cheats || patches || exefs; }
+};
+ModsAtRisk ModsAtRiskFor(const std::string& atmosphere, unsigned long long title_id, const std::string& old_build,
+                         const std::string& new_build);
+
 // sdmc:/switch/NXDock/mods and its state folder, and sdmc:/atmosphere/contents/<id>.
 std::string ModsDir();
 std::string ModsStateDir();

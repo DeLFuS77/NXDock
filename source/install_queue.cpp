@@ -261,6 +261,45 @@ std::vector<SessionItem> InstallQueue::Session() {
     return {m_session.rbegin(), m_session.rend()};
 }
 
+void InstallQueue::SetModsCheck(ModsCheck fn) {
+    std::lock_guard lock(m_mutex);
+    m_mods_check = std::move(fn);
+}
+
+// A question for the user, from the queue's thread: true to go on.
+bool InstallQueue::AskAbout(const Ask& ask) {
+    std::unique_lock lock(m_mutex);
+    m_ask = ask;
+    m_ask.waiting = true;
+    m_answered = false;
+    m_version++;
+    m_cv.wait(lock, [this] { return m_answered || m_quit; });
+    m_ask = Ask{};
+    return m_answered && m_go_on;
+}
+
+// Before an update: cheats and mods that would stop working are said first (19A).
+bool InstallQueue::ModsBefore(u64 app, u32 to, const std::string& game) {
+    ModsCheck fn;
+    u32 from = 0;
+    {
+        std::lock_guard lock(m_mutex);
+        fn = m_mods_check;
+        auto it = m_installed.find(app);
+        if (it == m_installed.end() || !it->second.base) return true; // not installed: nothing to break
+        from = it->second.patch;
+    }
+    if (!fn) return true;
+    const std::string what = fn(app, from, to);
+    if (what.empty()) return true;
+    Ask ask;
+    ask.game = game;
+    ask.error = what;
+    ask.why = 10;
+    ask.app = app;
+    return AskAbout(ask);
+}
+
 void InstallQueue::SetSaveCopy(SaveCopy fn) {
     std::lock_guard lock(m_mutex);
     m_save_copy = std::move(fn);
@@ -303,13 +342,12 @@ bool InstallQueue::CopyBefore(u64 app, int why, u32 to, const std::string& game)
     m_copying = false;
     if (error.empty()) return true;
     log_write("[NXDock] the saves of %016lX could not be copied\n", app);
-    std::unique_lock lock(m_mutex);
-    m_ask = Ask{true, game, error, why};
-    m_answered = false;
-    m_version++;
-    m_cv.wait(lock, [this] { return m_answered || m_quit; });
-    m_ask = Ask{};
-    return m_answered && m_go_on;
+    Ask ask;
+    ask.game = game;
+    ask.error = error;
+    ask.why = why;
+    ask.app = app;
+    return AskAbout(ask);
 }
 
 bool InstallQueue::StartUndo(std::vector<int> jobs) {
@@ -509,7 +547,10 @@ void InstallQueue::RunJob(InstallJob& job) {
     options.ahead = 2;
     // the saves first, before an update or a repair (18A); a failed copy asks the user
     bool go_on = true;
-    if (job.kind == CatalogFile::Kind::Update || !job.repair.empty()) {
+    if (job.kind == CatalogFile::Kind::Update && job.repair.empty()) {
+        go_on = ModsBefore(job.title_id & ~0x1FFFull, job.version, job.game);
+    }
+    if (go_on && (job.kind == CatalogFile::Kind::Update || !job.repair.empty())) {
         go_on = CopyBefore(job.title_id & ~0x1FFFull, job.repair.empty() ? 0 : 1, job.version, job.game);
     }
     Result rc = go_on ? Result(0) : Result(Result_TransferCancelled);

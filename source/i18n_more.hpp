@@ -73,6 +73,8 @@ struct More {
     // the saves copied before a change to a game (phase 18)
     const char *sc_row, *sc_note_update, *sc_note_repair, *sc_note_remove, *sc_note_back, *sc_copying, *sc_ask_title, *sc_ask_body,
         *sc_go_on, *sc_go_remove;
+    // cheats and mods that an update breaks (phase 19)
+    const char *mr_title, *mr_cheats_fmt, *mr_patches_fmt, *mr_exefs, *mr_body, *mr_go, *mr_not_now;
 };
 
 const More& TrM();

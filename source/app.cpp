@@ -7,6 +7,9 @@
 #include "usb_disks.hpp"
 #include "usb_tinfoil.hpp"
 #include "i18n_more.hpp"
+#include "mods.hpp"
+#include "http.hpp"
+#include <yyjson.h>
 
 #include <algorithm>
 #include <cmath>
@@ -318,6 +321,41 @@ bool App::Init() {
     InitRumble();
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
+    // cheats and mods that an update would break (19A): the builds of both versions, from the
+    // library app (its database, or the file of the update), against what is on the SD card
+    m_queue->SetModsCheck([this](u64 app, u32 from, u32 to) -> std::string {
+        const Config c = m_link.CurrentConfig();
+        if (!c.Linked()) return {};
+        const auto build = [&c, app](u32 version) -> std::string {
+            char hex[24];
+            std::snprintf(hex, sizeof(hex), "%016llX", (unsigned long long)app);
+            const auto r = http::Get(c.url + "/install/cheats/" + hex + "?version=" + std::to_string(version), c.key, 15000);
+            if (r.status != 200 && r.status != 404) return {};
+            yyjson_doc* doc = yyjson_read(r.body.data(), r.body.size(), 0);
+            if (!doc) return {};
+            const char* b = yyjson_get_str(yyjson_obj_get(yyjson_doc_get_root(doc), "build_id"));
+            std::string out = b ? b : "";
+            yyjson_doc_free(doc);
+            return out;
+        };
+        const std::string to_build = build(to);
+        if (to_build.empty()) return {};
+        const auto risk = ModsAtRiskFor("sdmc:/atmosphere", app, build(from), to_build);
+        if (!risk.Any()) return {};
+        const More& m = TrM();
+        std::string what;
+        char line[200];
+        if (risk.cheats) {
+            std::snprintf(line, sizeof(line), m.mr_cheats_fmt, risk.cheats);
+            what += std::string("\xE2\x80\xA2 ") + line + "\n";
+        }
+        if (risk.patches) {
+            std::snprintf(line, sizeof(line), m.mr_patches_fmt, risk.patches);
+            what += std::string("\xE2\x80\xA2 ") + line + "\n";
+        }
+        if (risk.exefs) what += std::string("\xE2\x80\xA2 ") + m.mr_exefs + "\n";
+        return what;
+    });
     // the saves to the library before an update, a repair or a removal (18A), when it is on and
     // a library is linked; on the queue's thread
     m_queue->SetSaveCopy([this](u64 app, int why, u32 to, u32 current, std::function<void(u64, u64)> progress) -> std::string {
@@ -2249,13 +2287,31 @@ bool App::RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>&
 
 void App::FollowQueueAsk() {
     if (!m_queue || m_dialog.kind != DialogKind::None || m_wizard) return;
+    if (m_mods_after) {
+        // the update asked about ended: Cheats and mods of the game, for the new version (19A)
+        bool pending = false;
+        for (const auto& j : m_queue->Jobs()) {
+            if ((j.title_id & ~0x1FFFull) == m_mods_after &&
+                (j.state == InstallJob::State::Waiting || j.state == InstallJob::State::Running)) {
+                pending = true;
+            }
+        }
+        if (!pending) {
+            const unsigned long long app = m_mods_after;
+            m_mods_after = 0;
+            OpenMods();
+            OpenModsGame(app, m_mods_after_name);
+            m_tab = Tab::More;
+        }
+    }
     const auto ask = m_queue->PendingAsk();
     if (!ask.waiting) return;
     m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::SaveCopyAsk;
+    m_dialog.kind = ask.why == 10 ? DialogKind::ModsAsk : DialogKind::SaveCopyAsk;
     m_dialog.text = ask.game;
     m_dialog.from = ask.error;
     m_dialog.entry = ask.why;
+    m_dialog.ids = {ask.app};
 }
 
 void App::FollowPush() {
@@ -3560,6 +3616,14 @@ void App::DrawDialog(NVGcontext* vg) {
             title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             error = m_dialog.from;
             break;
+        case DialogKind::ModsAsk: {
+            const More& m = TrM();
+            title = m.mr_title;
+            body = m_dialog.text + "\n" + m_dialog.from + "\n" + m.mr_body;
+            primary = m.mr_go;
+            cancel_label = m.mr_not_now;
+            break;
+        }
         case DialogKind::SaveCopyAsk: {
             const More& m = TrM();
             char text[300];
@@ -3861,7 +3925,7 @@ void App::UpdateDialog(u64 down, u64 held) {
     }
     const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
     if (declined) {
-        if (m_dialog.kind == DialogKind::SaveCopyAsk) {
+        if (m_dialog.kind == DialogKind::SaveCopyAsk || m_dialog.kind == DialogKind::ModsAsk) {
             m_queue->Answer(false);
         } else if (m_dialog.kind == DialogKind::Push) {
             for (const auto& id : m_dialog.push) m_push->Answer(id, false);
@@ -3899,6 +3963,12 @@ void App::ConfirmDialog() {
             AddJobs(std::move(m_dialog.jobs));
             break;
         case DialogKind::SaveCopyAsk:
+            m_queue->Answer(true);
+            break;
+        case DialogKind::ModsAsk:
+            // the update goes on; when it ends, Cheats and mods opens for the new version
+            m_mods_after = m_dialog.ids.empty() ? 0 : m_dialog.ids[0];
+            m_mods_after_name = m_dialog.text;
             m_queue->Answer(true);
             break;
         case DialogKind::Where:

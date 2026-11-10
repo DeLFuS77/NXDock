@@ -103,6 +103,67 @@ std::string ModsStateDir() {
     return "sdmc:/switch/NXDock/mods/.installed";
 }
 
+namespace {
+
+std::string Build16(const std::string& build) {
+    std::string out;
+    for (char c : build) {
+        if (std::isxdigit((unsigned char)c)) out += char(std::toupper((unsigned char)c));
+        if (out.size() == 16) break;
+    }
+    return out;
+}
+
+std::vector<std::string> Names(const std::string& dir) {
+    std::vector<std::string> out;
+    DIR* d = opendir(dir.c_str());
+    if (!d) return out;
+    while (dirent* e = readdir(d)) {
+        if (e->d_name[0] != '.') out.push_back(e->d_name);
+    }
+    closedir(d);
+    return out;
+}
+
+bool EndsWithNoCase(const std::string& s, const char* end) {
+    const size_t n = std::strlen(end);
+    if (s.size() < n) return false;
+    for (size_t i = 0; i < n; i++) {
+        if (std::tolower((unsigned char)s[s.size() - n + i]) != std::tolower((unsigned char)end[i])) return false;
+    }
+    return true;
+}
+
+} // namespace
+
+ModsAtRisk ModsAtRiskFor(const std::string& atmosphere, unsigned long long title_id, const std::string& old_build,
+                         const std::string& new_build) {
+    ModsAtRisk r;
+    const std::string to = Build16(new_build), from = Build16(old_build);
+    if (to.size() != 16 || (!from.empty() && from == to)) return r;
+    const std::string contents = atmosphere + "/contents/" + Hex(title_id);
+    // cheats: the files are named by build; one for the new build means it was looked after
+    int cheats = 0;
+    bool has_new = false;
+    for (const auto& name : Names(contents + "/cheats")) {
+        if (!EndsWithNoCase(name, ".txt")) continue;
+        if (Build16(name.substr(0, name.size() - 4)) == to) has_new = true;
+        cheats++;
+    }
+    r.cheats = has_new ? 0 : cheats;
+    // IPS patches, named by the build they patch
+    if (from.size() == 16) {
+        for (const auto& folder : Names(atmosphere + "/exefs_patches")) {
+            for (const auto& name : Names(atmosphere + "/exefs_patches/" + folder)) {
+                if (EndsWithNoCase(name, ".ips") && Build16(name) == from) r.patches++;
+            }
+        }
+    }
+    // files that replace the program's own
+    r.exefs = !Names(contents + "/exefs").empty();
+    return r;
+}
+
 std::string ContentsDir(unsigned long long title_id) {
     return "sdmc:/atmosphere/contents/" + Hex(title_id);
 }

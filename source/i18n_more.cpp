@@ -329,6 +329,13 @@ constexpr More kEnglish{
     .sc_ask_body = "Nothing has changed yet. Go on without a copy of the save, or stop here?",
     .sc_go_on = "Go on without a copy",
     .sc_go_remove = "Remove without a copy",
+    .mr_title = "Cheats and mods will stop working",
+    .mr_cheats_fmt = "%d cheat files are for the version installed now",
+    .mr_patches_fmt = "%d IPS patches (exefs_patches) are for the version installed now",
+    .mr_exefs = "Its exefs mods were made for the version installed now",
+    .mr_body = "The new version is another build of the game. After updating, NXDock opens Cheats and mods to look for the ones of the new version.",
+    .mr_go = "Update, then look for new ones",
+    .mr_not_now = "Do not update",
 };
 
 constexpr More kSpanish{
@@ -651,6 +658,13 @@ constexpr More kSpanish{
     .sc_ask_body = "Aún no ha cambiado nada. ¿Sigues sin copia de la partida o lo dejas aquí?",
     .sc_go_on = "Seguir sin copia",
     .sc_go_remove = "Quitar sin copia",
+    .mr_title = "Los trucos y mods dejarán de funcionar",
+    .mr_cheats_fmt = "%d archivos de trucos son de la versión instalada ahora",
+    .mr_patches_fmt = "%d parches IPS (exefs_patches) son de la versión instalada ahora",
+    .mr_exefs = "Sus mods de exefs se hicieron para la versión instalada ahora",
+    .mr_body = "La versión nueva es otra compilación del juego. Al acabar de actualizar, NXDock abre Trucos y mods para buscar los de la versión nueva.",
+    .mr_go = "Actualizar y buscar los nuevos",
+    .mr_not_now = "No actualizar",
 };
 
 constexpr More kFrench{
@@ -973,6 +987,13 @@ constexpr More kFrench{
     .sc_ask_body = "Rien n'a encore changé. Continuer sans copie de la sauvegarde, ou s'arrêter ici ?",
     .sc_go_on = "Continuer sans copie",
     .sc_go_remove = "Supprimer sans copie",
+    .mr_title = "Les codes et mods ne fonctionneront plus",
+    .mr_cheats_fmt = "%d fichiers de codes sont pour la version installée",
+    .mr_patches_fmt = "%d patchs IPS (exefs_patches) sont pour la version installée",
+    .mr_exefs = "Ses mods exefs ont été faits pour la version installée",
+    .mr_body = "La nouvelle version est une autre compilation du jeu. Après la mise à jour, NXDock ouvre Codes et mods pour chercher ceux de la nouvelle version.",
+    .mr_go = "Mettre à jour et chercher les nouveaux",
+    .mr_not_now = "Ne pas mettre à jour",
 };
 
 constexpr More kGerman{
@@ -1295,6 +1316,13 @@ constexpr More kGerman{
     .sc_ask_body = "Noch hat sich nichts geändert. Ohne Kopie des Spielstands weitermachen oder hier aufhören?",
     .sc_go_on = "Ohne Kopie weiter",
     .sc_go_remove = "Ohne Kopie entfernen",
+    .mr_title = "Cheats und Mods werden nicht mehr funktionieren",
+    .mr_cheats_fmt = "%d Cheat-Dateien gehören zur jetzt installierten Version",
+    .mr_patches_fmt = "%d IPS-Patches (exefs_patches) gehören zur jetzt installierten Version",
+    .mr_exefs = "Seine exefs-Mods wurden für die jetzt installierte Version gemacht",
+    .mr_body = "Die neue Version ist ein anderer Build des Spiels. Nach dem Update öffnet NXDock Cheats und Mods, um die der neuen Version zu suchen.",
+    .mr_go = "Aktualisieren, dann neue suchen",
+    .mr_not_now = "Nicht aktualisieren",
 };
 
 constexpr More kItalian{
@@ -1617,6 +1645,13 @@ constexpr More kItalian{
     .sc_ask_body = "Non è ancora cambiato nulla. Continuare senza copia del salvataggio o fermarsi qui?",
     .sc_go_on = "Continua senza copia",
     .sc_go_remove = "Rimuovi senza copia",
+    .mr_title = "Trucchi e mod smetteranno di funzionare",
+    .mr_cheats_fmt = "%d file di trucchi sono per la versione installata ora",
+    .mr_patches_fmt = "%d patch IPS (exefs_patches) sono per la versione installata ora",
+    .mr_exefs = "Le sue mod exefs sono state fatte per la versione installata ora",
+    .mr_body = "La nuova versione è un'altra build del gioco. Dopo l'aggiornamento, NXDock apre Trucchi e mod per cercare quelli della nuova versione.",
+    .mr_go = "Aggiorna e cerca i nuovi",
+    .mr_not_now = "Non aggiornare",
 };
 
 constexpr More kPortuguese{
@@ -1939,6 +1974,13 @@ constexpr More kPortuguese{
     .sc_ask_body = "Nada mudou ainda. Continuar sem cópia do save ou parar aqui?",
     .sc_go_on = "Continuar sem cópia",
     .sc_go_remove = "Remover sem cópia",
+    .mr_title = "As trapaças e mods vão deixar de funcionar",
+    .mr_cheats_fmt = "%d arquivos de trapaças são da versão instalada agora",
+    .mr_patches_fmt = "%d patches IPS (exefs_patches) são da versão instalada agora",
+    .mr_exefs = "Os mods de exefs foram feitos para a versão instalada agora",
+    .mr_body = "A nova versão é outra build do jogo. Ao terminar de atualizar, o NXDock abre Trapaças e mods para procurar os da nova versão.",
+    .mr_go = "Atualizar e procurar os novos",
+    .mr_not_now = "Não atualizar",
 };
 
 constexpr More kDutch{
@@ -2261,6 +2303,13 @@ constexpr More kDutch{
     .sc_ask_body = "Er is nog niets veranderd. Doorgaan zonder kopie van het opslagbestand, of hier stoppen?",
     .sc_go_on = "Doorgaan zonder kopie",
     .sc_go_remove = "Verwijderen zonder kopie",
+    .mr_title = "Cheats en mods werken straks niet meer",
+    .mr_cheats_fmt = "%d cheatbestanden zijn voor de nu geïnstalleerde versie",
+    .mr_patches_fmt = "%d IPS-patches (exefs_patches) zijn voor de nu geïnstalleerde versie",
+    .mr_exefs = "De exefs-mods zijn gemaakt voor de nu geïnstalleerde versie",
+    .mr_body = "De nieuwe versie is een andere build van het spel. Na het bijwerken opent NXDock Cheats en mods om die van de nieuwe versie te zoeken.",
+    .mr_go = "Bijwerken en nieuwe zoeken",
+    .mr_not_now = "Niet bijwerken",
 };
 
 constexpr More kRussian{
@@ -2583,6 +2632,13 @@ constexpr More kRussian{
     .sc_ask_body = "Пока ничего не изменилось. Продолжить без копии сохранения или остановиться?",
     .sc_go_on = "Продолжить без копии",
     .sc_go_remove = "Удалить без копии",
+    .mr_title = "Читы и моды перестанут работать",
+    .mr_cheats_fmt = "%d файлов читов сделаны для установленной сейчас версии",
+    .mr_patches_fmt = "%d IPS-патчей (exefs_patches) сделаны для установленной сейчас версии",
+    .mr_exefs = "Его моды exefs сделаны для установленной сейчас версии",
+    .mr_body = "Новая версия — другая сборка игры. После обновления NXDock откроет «Читы и моды», чтобы найти их для новой версии.",
+    .mr_go = "Обновить и найти новые",
+    .mr_not_now = "Не обновлять",
 };
 
 constexpr More kJapanese{
@@ -2905,6 +2961,13 @@ constexpr More kJapanese{
     .sc_ask_body = "まだ何も変わっていません。セーブデータのコピーなしで続けますか、ここでやめますか？",
     .sc_go_on = "コピーなしで続ける",
     .sc_go_remove = "コピーなしで削除",
+    .mr_title = "チートと MOD が使えなくなります",
+    .mr_cheats_fmt = "%d 個のチートファイルは今のバージョン用です",
+    .mr_patches_fmt = "%d 個の IPS パッチ（exefs_patches）は今のバージョン用です",
+    .mr_exefs = "exefs の MOD は今のバージョン用に作られています",
+    .mr_body = "新しいバージョンはゲームの別のビルドです。更新が終わると、NXDock は新しいバージョン用を探すために「チートと MOD」を開きます。",
+    .mr_go = "更新して新しいものを探す",
+    .mr_not_now = "更新しない",
 };
 
 constexpr More kKorean{
@@ -3227,6 +3290,13 @@ constexpr More kKorean{
     .sc_ask_body = "아직 바뀐 것은 없습니다. 세이브 복사 없이 계속할까요, 여기서 멈출까요?",
     .sc_go_on = "복사 없이 계속",
     .sc_go_remove = "복사 없이 삭제",
+    .mr_title = "치트와 모드가 작동하지 않게 됩니다",
+    .mr_cheats_fmt = "치트 파일 %d개는 지금 설치된 버전용입니다",
+    .mr_patches_fmt = "IPS 패치 %d개(exefs_patches)는 지금 설치된 버전용입니다",
+    .mr_exefs = "exefs 모드는 지금 설치된 버전용으로 만들어졌습니다",
+    .mr_body = "새 버전은 게임의 다른 빌드입니다. 업데이트가 끝나면 NXDock이 새 버전용을 찾도록 치트와 모드를 엽니다.",
+    .mr_go = "업데이트하고 새 것 찾기",
+    .mr_not_now = "업데이트하지 않기",
 };
 
 constexpr More kChinese{
@@ -3549,6 +3619,13 @@ constexpr More kChinese{
     .sc_ask_body = "目前还没有任何改动。不复制存档继续，还是在这里停止？",
     .sc_go_on = "不复制，继续",
     .sc_go_remove = "不复制，删除",
+    .mr_title = "金手指和模组将无法使用",
+    .mr_cheats_fmt = "%d 个金手指文件是给现在安装的版本用的",
+    .mr_patches_fmt = "%d 个 IPS 补丁（exefs_patches）是给现在安装的版本用的",
+    .mr_exefs = "它的 exefs 模组是为现在安装的版本做的",
+    .mr_body = "新版本是游戏的另一个构建。更新完成后，NXDock 会打开“金手指和模组”，查找新版本用的。",
+    .mr_go = "更新，然后查找新的",
+    .mr_not_now = "不更新",
 };
 
 // In the order of LanguageName in i18n.cpp.
