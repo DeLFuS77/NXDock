@@ -59,6 +59,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   sleep 1
   /tmp/tls_pin_test /tmp/tls/rsa.pem "sha256//$(pin_of /tmp/tls/rsa.pem)" https://127.0.0.1:18766 /tmp/tls/ec.pem
   kill $tls_server
+  # what the web asks of the queue
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/inc -Ibuild/_deps/yyjson-src/src -DNXDOCK_VERSION=\"test\" -o /tmp/queue_report_test tests/queue_report_test.cpp source/queue_report.cpp source/http.cpp source/tls_pin.cpp /tmp/yyjson.o /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
+  /tmp/queue_report_test
   # the network source, against a Range server that cuts answers on purpose
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -I/tmp/inc -DNXDOCK_VERSION=\"test\" -o /tmp/http_source_test tests/http_source_test.cpp source/http_source.cpp source/http.cpp source/tls_pin.cpp /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
   size=12595257

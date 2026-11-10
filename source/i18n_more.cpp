@@ -345,6 +345,16 @@ constexpr More kEnglish{
     .dg_title_fmt = "Go back to %s?",
     .dg_body_fmt = "%s goes and %s comes in its place, all or nothing: if anything fails, the console keeps the version it has.",
     .dg_go = "Go back",
+    .qw_notify_row = "A message to the phone when the queue ends",
+    .qw_paused = "The queue is paused: the next install waits",
+    .qw_paused_web = "Paused from the web: the next install waits",
+    .qw_resumed = "The queue goes on",
+    .qw_pause = "Pause the queue",
+    .qw_go_on = "Go on",
+    .qw_cancel_title = "The web asks to cancel %s",
+    .qw_cancel_body = "It was asked from the library app. Cancel the install? What was written of it is deleted: nothing stays half installed.",
+    .qw_cancel_go = "Cancel the install",
+    .qw_keep = "Keep installing",
 };
 
 constexpr More kSpanish{
@@ -683,6 +693,16 @@ constexpr More kSpanish{
     .dg_title_fmt = "¿Volver a %s?",
     .dg_body_fmt = "Se quita %s y se pone %s en su lugar, todo o nada: si algo falla, la consola se queda con la versión que tiene.",
     .dg_go = "Volver",
+    .qw_notify_row = "Un aviso al móvil al acabar la cola",
+    .qw_paused = "La cola está en pausa: la próxima instalación espera",
+    .qw_paused_web = "En pausa desde la web: la próxima instalación espera",
+    .qw_resumed = "La cola sigue",
+    .qw_pause = "Pausar la cola",
+    .qw_go_on = "Seguir",
+    .qw_cancel_title = "La web pide cancelar %s",
+    .qw_cancel_body = "Se ha pedido desde la app de la biblioteca. ¿Cancelar la instalación? Lo que se haya escrito se borra: no queda nada a medias.",
+    .qw_cancel_go = "Cancelar la instalación",
+    .qw_keep = "Seguir instalando",
 };
 
 constexpr More kFrench{
@@ -1021,6 +1041,16 @@ constexpr More kFrench{
     .dg_title_fmt = "Revenir à %s ?",
     .dg_body_fmt = "%s part et %s prend sa place, tout ou rien : si quelque chose échoue, la console garde sa version.",
     .dg_go = "Revenir",
+    .qw_notify_row = "Un message au téléphone à la fin de la file",
+    .qw_paused = "La file est en pause : la prochaine installation attend",
+    .qw_paused_web = "En pause depuis le web : la prochaine installation attend",
+    .qw_resumed = "La file reprend",
+    .qw_pause = "Mettre la file en pause",
+    .qw_go_on = "Reprendre",
+    .qw_cancel_title = "Le web demande d'annuler %s",
+    .qw_cancel_body = "C'est demandé depuis l'appli de la bibliothèque. Annuler l'installation ? Ce qui a été écrit est supprimé : rien ne reste à moitié installé.",
+    .qw_cancel_go = "Annuler l'installation",
+    .qw_keep = "Continuer l'installation",
 };
 
 constexpr More kGerman{
@@ -1359,6 +1389,16 @@ constexpr More kGerman{
     .dg_title_fmt = "Zurück zu %s?",
     .dg_body_fmt = "%s geht und %s kommt an seine Stelle, alles oder nichts: Wenn etwas fehlschlägt, behält die Konsole ihre Version.",
     .dg_go = "Zurück",
+    .qw_notify_row = "Eine Nachricht ans Handy, wenn die Warteschlange endet",
+    .qw_paused = "Die Warteschlange ist pausiert: die nächste Installation wartet",
+    .qw_paused_web = "Über das Web pausiert: die nächste Installation wartet",
+    .qw_resumed = "Die Warteschlange läuft weiter",
+    .qw_pause = "Warteschlange pausieren",
+    .qw_go_on = "Weiter",
+    .qw_cancel_title = "Das Web bittet, %s abzubrechen",
+    .qw_cancel_body = "Es wurde in der Bibliotheks-App verlangt. Installation abbrechen? Was davon geschrieben wurde, wird gelöscht: nichts bleibt halb installiert.",
+    .qw_cancel_go = "Installation abbrechen",
+    .qw_keep = "Weiter installieren",
 };
 
 constexpr More kItalian{
@@ -1697,6 +1737,16 @@ constexpr More kItalian{
     .dg_title_fmt = "Tornare a %s?",
     .dg_body_fmt = "%s se ne va e %s prende il suo posto, tutto o niente: se qualcosa non va, la console tiene la versione che ha.",
     .dg_go = "Torna indietro",
+    .qw_notify_row = "Un messaggio al telefono quando finisce la coda",
+    .qw_paused = "La coda è in pausa: la prossima installazione aspetta",
+    .qw_paused_web = "In pausa dal web: la prossima installazione aspetta",
+    .qw_resumed = "La coda riprende",
+    .qw_pause = "Metti in pausa la coda",
+    .qw_go_on = "Riprendi",
+    .qw_cancel_title = "Il web chiede di annullare %s",
+    .qw_cancel_body = "È stato chiesto dall'app della libreria. Annullare l'installazione? Ciò che è stato scritto viene eliminato: nulla resta a metà.",
+    .qw_cancel_go = "Annulla l'installazione",
+    .qw_keep = "Continua a installare",
 };
 
 constexpr More kPortuguese{
@@ -2035,6 +2085,16 @@ constexpr More kPortuguese{
     .dg_title_fmt = "Voltar para %s?",
     .dg_body_fmt = "%s sai e %s entra no lugar, tudo ou nada: se algo falhar, o console fica com a versão que tem.",
     .dg_go = "Voltar",
+    .qw_notify_row = "Uma mensagem ao celular quando a fila terminar",
+    .qw_paused = "A fila está em pausa: a próxima instalação espera",
+    .qw_paused_web = "Em pausa pela web: a próxima instalação espera",
+    .qw_resumed = "A fila continua",
+    .qw_pause = "Pausar a fila",
+    .qw_go_on = "Continuar",
+    .qw_cancel_title = "A web pede para cancelar %s",
+    .qw_cancel_body = "Foi pedido pelo app da biblioteca. Cancelar a instalação? O que foi gravado é apagado: nada fica pela metade.",
+    .qw_cancel_go = "Cancelar a instalação",
+    .qw_keep = "Continuar instalando",
 };
 
 constexpr More kDutch{
@@ -2373,6 +2433,16 @@ constexpr More kDutch{
     .dg_title_fmt = "Terug naar %s?",
     .dg_body_fmt = "%s gaat weg en %s komt ervoor in de plaats, alles of niets: als er iets misgaat, houdt de console zijn versie.",
     .dg_go = "Teruggaan",
+    .qw_notify_row = "Een bericht naar de telefoon als de wachtrij klaar is",
+    .qw_paused = "De wachtrij is gepauzeerd: de volgende installatie wacht",
+    .qw_paused_web = "Gepauzeerd via het web: de volgende installatie wacht",
+    .qw_resumed = "De wachtrij gaat verder",
+    .qw_pause = "Wachtrij pauzeren",
+    .qw_go_on = "Doorgaan",
+    .qw_cancel_title = "Het web vraagt %s te annuleren",
+    .qw_cancel_body = "Het is gevraagd vanuit de bibliotheek-app. Installatie annuleren? Wat ervan geschreven is, wordt verwijderd: niets blijft half geïnstalleerd.",
+    .qw_cancel_go = "Installatie annuleren",
+    .qw_keep = "Doorgaan met installeren",
 };
 
 constexpr More kRussian{
@@ -2711,6 +2781,16 @@ constexpr More kRussian{
     .dg_title_fmt = "Вернуться к %s?",
     .dg_body_fmt = "%s удаляется, и на её место ставится %s — всё или ничего: если что-то не так, на консоли останется прежняя версия.",
     .dg_go = "Вернуться",
+    .qw_notify_row = "Сообщение на телефон, когда очередь закончится",
+    .qw_paused = "Очередь на паузе: следующая установка ждёт",
+    .qw_paused_web = "Пауза из веба: следующая установка ждёт",
+    .qw_resumed = "Очередь продолжается",
+    .qw_pause = "Поставить очередь на паузу",
+    .qw_go_on = "Продолжить",
+    .qw_cancel_title = "Веб просит отменить %s",
+    .qw_cancel_body = "Это запрошено из приложения библиотеки. Отменить установку? Записанное будет удалено: ничего не останется наполовину установленным.",
+    .qw_cancel_go = "Отменить установку",
+    .qw_keep = "Продолжить установку",
 };
 
 constexpr More kJapanese{
@@ -3049,6 +3129,16 @@ constexpr More kJapanese{
     .dg_title_fmt = "%s に戻しますか？",
     .dg_body_fmt = "%s を消して %s を入れます（すべてか何もしないか）。失敗したら、本体は今のバージョンのままです。",
     .dg_go = "戻す",
+    .qw_notify_row = "キューが終わったらスマホに通知",
+    .qw_paused = "キューは一時停止中: 次のインストールは待機します",
+    .qw_paused_web = "Web から一時停止: 次のインストールは待機します",
+    .qw_resumed = "キューを再開しました",
+    .qw_pause = "キューを一時停止",
+    .qw_go_on = "再開",
+    .qw_cancel_title = "Web が %s の取り消しを求めています",
+    .qw_cancel_body = "ライブラリアプリからの依頼です。インストールを取り消しますか？ 書き込んだ分は削除され、途中のまま残りません。",
+    .qw_cancel_go = "インストールを取り消す",
+    .qw_keep = "インストールを続ける",
 };
 
 constexpr More kKorean{
@@ -3387,6 +3477,16 @@ constexpr More kKorean{
     .dg_title_fmt = "%s로 되돌릴까요?",
     .dg_body_fmt = "%s를 지우고 그 자리에 %s를 넣습니다(전부 아니면 전무). 실패하면 본체는 지금 버전을 유지합니다.",
     .dg_go = "되돌리기",
+    .qw_notify_row = "대기열이 끝나면 휴대폰에 알림",
+    .qw_paused = "대기열이 일시 정지됨: 다음 설치는 기다립니다",
+    .qw_paused_web = "웹에서 일시 정지됨: 다음 설치는 기다립니다",
+    .qw_resumed = "대기열이 계속됩니다",
+    .qw_pause = "대기열 일시 정지",
+    .qw_go_on = "계속",
+    .qw_cancel_title = "웹에서 %s 취소를 요청했습니다",
+    .qw_cancel_body = "라이브러리 앱에서 요청했습니다. 설치를 취소할까요? 쓴 부분은 지워지며 반쯤 설치된 채로 남지 않습니다.",
+    .qw_cancel_go = "설치 취소",
+    .qw_keep = "계속 설치",
 };
 
 constexpr More kChinese{
@@ -3725,6 +3825,16 @@ constexpr More kChinese{
     .dg_title_fmt = "回到 %s？",
     .dg_body_fmt = "删除 %s，换成 %s，要么全部完成要么不做：如果出错，主机保留现在的版本。",
     .dg_go = "回到旧版本",
+    .qw_notify_row = "队列结束时向手机发消息",
+    .qw_paused = "队列已暂停：下一个安装会等待",
+    .qw_paused_web = "已从网页暂停：下一个安装会等待",
+    .qw_resumed = "队列继续",
+    .qw_pause = "暂停队列",
+    .qw_go_on = "继续",
+    .qw_cancel_title = "网页请求取消 %s",
+    .qw_cancel_body = "这是从游戏库应用请求的。要取消安装吗？已写入的部分会被删除，不会留下装了一半的内容。",
+    .qw_cancel_go = "取消安装",
+    .qw_keep = "继续安装",
 };
 
 // In the order of LanguageName in i18n.cpp.

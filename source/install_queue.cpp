@@ -208,6 +208,20 @@ void InstallQueue::Remove(int id) {
     }
 }
 
+void InstallQueue::SetPaused(bool paused) {
+    {
+        std::lock_guard lock(m_mutex);
+        m_paused = paused;
+        m_version++;
+    }
+    m_cv.notify_all();
+}
+
+bool InstallQueue::Paused() {
+    std::lock_guard lock(m_mutex);
+    return m_paused;
+}
+
 void InstallQueue::Retry(int id) {
     {
         std::lock_guard lock(m_mutex);
@@ -494,7 +508,7 @@ void InstallQueue::Run() {
             continue;
         }
         auto it = std::find_if(m_jobs.begin(), m_jobs.end(), [](const InstallJob& j) { return j.state == InstallJob::State::Waiting; });
-        if (it == m_jobs.end()) {
+        if (it == m_jobs.end() || m_paused) {
             m_cv.wait(lock);
             continue;
         }

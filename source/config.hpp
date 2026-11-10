@@ -44,6 +44,7 @@ struct UiPrefs {
     bool screen_off_auto = false; // turns the screen off when a long queue starts (11A)
     int anim = 0;               // the animations: 0 full, 1 gentle, 2 none
     bool save_copy = true;      // the saves copied to the library before a change to a game (18A)
+    bool notify_done = true;    // the library app tells the phone when the queue ends (21A)
     int language = -1;          // -1: the console's; else an index of the languages NXDock speaks
     bool theme_auto = false;    // the theme follows the console's
     int dest = 0;               // where the page of a game installs: 0 SD card, 1 internal memory, 2 ask each time

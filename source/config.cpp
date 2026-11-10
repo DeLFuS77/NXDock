@@ -134,6 +134,7 @@ UiPrefs UiPrefs::Load() {
         else if (key == "screen_off_auto") p.screen_off_auto = n != 0;
         else if (key == "anim") p.anim = int(n);
         else if (key == "save_copy") p.save_copy = n != 0;
+        else if (key == "notify_done") p.notify_done = n != 0;
         else if (key == "language") p.language = n;
         else if (key == "theme_auto") p.theme_auto = n != 0;
         else if (key == "dest") p.dest = n >= 0 && n <= 2 ? n : 0;
@@ -154,9 +155,9 @@ bool UiPrefs::Save() const {
     }
     std::fprintf(f,
                  "wizard_done=%d\nwizard_music=%d\nsounds=%d\nfinish_effect=%d\nbattery_notice=%d\nbattery_level=%d\n"
-                 "check_updates=%d\nsaver=%d\nlanguage=%d\ntheme_auto=%d\ndest=%d\npick=%d\nsort=%d\nfocus=%s\nscreen_off_auto=%d\nanim=%d\nsave_copy=%d\n",
+                 "check_updates=%d\nsaver=%d\nlanguage=%d\ntheme_auto=%d\ndest=%d\npick=%d\nsort=%d\nfocus=%s\nscreen_off_auto=%d\nanim=%d\nsave_copy=%d\nnotify_done=%d\n",
                  wizard_done, wizard_music, sounds, finish_effect, battery_notice, battery_level, check_updates, saver,
-                 language, theme_auto, dest, pick, sort, focus.c_str(), screen_off_auto, anim, save_copy);
+                 language, theme_auto, dest, pick, sort, focus.c_str(), screen_off_auto, anim, save_copy, notify_done);
     const bool ok = std::fclose(f) == 0;
     if (!ok) {
         std::remove(kUiTemp);

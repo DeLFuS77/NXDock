@@ -77,6 +77,9 @@ struct More {
     const char *mr_title, *mr_cheats_fmt, *mr_patches_fmt, *mr_exefs, *mr_body, *mr_go, *mr_not_now;
     // another version of a game (phase 20)
     const char *ver_hint, *ver_title, *ver_installed, *ver_back_fmt, *ver_install_fmt, *ver_note, *dg_title_fmt, *dg_body_fmt, *dg_go;
+    // the queue on the web and its end on the phone (phases 21 and 22)
+    const char *qw_notify_row, *qw_paused, *qw_paused_web, *qw_resumed, *qw_pause, *qw_go_on, *qw_cancel_title, *qw_cancel_body, *qw_cancel_go,
+        *qw_keep;
 };
 
 const More& TrM();

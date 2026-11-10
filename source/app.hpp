@@ -18,6 +18,7 @@
 #include "shop.hpp"
 #include "space.hpp"
 #include "sdcheck_nx.hpp"
+#include "queue_report.hpp"
 #include "vault.hpp"
 #include "push.hpp"
 #include "sound.hpp"
@@ -364,7 +365,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -389,6 +390,14 @@ private:
     std::string m_inventory_url;
     void FollowPush();
     void FollowQueueAsk(); // a copy of the saves that failed: go on? (18A)
+    // the queue told to the library app (22A) and its end to the phone (21A)
+    void FollowQueueWeb();
+    std::string QueueJson();
+    std::unique_ptr<QueueReport> m_report;
+    double m_report_at = -100;
+    bool m_report_busy = false;
+    std::vector<int> m_report_jobs;
+    std::vector<QueueCommand> m_web_cancels; // cancels the web asked for, asked about one by one
     // the versions of a game the library has, to go back to an older one (20A)
     void OpenVersions();
     std::vector<int> VersionRows(const Game& g) const; // its updates, the newest first

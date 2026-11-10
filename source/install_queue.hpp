@@ -105,6 +105,9 @@ public:
     void Clear(); // the finished ones
     // Puts a failed or cancelled job back in the queue.
     void Retry(int id);
+    // Paused, the job installing finishes and the next waits (22A).
+    void SetPaused(bool paused);
+    bool Paused();
 
     std::vector<InstallJob> Jobs();
     Live GetLive();
@@ -169,6 +172,7 @@ private:
     int m_next_id = 1;
     int m_connections = 4;
     bool m_download_test = false;
+    bool m_paused = false;
     std::atomic<unsigned> m_version{0};
     std::map<u64, InstalledState> m_installed;
     std::vector<SessionItem> m_session;

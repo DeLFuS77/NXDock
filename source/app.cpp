@@ -183,7 +183,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowSaveCopy, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowSaveCopy, kRowNotifyDone, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -321,6 +321,7 @@ bool App::Init() {
     InitRumble();
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
+    m_report = std::make_unique<QueueReport>();
     // cheats and mods that an update would break (19A): the builds of both versions, from the
     // library app (its database, or the file of the update), against what is on the SD card
     m_queue->SetModsCheck([this](u64 app, u32 from, u32 to) -> std::string {
@@ -449,6 +450,10 @@ void App::ActivateSetting(int row) {
             break;
         case kRowSaveCopy:
             m_ui.save_copy = !m_ui.save_copy;
+            m_ui.Save();
+            break;
+        case kRowNotifyDone:
+            m_ui.notify_done = !m_ui.notify_done;
             m_ui.Save();
             break;
         case kRowAnim:
@@ -950,6 +955,7 @@ bool App::Frame() {
     FollowUsb();
     FollowPush();
     FollowQueueAsk();
+    FollowQueueWeb();
     CheckSdSpace();
     CheckBattery();
 
@@ -2332,6 +2338,104 @@ bool App::RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>&
     return all && !out.empty();
 }
 
+// The queue as the web shows it (22A): each job, and for the one installing its stage, speed and
+// time left.
+std::string App::QueueJson() {
+    const auto jobs = m_queue->Jobs();
+    const auto live = m_queue->GetLive();
+    std::string out = std::string("{\"paused\":") + (m_queue->Paused() ? "true" : "false") + ",\"jobs\":[";
+    bool first = true;
+    for (const auto& j : jobs) {
+        const char* state = j.state == InstallJob::State::Waiting   ? "waiting"
+                            : j.state == InstallJob::State::Running ? "running"
+                            : j.state == InstallJob::State::Done    ? "done"
+                            : j.state == InstallJob::State::Failed  ? "failed"
+                                                                    : "cancelled";
+        char head[160];
+        std::snprintf(head, sizeof(head), "{\"id\":%d,\"state\":\"%s\",\"size\":%llu", j.id, state, (unsigned long long)j.size);
+        std::string item = head;
+        item += ",\"game\":" + http::JsonQuote(j.game) + ",\"label\":" + http::JsonQuote(j.label);
+        if (j.state == InstallJob::State::Running && live.running && live.job == j.id) {
+            const char* stage = live.copying_save ? "copy" : live.phase >= 3 ? "register" : live.phase <= 1 ? "network" : "write";
+            const double rate = live.total ? live.write_rate : live.net_rate;
+            const double left = live.write_rate > 0.1 && live.total ? double(live.total - std::min(live.total, live.written)) / (live.write_rate * 1048576.0) : 0;
+            char more[200];
+            std::snprintf(more, sizeof(more), ",\"stage\":\"%s\",\"percent\":%.1f,\"speed\":%.1f,\"left\":%d", stage, double(JobFraction(live)) * 100.0, rate,
+                          int(left));
+            item += more;
+        }
+        if (j.state == InstallJob::State::Failed && !j.error.empty()) {
+            // the title of the packed error is enough for the web
+            item += ",\"error\":" + http::JsonQuote(UnpackError(j.error).title);
+        }
+        item += "}";
+        out += (first ? "" : ",") + item;
+        first = false;
+    }
+    return out + "]}";
+}
+
+void App::FollowQueueWeb() {
+    if (!m_queue || !m_report) return;
+    const Config c = m_link.CurrentConfig();
+    if (!c.Linked()) return;
+    m_report->SetLink(c.url, c.key);
+    const auto jobs = m_queue->Jobs();
+    bool busy = false;
+    for (const auto& j : jobs) {
+        if (j.state == InstallJob::State::Waiting || j.state == InstallJob::State::Running) {
+            busy = true;
+            if (std::find(m_report_jobs.begin(), m_report_jobs.end(), j.id) == m_report_jobs.end()) m_report_jobs.push_back(j.id);
+        }
+    }
+    // what the queue does, every two seconds while it works, and once when it stops
+    if ((busy && m_time - m_report_at >= 2) || (!busy && m_report_busy)) {
+        m_report_at = m_time;
+        m_report->Live(QueueJson());
+    }
+    if (!busy && m_report_busy) {
+        // the end of the queue: what went well and what failed, for the phone (21A)
+        std::string items;
+        for (const auto& j : jobs) {
+            if (std::find(m_report_jobs.begin(), m_report_jobs.end(), j.id) == m_report_jobs.end()) continue;
+            if (j.state != InstallJob::State::Done && j.state != InstallJob::State::Failed) continue;
+            if (!items.empty()) items += ",";
+            items += "{\"game\":" + http::JsonQuote(j.game) + ",\"label\":" + http::JsonQuote(j.label) + ",\"ok\":" +
+                     (j.state == InstallJob::State::Done ? "true" : "false");
+            if (j.state == InstallJob::State::Failed) items += ",\"error\":" + http::JsonQuote(UnpackError(j.error).title);
+            items += "}";
+        }
+        if (m_ui.notify_done && !items.empty() && !m_queue->Paused()) m_report->Done("{\"items\":[" + items + "]}");
+        m_report_jobs.clear();
+    }
+    m_report_busy = busy;
+    // what the web asked
+    const More& m = TrM();
+    for (auto& cmd : m_report->TakeCommands()) {
+        if (cmd.action == "pause") {
+            m_queue->SetPaused(true);
+            Notice(m.qw_paused_web);
+        } else if (cmd.action == "resume") {
+            m_queue->SetPaused(false);
+            Notice(m.qw_resumed);
+        } else {
+            m_web_cancels.push_back(std::move(cmd));
+        }
+    }
+    // a cancel is asked about on the screen first, as what the web sends to install
+    if (!m_web_cancels.empty() && m_dialog.kind == DialogKind::None && !m_wizard) {
+        const QueueCommand cmd = m_web_cancels.front();
+        m_web_cancels.erase(m_web_cancels.begin());
+        const auto it = std::find_if(jobs.begin(), jobs.end(), [&cmd](const InstallJob& j) { return j.id == cmd.job; });
+        if (it != jobs.end() && (it->state == InstallJob::State::Waiting || it->state == InstallJob::State::Running)) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::WebCancel;
+            m_dialog.entry = cmd.job;
+            m_dialog.text = it->game + (it->label.empty() ? "" : " \xC2\xB7 " + it->label);
+        }
+    }
+}
+
 void App::FollowQueueAsk() {
     if (!m_queue || m_dialog.kind != DialogKind::None || m_wizard) return;
     if (m_mods_after) {
@@ -2530,6 +2634,11 @@ void App::UpdateQueue(u64 down, u64 held) {
     }
     if (down & HidNpadButton_Y) {
         m_queue->Clear();
+    }
+    if (down & HidNpadButton_ZR) {
+        const bool paused = !m_queue->Paused();
+        m_queue->SetPaused(paused);
+        Notice(paused ? TrM().qw_paused : TrM().qw_resumed);
     }
 }
 
@@ -2809,8 +2918,11 @@ void App::DrawQueue(NVGcontext* vg) {
     hints.push_back({ui::glyph::X, f.state == InstallJob::State::Running ? s.cancel : s.remove, HidNpadButton_X});
     hints.push_back({ui::glyph::Y, s.clear_done, HidNpadButton_Y});
     if (running) hints.push_back({ui::glyph::Minus, TrM().so_button, HidNpadButton_Minus}); // the screen off (11A)
+    const bool paused = m_queue->Paused();
+    if (paused || m_queue->Waiting() > 0) hints.push_back({ui::glyph::ZR, paused ? TrM().qw_go_on : TrM().qw_pause, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
-    ui::HintBar(vg, t, m_prefs.download_test ? s.download_test : (running ? s.no_sleep : s.queue_done_hint), hints, m_hint_rects);
+    ui::HintBar(vg, t, paused ? TrM().qw_paused : m_prefs.download_test ? s.download_test : (running ? s.no_sleep : s.queue_done_hint), hints,
+                m_hint_rects);
 }
 
 void App::DrawSettings(NVGcontext* vg) {
@@ -2839,6 +2951,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {TrM().so_auto_row, m_ui.screen_off_auto ? s.yes_word : s.no_word, m_ui.screen_off_auto},
         {TrM().anim_row, m_ui.anim == 2 ? TrM().anim_none : m_ui.anim == 1 ? TrM().anim_soft : TrM().anim_full, m_ui.anim != 2},
         {TrM().sc_row, m_ui.save_copy ? s.yes_word : s.no_word, m_ui.save_copy},
+        {TrM().qw_notify_row, m_ui.notify_done ? s.yes_word : s.no_word, m_ui.notify_done},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
@@ -3710,6 +3823,16 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = m.dg_go;
             break;
         }
+        case DialogKind::WebCancel: {
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.qw_cancel_title, m_dialog.text.c_str());
+            title = text;
+            body = m.qw_cancel_body;
+            primary = m.qw_cancel_go;
+            cancel_label = m.qw_keep;
+            break;
+        }
         case DialogKind::ModsAsk: {
             const More& m = TrM();
             title = m.mr_title;
@@ -4099,6 +4222,9 @@ void App::ConfirmDialog() {
         }
         case DialogKind::Downgrade:
             AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::WebCancel:
+            m_queue->Remove(m_dialog.entry); // a waiting one goes; the one installing is cancelled
             break;
         case DialogKind::ModsAsk:
             // the update goes on; when it ends, Cheats and mods opens for the new version
