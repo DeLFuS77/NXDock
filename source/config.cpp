@@ -135,7 +135,7 @@ UiPrefs UiPrefs::Load() {
         else if (key == "theme_auto") p.theme_auto = n != 0;
         else if (key == "dest") p.dest = n >= 0 && n <= 2 ? n : 0;
         else if (key == "pick") p.pick = n >= 0 && n <= 2 ? n : 0;
-        else if (key == "sort") p.sort = n >= 0 && n <= 2 ? n : 0;
+        else if (key == "sort") p.sort = n >= 0 && n <= 3 ? n : 0;
         else if (key == "focus") p.focus = value;
     }
     std::fclose(f);

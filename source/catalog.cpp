@@ -99,6 +99,7 @@ bool ParseCatalog(const std::string& json, std::vector<Game>& out) {
         game.key = Str(g, "key");
         game.name = Str(g, "name");
         game.cover = Str(g, "cover");
+        game.added = (long long)yyjson_get_uint(yyjson_obj_get(g, "added"));
         game.title_id = ParseTitleId(yyjson_get_str(yyjson_obj_get(g, "titleId")));
         size_t j, jmax;
         yyjson_val* f;

@@ -109,3 +109,5 @@
 - HTTPS with a pinned key: with a library app on an https address, the key of
   its certificate is kept the first time it is linked, and from then on a
   server with another key is refused before anything is sent.
+- "Recently added" in Options: the library newest first, from the date the
+  library app gives for each game.

@@ -39,6 +39,7 @@ struct InstalledState {
 struct Game {
     std::string key, name, cover; // cover: the address of its picture in the app
     u64 title_id = 0;
+    long long added = 0; // when its newest file came to the library, seconds since 1970 (0: unknown)
     std::vector<CatalogFile> files;
     InstalledState installed;
 

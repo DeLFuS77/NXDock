@@ -45,7 +45,7 @@ struct UiPrefs {
     bool theme_auto = false;    // the theme follows the console's
     int dest = 0;               // where the page of a game installs: 0 SD card, 1 internal memory, 2 ask each time
     int pick = 0;               // what the page of a game ticks: 0 what is missing, 1 the game only, 2 the game and its update
-    int sort = 0;               // the order of the library: 0 A-Z, 1 size, 2 not installed first
+    int sort = 0;               // the order of the library: 0 A-Z, 1 size, 2 not installed first, 3 recent
     std::string focus;          // the key of the game in focus in the library, for the next time
 
     static UiPrefs Load();

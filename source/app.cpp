@@ -102,6 +102,9 @@ std::string FormatOf(const Game& game) {
     return game.files.empty() ? "" : Upper(game.files.front().format);
 }
 
+// The orders of the library, in Options: A-Z, size, not installed first, recent.
+constexpr int kSorts = 4;
+
 // Library grid layout.
 constexpr int kColumns = 7;
 constexpr float kGridX = 36, kGridTop = 150, kGridGap = 20;
@@ -1115,6 +1118,13 @@ void App::RebuildView() {
                 return ia != ib ? !ia : by_name(a, b);
             });
             break;
+        case 3:
+            // the newest in the library first; without dates, as A-Z
+            std::stable_sort(m_view.begin(), m_view.end(), [&](int a, int b) {
+                const long long da = m_games[a].added, db = m_games[b].added;
+                return da != db ? da > db : by_name(a, b);
+            });
+            break;
         default: std::stable_sort(m_view.begin(), m_view.end(), by_name); break;
     }
     if (!keep.empty()) {
@@ -1201,7 +1211,7 @@ void App::AskUpdateAll() {
 }
 
 void App::ActivateMenu(int row) {
-    if (row < 3) {
+    if (row < kSorts) {
         if (m_ui.sort != row) {
             m_ui.sort = row;
             m_ui.Save();
@@ -1215,7 +1225,7 @@ void App::ActivateMenu(int row) {
 }
 
 void App::UpdateMenu(u64 down, u64 held) {
-    const int rows = PendingUpdates().empty() ? 3 : 4;
+    const int rows = PendingUpdates().empty() ? kSorts : kSorts + 1;
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_menu_focus > 0) m_menu_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_menu_focus < rows - 1) m_menu_focus++;
     m_menu_focus = std::clamp(m_menu_focus, 0, rows - 1);
@@ -1339,9 +1349,9 @@ void App::DrawMenu(NVGcontext* vg) {
     nvgFill(vg);
     AddHit(0, 0, kWidth, kHeight, HitKind::MenuBack);
     const size_t updates = PendingUpdates().size();
-    const int rows = updates ? 4 : 3;
+    const int rows = updates ? kSorts + 1 : kSorts;
     const float w = 440, rh = 56, pad = 10;
-    const float h = pad * 2 + 34 + 3 * rh + (updates ? rh + 13 : 0);
+    const float h = pad * 2 + 34 + kSorts * rh + (updates ? rh + 13 : 0);
     const float x = kWidth - 36 - w, y = 664 - 14 - h;
     nvgBeginPath(vg);
     nvgRect(vg, x - 30, y - 20, w + 60, h + 60);
@@ -1350,10 +1360,10 @@ void App::DrawMenu(NVGcontext* vg) {
     Panel(vg, t, x, y, w, h, 16);
     AddHit(x, y, w, h, HitKind::Button); // a tap on the panel itself does nothing
     ui::Text(vg, x + 22, y + pad + 17, 14, t.muted, s.options);
-    const char* sorts[] = {s.sort_az, s.sort_size, s.sort_missing};
+    const char* sorts[] = {s.sort_az, s.sort_size, s.sort_missing, s.sort_recent};
     float ry = y + pad + 34;
     for (int i = 0; i < rows; i++) {
-        if (i == 3) {
+        if (i == kSorts) {
             nvgBeginPath(vg);
             nvgRect(vg, x + 16, ry + 6, w - 32, 1);
             nvgFillColor(vg, t.line);
@@ -1365,7 +1375,7 @@ void App::DrawMenu(NVGcontext* vg) {
             ui::StrokeRound(vg, x + pad, ry, w - 2 * pad, rh, 10, t.work, 3);
         }
         AddHit(x + pad, ry, w - 2 * pad, rh, HitKind::MenuRow, i);
-        if (i < 3) {
+        if (i < kSorts) {
             const bool on = m_ui.sort == i;
             nvgBeginPath(vg);
             nvgCircle(vg, x + pad + 26, ry + rh / 2, on ? 7.5f : 10);
@@ -1499,8 +1509,8 @@ void App::DrawLibrary(NVGcontext* vg) {
         ui::Chip(vg, t, x + 10, 92, label.c_str(), true);
     }
     // the order, on the right (changed in Options)
-    const char* sorts[] = {s.sort_az, s.sort_size, s.sort_missing};
-    ui::Text(vg, kWidth - kGridX, 109, 15, t.muted, sorts[std::clamp(m_ui.sort, 0, 2)], NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    const char* sorts[] = {s.sort_az, s.sort_size, s.sort_missing, s.sort_recent};
+    ui::Text(vg, kWidth - kGridX, 109, 15, t.muted, sorts[std::clamp(m_ui.sort, 0, kSorts - 1)], NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
 
     // Grid of covers, clipped to its viewport and scrolled.
     nvgSave(vg);

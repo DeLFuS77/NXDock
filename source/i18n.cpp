@@ -212,6 +212,7 @@ constexpr Strings kEnglish{
     "The console can reach Nintendo's servers: there is no 90DNS or DNS block.",
     "Installing your own copies like this can get the console banned. Recommended: an emuMMC with no access to Nintendo (90DNS or the DNS block of Atmosphère). This is said once per session.",
     "Install anyway",
+    "Recently added",
 };
 
 constexpr Strings kSpanish{
@@ -419,6 +420,7 @@ constexpr Strings kSpanish{
     "La consola puede conectarse a los servidores de Nintendo: no hay 90DNS ni bloqueo de DNS.",
     "Instalar tus copias así puede acabar en un baneo de la consola. Lo recomendado: un emuMMC sin acceso a Nintendo (90DNS o el bloqueo de DNS de Atmosphère). Se avisa una vez por sesión.",
     "Instalar igualmente",
+    "Recientes en la biblioteca",
 };
 
 constexpr Strings kFrench{
@@ -707,6 +709,7 @@ constexpr Strings kFrench{
     "La console peut joindre les serveurs de Nintendo : il n'y a ni 90DNS ni blocage DNS.",
     "Installer vos copies ainsi peut faire bannir la console. Recommandé : un emuMMC sans accès à Nintendo (90DNS ou le blocage DNS d'Atmosphère). Ce message apparaît une fois par session.",
     "Installer quand même",
+    "Ajoutés récemment",
 };
 
 constexpr Strings kGerman{
@@ -995,6 +998,7 @@ constexpr Strings kGerman{
     "Die Konsole kann Nintendos Server erreichen: Es gibt weder 90DNS noch eine DNS-Sperre.",
     "Eigene Kopien so zu installieren kann zu einem Bann der Konsole führen. Empfohlen: ein emuMMC ohne Zugang zu Nintendo (90DNS oder die DNS-Sperre von Atmosphère). Der Hinweis kommt einmal pro Sitzung.",
     "Trotzdem installieren",
+    "Zuletzt hinzugefügt",
 };
 
 constexpr Strings kItalian{
@@ -1283,6 +1287,7 @@ constexpr Strings kItalian{
     "La console può raggiungere i server di Nintendo: non c'è 90DNS né un blocco DNS.",
     "Installare le tue copie così può far bannare la console. Consigliato: un emuMMC senza accesso a Nintendo (90DNS o il blocco DNS di Atmosphère). L'avviso compare una volta per sessione.",
     "Installa comunque",
+    "Aggiunti di recente",
 };
 
 constexpr Strings kPortuguese{
@@ -1571,6 +1576,7 @@ constexpr Strings kPortuguese{
     "A consola consegue ligar-se aos servidores da Nintendo: não há 90DNS nem bloqueio de DNS.",
     "Instalar as tuas cópias assim pode levar a um banimento da consola. Recomendado: um emuMMC sem acesso à Nintendo (90DNS ou o bloqueio de DNS do Atmosphère). O aviso aparece uma vez por sessão.",
     "Instalar mesmo assim",
+    "Adicionados recentemente",
 };
 
 constexpr Strings kDutch{
@@ -1859,6 +1865,7 @@ constexpr Strings kDutch{
     "De console kan de servers van Nintendo bereiken: er is geen 90DNS of DNS-blokkade.",
     "Je eigen kopieën zo installeren kan de console een ban opleveren. Aanbevolen: een emuMMC zonder toegang tot Nintendo (90DNS of de DNS-blokkade van Atmosphère). Dit wordt één keer per sessie gezegd.",
     "Toch installeren",
+    "Recent toegevoegd",
 };
 
 constexpr Strings kRussian{
@@ -2147,6 +2154,7 @@ constexpr Strings kRussian{
     "Консоль может связаться с серверами Nintendo: нет ни 90DNS, ни DNS-блокировки.",
     "Такая установка своих копий может привести к бану консоли. Рекомендуется emuMMC без доступа к Nintendo (90DNS или DNS-блокировка Atmosphère). Предупреждение показывается раз за сеанс.",
     "Всё равно установить",
+    "Недавно добавленные",
 };
 
 constexpr Strings kJapanese{
@@ -2435,6 +2443,7 @@ constexpr Strings kJapanese{
     "本体が任天堂のサーバーに接続できます。90DNS も DNS ブロックもありません。",
     "このように自分のコピーをインストールすると、本体が BAN される可能性があります。推奨：任天堂に接続できない emuMMC（90DNS または Atmosphère の DNS ブロック）。この案内はセッションごとに一度表示されます。",
     "それでもインストール",
+    "最近追加した順",
 };
 
 constexpr Strings kKorean{
@@ -2723,6 +2732,7 @@ constexpr Strings kKorean{
     "본체가 닌텐도 서버에 연결할 수 있습니다. 90DNS나 DNS 차단이 없습니다.",
     "이렇게 자신의 사본을 설치하면 본체가 밴될 수 있습니다. 권장: 닌텐도에 접속할 수 없는 emuMMC(90DNS 또는 Atmosphère의 DNS 차단). 이 안내는 세션마다 한 번 표시됩니다.",
     "그래도 설치",
+    "최근 추가한 순",
 };
 
 constexpr Strings kChinese{
@@ -3011,6 +3021,7 @@ constexpr Strings kChinese{
     "主机可以连接任天堂的服务器：没有 90DNS 或 DNS 屏蔽。",
     "这样安装你自己的副本可能导致主机被封禁。建议：使用无法连接任天堂的 emuMMC（90DNS 或 Atmosphère 的 DNS 屏蔽）。每次运行只提示一次。",
     "仍然安装",
+    "最近添加",
 };
 
 // In the order of LanguageName.
