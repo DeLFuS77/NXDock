@@ -5,6 +5,7 @@
 
 #include <switch.h>
 #include <chrono>
+#include <cstdio>
 #include "http.hpp"
 #include "i18n.hpp"
 
@@ -110,6 +111,11 @@ void Link::TakePin(const std::string& url) {
     }
     std::string error;
     const std::string pin = tls::ReadPin(url, error);
+    // a line for whoever tests it: whether the key could be read (never the key of the console)
+    if (FILE* f = std::fopen("sdmc:/switch/NXDock/link.log", "a")) {
+        std::fprintf(f, "https %s: %s\n", url.c_str(), pin.empty() ? ("no pin: " + error).c_str() : pin.c_str());
+        std::fclose(f);
+    }
     if (pin.empty()) {
         return; // the requests go on without a pin, as on the first contact
     }
