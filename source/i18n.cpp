@@ -152,6 +152,8 @@ constexpr Strings kEnglish{
     "Scan it with your phone to open your library:",
     "The notice to pair shows on any of its pages.",
     "Sounds",
+    "All installed · %d · %s",
+    "%d installed · %d with an error",
 };
 
 constexpr Strings kSpanish{
@@ -299,6 +301,8 @@ constexpr Strings kSpanish{
     "Escanéalo con el móvil para abrir tu biblioteca:",
     "El aviso para emparejar sale en cualquier página.",
     "Sonidos",
+    "Todo instalado · %d · %s",
+    "%d instalados · %d con error",
 };
 
 constexpr Strings kFrench{
@@ -527,6 +531,8 @@ constexpr Strings kFrench{
     "Scannez-le avec votre téléphone pour ouvrir votre bibliothèque :",
     "L'avis d'appairage s'affiche sur n'importe quelle page.",
     "Sons",
+    "Tout est installé · %d · %s",
+    "%d installés · %d en erreur",
 };
 
 constexpr Strings kGerman{
@@ -755,6 +761,8 @@ constexpr Strings kGerman{
     "Scanne ihn mit dem Handy, um deine Bibliothek zu öffnen:",
     "Der Hinweis zum Koppeln erscheint auf jeder Seite.",
     "Töne",
+    "Alles installiert · %d · %s",
+    "%d installiert · %d mit Fehler",
 };
 
 constexpr Strings kItalian{
@@ -983,6 +991,8 @@ constexpr Strings kItalian{
     "Scansionalo con il telefono per aprire la tua libreria:",
     "L'avviso per l'abbinamento compare in ogni pagina.",
     "Suoni",
+    "Tutto installato · %d · %s",
+    "%d installati · %d con errore",
 };
 
 constexpr Strings kPortuguese{
@@ -1211,6 +1221,8 @@ constexpr Strings kPortuguese{
     "Lê-o com o telemóvel para abrir a tua biblioteca:",
     "O aviso para emparelhar aparece em qualquer página.",
     "Sons",
+    "Tudo instalado · %d · %s",
+    "%d instalados · %d com erro",
 };
 
 constexpr Strings kDutch{
@@ -1439,6 +1451,8 @@ constexpr Strings kDutch{
     "Scan hem met je telefoon om je bibliotheek te openen:",
     "De melding om te koppelen staat op elke pagina.",
     "Geluiden",
+    "Alles geïnstalleerd · %d · %s",
+    "%d geïnstalleerd · %d met een fout",
 };
 
 constexpr Strings kRussian{
@@ -1667,6 +1681,8 @@ constexpr Strings kRussian{
     "Отсканируйте телефоном, чтобы открыть библиотеку:",
     "Уведомление о сопряжении видно на любой странице.",
     "Звуки",
+    "Всё установлено · %d · %s",
+    "Установлено: %d · с ошибкой: %d",
 };
 
 constexpr Strings kJapanese{
@@ -1895,6 +1911,8 @@ constexpr Strings kJapanese{
     "スマートフォンで読み取るとライブラリが開きます：",
     "ペアリングの通知はどのページにも表示されます。",
     "効果音",
+    "すべてインストールしました · %d · %s",
+    "%d 件インストール · %d 件エラー",
 };
 
 constexpr Strings kKorean{
@@ -2123,6 +2141,8 @@ constexpr Strings kKorean{
     "휴대폰으로 스캔하면 라이브러리가 열립니다:",
     "페어링 알림은 어느 페이지에나 표시됩니다.",
     "효과음",
+    "모두 설치됨 · %d · %s",
+    "%d개 설치됨 · %d개 오류",
 };
 
 constexpr Strings kChinese{
@@ -2351,6 +2371,8 @@ constexpr Strings kChinese{
     "用手机扫描即可打开你的游戏库：",
     "配对提示会显示在任意页面上。",
     "音效",
+    "全部已安装 · %d · %s",
+    "已安装 %d 个 · %d 个出错",
 };
 
 const Strings* g_strings = &kEnglish;

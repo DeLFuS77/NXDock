@@ -205,6 +205,7 @@ bool App::Init() {
     m_ui = UiPrefs::Load();
     m_psm = R_SUCCEEDED(psmInitialize());
     m_sound.Start();
+    InitRumble();
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_push = std::make_unique<Push>();
@@ -554,6 +555,7 @@ bool App::Frame() {
     PlaySounds(down, focus_before);
     FollowLink();
     FollowQueue();
+    FollowFinish();
     FollowPush();
     CheckSdSpace();
     CheckBattery();
@@ -656,7 +658,128 @@ void App::Draw(NVGcontext* vg) {
         ui::Text(vg, x + w / 2, y + 22, 16, m_theme.text, m_notice.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         nvgGlobalAlpha(vg, 1.f);
     }
+    DrawFinish(vg);
     DrawTouchFeedback(vg);
+}
+
+void App::InitRumble() {
+    // the console in the hands, and player 1's controllers (two Joy-Con or a Pro Controller)
+    m_vib_ok[0] = R_SUCCEEDED(hidInitializeVibrationDevices(m_vib_handheld, 2, HidNpadIdType_Handheld, HidNpadStyleTag_NpadHandheld));
+    m_vib_ok[1] = R_SUCCEEDED(hidInitializeVibrationDevices(m_vib_dual, 2, HidNpadIdType_No1, HidNpadStyleTag_NpadJoyDual));
+    m_vib_ok[2] = R_SUCCEEDED(hidInitializeVibrationDevices(m_vib_full, 1, HidNpadIdType_No1, HidNpadStyleTag_NpadFullKey));
+}
+
+void App::SendRumble(bool on) {
+    // short and gentle: a quarter of the strength, at the frequencies the console uses for a tap
+    HidVibrationValue v[2];
+    for (auto& value : v) {
+        value.amp_low = on ? 0.25f : 0.f;
+        value.freq_low = 160.f;
+        value.amp_high = on ? 0.20f : 0.f;
+        value.freq_high = 320.f;
+    }
+    if (m_vib_ok[0] && (hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld)) {
+        hidSendVibrationValues(m_vib_handheld, v, 2);
+    }
+    const u32 style = hidGetNpadStyleSet(HidNpadIdType_No1);
+    if (m_vib_ok[1] && (style & HidNpadStyleTag_NpadJoyDual)) {
+        hidSendVibrationValues(m_vib_dual, v, 2);
+    }
+    if (m_vib_ok[2] && (style & HidNpadStyleTag_NpadFullKey)) {
+        hidSendVibrationValues(m_vib_full, v, 1);
+    }
+}
+
+void App::FollowFinish() {
+    // two pulses of 70 ms, 120 ms apart
+    if (m_rumble_step >= 0 && m_time >= m_rumble_next) {
+        static constexpr double kGaps[] = {0.07, 0.12, 0.07};
+        const bool on = m_rumble_step % 2 == 0;
+        SendRumble(on);
+        if (m_rumble_step < 3) {
+            m_rumble_next = m_time + kGaps[m_rumble_step];
+            m_rumble_step++;
+        } else {
+            m_rumble_step = -1;
+        }
+    }
+    if (!m_queue) {
+        return;
+    }
+    const bool busy = m_queue->Busy();
+    if (!busy && m_queue_was_busy) {
+        // the queue has just ended: what this batch did
+        for (const auto& j : m_queue->Jobs()) {
+            const bool ended = j.state == InstallJob::State::Done || j.state == InstallJob::State::Failed;
+            if (!ended || std::find(m_counted_jobs.begin(), m_counted_jobs.end(), j.id) != m_counted_jobs.end()) {
+                continue;
+            }
+            m_counted_jobs.push_back(j.id);
+            if (j.state == InstallJob::State::Done) {
+                m_batch_done++;
+                m_batch_bytes += j.size;
+            } else {
+                m_batch_failed++;
+            }
+        }
+        if (m_batch_done > 0) {
+            const auto& s = Tr();
+            char text[160];
+            if (m_batch_failed > 0) {
+                std::snprintf(text, sizeof(text), s.finish_some_failed, m_batch_done, m_batch_failed);
+            } else {
+                std::snprintf(text, sizeof(text), s.finish_all, m_batch_done, SizeText(m_batch_bytes).c_str());
+            }
+            Notice(text);
+            m_notice_until = m_time + 5;
+            if (m_ui.finish_effect) {
+                m_finish_at = m_time;
+                m_rumble_step = 0;
+                m_rumble_next = m_time;
+                if (m_ui.sounds) {
+                    m_sound.Play(synth::Effect::Finish);
+                }
+            }
+        }
+        m_batch_done = m_batch_failed = 0;
+        m_batch_bytes = 0;
+    }
+    m_queue_was_busy = busy;
+}
+
+void App::DrawFinish(NVGcontext* vg) {
+    const double t = m_time - m_finish_at;
+    if (t < 0 || t > 1.4) {
+        return;
+    }
+    // the glow: up in a quarter of a second, away in a little more than one
+    const float glow = float(t < 0.25 ? t / 0.25 : std::max(0.0, 1 - (t - 0.25) / 1.15));
+    NVGcolor edge = m_theme.work;
+    edge.a = 0.5f * glow;
+    NVGcolor clear = m_theme.work;
+    clear.a = 0;
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillPaint(vg, nvgBoxGradient(vg, 60, 60, kWidth - 120, kHeight - 120, 40, 220, clear, edge));
+    nvgFill(vg);
+
+    // the tick in a circle: it pops, rests, and goes
+    const float scale = float(t < 0.18 ? 0.6 + 0.45 * (t / 0.18) : t < 0.3 ? 1.05 - 0.05 * ((t - 0.18) / 0.12) : 1.0);
+    const float alpha = float(t < 0.12 ? t / 0.12 : t > 0.9 ? std::max(0.0, 1 - (t - 0.9) / 0.5) : 1.0);
+    const float cx = kWidth / 2, cy = 340, r = 72 * scale;
+    nvgGlobalAlpha(vg, alpha);
+    NVGcolor halo = m_theme.work;
+    halo.a = 0.45f;
+    nvgBeginPath(vg);
+    nvgCircle(vg, cx, cy, r + 40);
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, r * 0.8f, r + 40, halo, clear));
+    nvgFill(vg);
+    nvgBeginPath(vg);
+    nvgCircle(vg, cx, cy, r);
+    nvgFillColor(vg, m_theme.work);
+    nvgFill(vg);
+    ui::CheckMark(vg, cx, cy + 2, 70 * scale, m_theme.on_work, 9 * scale);
+    nvgGlobalAlpha(vg, 1.f);
 }
 
 void App::DrawTouchFeedback(NVGcontext* vg) {

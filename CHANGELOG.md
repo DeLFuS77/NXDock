@@ -72,3 +72,6 @@
 - Soft sounds when moving, choosing, going back and when the queue ends, made
   by NXDock while it plays (nothing recorded is shipped). They are turned off
   in Settings › Sounds.
+- When the queue ends: a short notice with what was installed, a soft blue
+  glow with a tick, two gentle pulses of HD rumble (in the hands and on
+  player 1's controllers) and a sound.

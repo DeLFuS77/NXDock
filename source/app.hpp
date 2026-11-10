@@ -141,6 +141,20 @@ private:
     int m_battery = -1;
     bool m_charging = false;
     double m_battery_checked = -100;
+    // when the queue ends (2A): a soft blue glow with a tick, two gentle pulses of HD rumble, a sound
+    void FollowFinish();
+    void DrawFinish(NVGcontext* vg);
+    void InitRumble();
+    void SendRumble(bool on);
+    bool m_queue_was_busy = false;
+    std::vector<int> m_counted_jobs;   // finished jobs already counted in a batch
+    int m_batch_done = 0, m_batch_failed = 0;
+    u64 m_batch_bytes = 0;
+    double m_finish_at = -100;
+    HidVibrationDeviceHandle m_vib_handheld[2]{}, m_vib_dual[2]{}, m_vib_full[1]{};
+    bool m_vib_ok[3] = {false, false, false};
+    int m_rumble_step = -1;            // the pulse playing, -1 none
+    double m_rumble_next = 0;
     std::unique_ptr<InstallQueue> m_queue;
     unsigned m_queue_version = 0;
     int m_queue_focus = 0;          // row in focus on the queue screen
