@@ -47,6 +47,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   gcc -std=c11 -Wall -Wextra -O2 -Iinclude -c -o /tmp/lz4nintendo.o source/lz4nintendo.c
   g++ -std=c++20 -Wall -Wextra -O2 -Iinclude -o /tmp/lz4nintendo_test tests/lz4nintendo_test.cpp /tmp/lz4nintendo.o
   /tmp/lz4nintendo_test tests/fixtures/lz4nintendo_golden.txt LICENSE assets/icon.jpg
+  # the compressed storage of an NCA, written as Nintendo writes it (24A)
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/romfs_lz4_test tests/romfs_lz4_test.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o
+  /tmp/romfs_lz4_test
   g++ -std=c++23 -Wall -Wextra -O2 -Itests/shim -Iinclude -Icompat -I/tmp/inc -o /tmp/nczsect_test tests/nczsect_test.cpp source/yati/nx/nczsect.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libzstd.so.1
   /tmp/nczsect_test tests/fixtures
   # HTTPS with a pinned key: certificates made here, the pin checked against openssl
