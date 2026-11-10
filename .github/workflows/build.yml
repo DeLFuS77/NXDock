@@ -140,6 +140,12 @@ jobs:
         run: |
           cat >> release-notes.md <<EOF
 
+          > [!IMPORTANT]
+          > NXDock is still being tested and needs more people to try it: please report any problem you find on
+          > the [issues page](https://github.com/DeLFuS77/NXDock/issues/new/choose). Sorry in advance for any trouble it
+          > may cause. It is provided as it is, without any warranty, and its authors are not responsible for any
+          > problem or loss that comes from using it. Keep copies of what matters to you.
+
           ### Downloads
 
           | File | What it is |

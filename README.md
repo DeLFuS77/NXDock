@@ -15,6 +15,12 @@ A homebrew installer for the Nintendo Switch. It installs your own NSP, NSZ, XCI
 no files copied to the SD card first. It can also install from the SD card, a USB disk, or a computer over MTP or
 NS-USBloader.
 
+> [!IMPORTANT]
+> **NXDock is still being tested.** It needs more people to try it, so any problem you find helps a lot: please
+> [report it](https://github.com/DeLFuS77/NXDock/issues/new/choose), however small. Sorry in advance for any trouble it
+> may cause. NXDock is provided as it is, without any warranty, and its authors are not responsible for any problem or
+> loss that comes from using it (see the [GPL-3.0](LICENSE)). Keep copies of what matters to you.
+
 💬 Questions, ideas or news of new versions? Join the [Discord server](https://discord.gg/acQVZSEBR), shared with
 [Switch Library Manager Web](https://github.com/DeLFuS77/switch-library-manager-web) and
 [NXPress](https://github.com/DeLFuS77/NXPress).
