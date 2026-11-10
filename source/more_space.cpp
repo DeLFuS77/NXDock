@@ -51,6 +51,46 @@ std::string FirstLetter(const std::string& name) {
 
 } // namespace
 
+namespace {
+
+// Names compared as a person reads them: without case.
+bool NameBefore(const std::string& a, const std::string& b) {
+    const size_t n = std::min(a.size(), b.size());
+    for (size_t i = 0; i < n; i++) {
+        const int x = std::tolower((unsigned char)a[i]), y = std::tolower((unsigned char)b[i]);
+        if (x != y) return x < y;
+    }
+    return a.size() < b.size();
+}
+
+} // namespace
+
+void App::SortPickRows(const Space::View& v) {
+    if (m_pick_rows.empty()) return;
+    std::vector<size_t> order(m_pick_rows.size());
+    for (size_t i = 0; i < order.size(); i++) order[i] = i;
+    const auto name = [&](size_t i) -> const std::string& { return v.apps[size_t(m_pick_rows[i].first)].name; };
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        if (name(a) != name(b)) return NameBefore(name(a), name(b));
+        return m_pick_rows[a].second < m_pick_rows[b].second;
+    });
+    bool same = true;
+    for (size_t i = 0; i < order.size(); i++) same &= order[i] == i;
+    if (same) return;
+    const auto focused = m_pick_rows[size_t(std::clamp(m_pick_focus, 0, int(m_pick_rows.size()) - 1))];
+    std::vector<std::pair<int, int>> rows;
+    std::vector<char> marks;
+    for (size_t i : order) {
+        rows.push_back(m_pick_rows[i]);
+        marks.push_back(m_pick_marks[i]);
+    }
+    m_pick_rows = std::move(rows);
+    m_pick_marks = std::move(marks);
+    for (size_t i = 0; i < m_pick_rows.size(); i++) {
+        if (m_pick_rows[i] == focused) m_pick_focus = int(i);
+    }
+}
+
 int App::ListJump(const std::vector<std::string>& names, int focus, int dir) {
     if (names.empty()) return focus;
     focus = std::clamp(focus, 0, int(names.size()) - 1);
@@ -284,6 +324,7 @@ void App::DrawSpace(NVGcontext* vg) {
 }
 
 void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
+    SortPickRows(v);
     const Theme& t = m_theme;
     const auto& s = Tr();
     const More& m = TrM();
@@ -361,6 +402,7 @@ void App::UpdateSpace(u64 down, u64 held) {
     if (!m_space) return;
     const auto v = m_space->Snapshot();
     if (m_space_mode == 1) {
+        SortPickRows(v);
         if (Repeat(down, held, HidNpadButton_AnyUp) && m_pick_focus > 0) m_pick_focus--;
         if (Repeat(down, held, HidNpadButton_AnyDown) && m_pick_focus < int(m_pick_rows.size()) - 1) m_pick_focus++;
         // by first letter, for long lists

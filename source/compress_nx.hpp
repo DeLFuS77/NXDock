@@ -28,7 +28,7 @@ constexpr const char* kCompressedList = "sdmc:/switch/NXDock/compressed.txt";
 constexpr double kCompressWorth = 0.10; // offered from 10 % saved
 
 struct GameEstimate {
-    enum class State { Pending, Worth, Low, Already, Ours, Unsupported };
+    enum class State { Pending, Possible, Worth, Low, Already, Ours, Unsupported };
     State state = State::Pending;
     double gain = 0;               // share of the RomFS saved, from a sample
     unsigned long long bytes = 0;  // the program NCA now
@@ -43,6 +43,8 @@ public:
         bool running = false;
         bool analyzing = false;
         std::map<unsigned long long, GameEstimate> games;
+        int check_done = 0, check_total = 0;     // the headers read (every game)
+        int measure_done = 0, measure_total = 0; // the samples read (those that can be compressed)
         int phase = 0; // 1 measuring, 2 writing, 3 registering
         unsigned long long done = 0, total = 0;
         unsigned long long app = 0;   // the game being compressed, or the last one

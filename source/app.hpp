@@ -173,11 +173,16 @@ private:
     Sigpatches m_sigpatches;
     double m_compress_opened = 0;
     int m_compress_focus = 0, m_compress_finished = 0;
+    unsigned long long m_compress_app = 0; // the game in focus: kept when the order changes
+    bool m_compress_all = false;     // the list shows every game, or only those that can be compressed
+    bool m_compress_started = false; // the check of every game began
+    std::vector<int> CompressVisible(const Space::View& v, const Compressor::View& c) const;
     std::vector<CompressedGame> m_compressed_marks;
     bool m_marks_read = false;
     int m_space_focus = 0, m_space_mode = 0, m_pick_kind = 0, m_pick_focus = 0, m_pick_first = 0, m_space_finished = 0;
     std::vector<std::pair<int, int>> m_pick_rows; // the game, and its content (dump) or -1
     std::vector<char> m_pick_marks;
+    void SortPickRows(const Space::View& v); // by name, the focus kept on its row, as names arrive
     std::string m_plan_head;
     // shops of the kind of Tinfoil and Ownfoil (9A, more_shop.cpp)
     void OpenShops();

@@ -420,6 +420,13 @@ constexpr More kEnglish{
     .sp_reading_fmt = "Reading the console… %d of %d",
     .sp_names_fmt = "Reading the names… %d of %d",
     .jump_letters = "By letter",
+    .cz_possible = "Can be compressed · measuring…",
+    .cz_checking_fmt = "Checking your games… %d of %d",
+    .cz_measuring_fmt = "Measuring those that can be compressed… %d of %d",
+    .cz_counts_fmt = "%d can be compressed · %d already compressed · %d cannot",
+    .cz_only_some = "Those that can be compressed",
+    .cz_show_all = "All games",
+    .cz_none_possible = "None of your installed games can be compressed: Nintendo already compresses most of them, and others use sparse storage. Y shows them all.",
 };
 
 constexpr More kSpanish{
@@ -833,6 +840,13 @@ constexpr More kSpanish{
     .sp_reading_fmt = "Leyendo la consola… %d de %d",
     .sp_names_fmt = "Leyendo los nombres… %d de %d",
     .jump_letters = "Por letra",
+    .cz_possible = "Se puede comprimir · midiendo…",
+    .cz_checking_fmt = "Revisando tus juegos… %d de %d",
+    .cz_measuring_fmt = "Midiendo los que se pueden comprimir… %d de %d",
+    .cz_counts_fmt = "%d se pueden comprimir · %d ya comprimidos · %d no se pueden",
+    .cz_only_some = "Los que se pueden comprimir",
+    .cz_show_all = "Todos los juegos",
+    .cz_none_possible = "Ninguno de tus juegos instalados se puede comprimir: Nintendo ya comprime la mayoría y otros usan almacenamiento disperso. Con Y los ves todos.",
 };
 
 constexpr More kFrench{
@@ -1246,6 +1260,13 @@ constexpr More kFrench{
     .sp_reading_fmt = "Lecture de la console… %d sur %d",
     .sp_names_fmt = "Lecture des noms… %d sur %d",
     .jump_letters = "Par lettre",
+    .cz_possible = "Compressible · mesure…",
+    .cz_checking_fmt = "Vérification de tes jeux… %d sur %d",
+    .cz_measuring_fmt = "Mesure de ceux qu'on peut compresser… %d sur %d",
+    .cz_counts_fmt = "%d compressibles · %d déjà compressés · %d impossibles",
+    .cz_only_some = "Ceux qu'on peut compresser",
+    .cz_show_all = "Tous les jeux",
+    .cz_none_possible = "Aucun de tes jeux installés ne peut être compressé : Nintendo compresse déjà la plupart, et d'autres utilisent un stockage clairsemé. Y les montre tous.",
 };
 
 constexpr More kGerman{
@@ -1659,6 +1680,13 @@ constexpr More kGerman{
     .sp_reading_fmt = "Konsole wird gelesen… %d von %d",
     .sp_names_fmt = "Namen werden gelesen… %d von %d",
     .jump_letters = "Nach Buchstabe",
+    .cz_possible = "Komprimierbar · wird gemessen…",
+    .cz_checking_fmt = "Deine Spiele werden geprüft… %d von %d",
+    .cz_measuring_fmt = "Die komprimierbaren werden gemessen… %d von %d",
+    .cz_counts_fmt = "%d komprimierbar · %d schon komprimiert · %d nicht möglich",
+    .cz_only_some = "Die komprimierbaren",
+    .cz_show_all = "Alle Spiele",
+    .cz_none_possible = "Keines deiner installierten Spiele lässt sich komprimieren: Nintendo komprimiert die meisten schon, andere nutzen Sparse-Speicher. Y zeigt alle.",
 };
 
 constexpr More kItalian{
@@ -2072,6 +2100,13 @@ constexpr More kItalian{
     .sp_reading_fmt = "Lettura della console… %d di %d",
     .sp_names_fmt = "Lettura dei nomi… %d di %d",
     .jump_letters = "Per lettera",
+    .cz_possible = "Comprimibile · misurazione…",
+    .cz_checking_fmt = "Controllo dei tuoi giochi… %d di %d",
+    .cz_measuring_fmt = "Misurazione dei comprimibili… %d di %d",
+    .cz_counts_fmt = "%d comprimibili · %d già compressi · %d non possibili",
+    .cz_only_some = "Quelli comprimibili",
+    .cz_show_all = "Tutti i giochi",
+    .cz_none_possible = "Nessuno dei tuoi giochi installati si può comprimere: Nintendo ne comprime già la maggior parte e altri usano l'archiviazione sparsa. Con Y li vedi tutti.",
 };
 
 constexpr More kPortuguese{
@@ -2485,6 +2520,13 @@ constexpr More kPortuguese{
     .sp_reading_fmt = "Lendo o console… %d de %d",
     .sp_names_fmt = "Lendo os nomes… %d de %d",
     .jump_letters = "Por letra",
+    .cz_possible = "Pode ser comprimido · medindo…",
+    .cz_checking_fmt = "Verificando seus jogos… %d de %d",
+    .cz_measuring_fmt = "Medindo os que podem ser comprimidos… %d de %d",
+    .cz_counts_fmt = "%d podem ser comprimidos · %d já comprimidos · %d não podem",
+    .cz_only_some = "Os que podem ser comprimidos",
+    .cz_show_all = "Todos os jogos",
+    .cz_none_possible = "Nenhum dos seus jogos instalados pode ser comprimido: a Nintendo já comprime a maioria e outros usam armazenamento esparso. Com Y você vê todos.",
 };
 
 constexpr More kDutch{
@@ -2898,6 +2940,13 @@ constexpr More kDutch{
     .sp_reading_fmt = "Console lezen… %d van %d",
     .sp_names_fmt = "Namen lezen… %d van %d",
     .jump_letters = "Per letter",
+    .cz_possible = "Comprimeerbaar · meten…",
+    .cz_checking_fmt = "Je spellen controleren… %d van %d",
+    .cz_measuring_fmt = "De comprimeerbare meten… %d van %d",
+    .cz_counts_fmt = "%d comprimeerbaar · %d al gecomprimeerd · %d kan niet",
+    .cz_only_some = "De comprimeerbare",
+    .cz_show_all = "Alle spellen",
+    .cz_none_possible = "Geen van je geïnstalleerde spellen kan worden gecomprimeerd: Nintendo comprimeert de meeste al en andere gebruiken sparse opslag. Y toont ze allemaal.",
 };
 
 constexpr More kRussian{
@@ -3311,6 +3360,13 @@ constexpr More kRussian{
     .sp_reading_fmt = "Чтение консоли… %d из %d",
     .sp_names_fmt = "Чтение названий… %d из %d",
     .jump_letters = "По буквам",
+    .cz_possible = "Можно сжать · замер…",
+    .cz_checking_fmt = "Проверка игр… %d из %d",
+    .cz_measuring_fmt = "Замер тех, что можно сжать… %d из %d",
+    .cz_counts_fmt = "можно сжать: %d · уже сжаты: %d · нельзя: %d",
+    .cz_only_some = "Только те, что можно сжать",
+    .cz_show_all = "Все игры",
+    .cz_none_possible = "Ни одну установленную игру нельзя сжать: большинство Nintendo уже сжимает, другие используют разреженное хранилище. Y покажет все.",
 };
 
 constexpr More kJapanese{
@@ -3724,6 +3780,13 @@ constexpr More kJapanese{
     .sp_reading_fmt = "本体を読み込み中… %d / %d",
     .sp_names_fmt = "名前を読み込み中… %d / %d",
     .jump_letters = "頭文字で移動",
+    .cz_possible = "圧縮できます · 計測中…",
+    .cz_checking_fmt = "ゲームを確認中… %d / %d",
+    .cz_measuring_fmt = "圧縮できるゲームを計測中… %d / %d",
+    .cz_counts_fmt = "圧縮可 %d · 圧縮済み %d · 不可 %d",
+    .cz_only_some = "圧縮できるゲーム",
+    .cz_show_all = "すべてのゲーム",
+    .cz_none_possible = "インストール済みのゲームはどれも圧縮できません: 多くは Nintendo が圧縮済みで、ほかはスパース形式です。Y ですべて表示します。",
 };
 
 constexpr More kKorean{
@@ -4137,6 +4200,13 @@ constexpr More kKorean{
     .sp_reading_fmt = "본체 읽는 중… %d / %d",
     .sp_names_fmt = "이름 읽는 중… %d / %d",
     .jump_letters = "글자별 이동",
+    .cz_possible = "압축 가능 · 측정 중…",
+    .cz_checking_fmt = "게임 확인 중… %d / %d",
+    .cz_measuring_fmt = "압축 가능한 게임 측정 중… %d / %d",
+    .cz_counts_fmt = "압축 가능 %d · 이미 압축됨 %d · 불가 %d",
+    .cz_only_some = "압축 가능한 게임",
+    .cz_show_all = "모든 게임",
+    .cz_none_possible = "설치된 게임 중 압축할 수 있는 것이 없습니다: 대부분은 닌텐도가 이미 압축했고, 나머지는 스파스 저장을 씁니다. Y로 모두 볼 수 있습니다.",
 };
 
 constexpr More kChinese{
@@ -4550,6 +4620,13 @@ constexpr More kChinese{
     .sp_reading_fmt = "正在读取主机… %d / %d",
     .sp_names_fmt = "正在读取名称… %d / %d",
     .jump_letters = "按首字母",
+    .cz_possible = "可以压缩 · 测量中…",
+    .cz_checking_fmt = "正在检查你的游戏… %d / %d",
+    .cz_measuring_fmt = "正在测量可压缩的游戏… %d / %d",
+    .cz_counts_fmt = "可压缩 %d · 已压缩 %d · 不可压缩 %d",
+    .cz_only_some = "可以压缩的游戏",
+    .cz_show_all = "所有游戏",
+    .cz_none_possible = "已安装的游戏都无法压缩：大多数任天堂已经压缩过，其余使用稀疏存储。按 Y 显示全部。",
 };
 
 // In the order of LanguageName in i18n.cpp.

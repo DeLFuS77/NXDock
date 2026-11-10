@@ -169,15 +169,17 @@ void Synth::MusicStart() {
         return;
     }
     if (!m_music) {
-        m_out = kSilent;
-        m_next_step = m_now + Samples(0.3);
+        // heard from the start: from -30 dB (an exponential rise from silence stays unheard
+        // for seconds), the first note almost at once
+        m_out = 0.7 * 0.0316;
+        m_next_step = m_now + Samples(0.05);
         m_count = 0;
     }
     m_music = true;
     m_stopping = false;
-    // rises over five seconds
+    // rises in 1.2 seconds
     m_out_target = 0.7;
-    m_out_ramp_end = m_now + Samples(5);
+    m_out_ramp_end = m_now + Samples(1.2);
     m_out_step = std::pow(m_out_target / std::max(m_out, kSilent), 1.0 / double(m_out_ramp_end - m_now));
 }
 

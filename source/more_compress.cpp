@@ -15,6 +15,7 @@
 #include "i18n_more.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <ctime>
 
@@ -32,8 +33,27 @@ void App::OpenCompress() {
     m_compress_opened = m_time;
     m_compress_focus = 0;
     m_space_mode = 3;
-    // nothing is read now: a game is analysed when it is chosen (A), the others are not touched
+    // every game is checked from the header of its program (fast), then only those that can be
+    // compressed are measured; the list fills as it goes
     m_compressed_marks = Compressor::Marks();
+    m_compress_started = false;
+}
+
+// The rows of the list: only those that can be compressed (or are being checked), or every game.
+std::vector<int> App::CompressVisible(const Space::View& v, const Compressor::View& c) const {
+    auto rows = CompressRows(v);
+    if (m_compress_all) return rows;
+    std::erase_if(rows, [&](int r) {
+        const u64 app = v.apps[size_t(r)].app_id;
+        for (const auto& mark : m_compressed_marks) {
+            if (mark.app_id == app) return false;
+        }
+        const auto it = c.games.find(app);
+        if (it == c.games.end()) return false;
+        const auto st = it->second.state;
+        return st == GameEstimate::State::Already || st == GameEstimate::State::Unsupported;
+    });
+    return rows;
 }
 
 // The installed games the list shows: those with their game, as the scan found them.
@@ -47,6 +67,17 @@ std::vector<int> App::CompressRows(const Space::View& v) const {
         });
         if (base) rows.push_back(i);
     }
+    // always by name, as a person reads it (the names arrive after the scan)
+    std::stable_sort(rows.begin(), rows.end(), [&v](int a, int b) {
+        const auto& x = v.apps[size_t(a)].name;
+        const auto& y = v.apps[size_t(b)].name;
+        const size_t n = std::min(x.size(), y.size());
+        for (size_t i = 0; i < n; i++) {
+            const int p = std::tolower((unsigned char)x[i]), q = std::tolower((unsigned char)y[i]);
+            if (p != q) return p < q;
+        }
+        return x.size() < y.size();
+    });
     return rows;
 }
 
@@ -93,9 +124,45 @@ void App::DrawCompress(NVGcontext* vg) {
     }
     nvgRestore(vg);
 
-    // ---- the right: the games
-    const auto rows = CompressRows(v);
+    // ---- the right: the games, checked as soon as the console is read
+    if (v.scanned && !m_compress_started && !c.running) {
+        std::vector<unsigned long long> apps;
+        for (int r : CompressRows(v)) apps.push_back(v.apps[size_t(r)].app_id);
+        m_compress_started = m_compress->StartAnalysis(apps);
+    }
+    const auto rows = CompressVisible(v, c);
     draw::Panel(vg, t, rx, 92, rw, 460, 16);
+    if (v.scanned) {
+        // what the check found so far, and how far it got
+        int can = 0, already = 0, cannot = 0;
+        for (const auto& [app, e] : c.games) {
+            if (e.state == GameEstimate::State::Possible || e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low ||
+                e.state == GameEstimate::State::Ours) {
+                can++;
+            } else if (e.state == GameEstimate::State::Already) {
+                already++;
+            } else if (e.state == GameEstimate::State::Unsupported) {
+                cannot++;
+            }
+        }
+        if (c.analyzing) {
+            const bool measuring = c.check_done >= c.check_total && c.measure_total > 0;
+            std::snprintf(text, sizeof(text), measuring ? m.cz_measuring_fmt : m.cz_checking_fmt, measuring ? c.measure_done : c.check_done,
+                          measuring ? c.measure_total : c.check_total);
+            ui::Spinner(vg, rx + 30, 114, 8, t.work, m_time);
+            ui::Text(vg, rx + 46, 114, 14, t.muted, text);
+            const float frac = measuring ? float(c.measure_done) / float(std::max(1, c.measure_total))
+                                         : float(c.check_done) / float(std::max(1, c.check_total));
+            ui::Progress(vg, t, rx + 22, 132, rw - 44, 6, frac, t.work, m_time);
+        } else {
+            std::snprintf(text, sizeof(text), m.cz_counts_fmt, can, already, cannot);
+            ui::Text(vg, rx + 22, 114, 14, t.muted, text);
+            ui::Text(vg, rx + rw - 22, 114, 14, t.work, m_compress_all ? m.cz_show_all : m.cz_only_some, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
+        if (!c.analyzing && rows.empty() && !m_compress_all) {
+            draw::Box(vg, rx + 40, 260, rw - 80, 16, t.muted, m.cz_none_possible);
+        }
+    }
     if (!v.scanned) {
         // the console is still being read: how far, and the list when it ends
         ui::Spinner(vg, rx + rw / 2, 280, 14, t.work, m_time);
@@ -109,15 +176,19 @@ void App::DrawCompress(NVGcontext* vg) {
     } else if (rows.empty()) {
         ui::Text(vg, rx + rw / 2, 320, 17, t.muted, m.cz_no_games, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
+    for (int r = 0; r < int(rows.size()); r++) {
+        if (m_compress_app && v.apps[size_t(rows[size_t(r)])].app_id == m_compress_app) m_compress_focus = r;
+    }
     m_compress_focus = std::clamp(m_compress_focus, 0, std::max(0, int(rows.size()) - 1));
+    if (!rows.empty()) m_compress_app = v.apps[size_t(rows[size_t(m_compress_focus)])].app_id;
     const float rh = 56;
-    const int visible = int((460 - 16) / rh);
+    const int visible = int((552 - 148 - 8) / rh);
     const int first = std::clamp(m_compress_focus - visible / 2, 0, std::max(0, int(rows.size()) - visible));
     nvgSave(vg);
-    nvgScissor(vg, rx, 92, rw, 460);
+    nvgScissor(vg, rx, 146, rw, 404);
     for (int r = first; r < int(rows.size()) && r < first + visible; r++) {
         const auto& a = v.apps[size_t(rows[size_t(r)])];
-        const float ry = 100 + (r - first) * rh;
+        const float ry = 150 + (r - first) * rh;
         const float enter = ui::EaseOut(ui::Appear(m_compress_opened + 0.03 * (r - first), 0.3));
         nvgGlobalAlpha(vg, enter);
         if (r == m_compress_focus) {
@@ -144,7 +215,11 @@ void App::DrawCompress(NVGcontext* vg) {
         }
         NVGcolor col = t.muted;
         switch (e.state) {
-            case GameEstimate::State::Pending: std::snprintf(text, sizeof(text), "%s", known ? m.cz_pending : m.cz_tap); break;
+            case GameEstimate::State::Pending: std::snprintf(text, sizeof(text), "%s", m.cz_pending); break;
+            case GameEstimate::State::Possible:
+                std::snprintf(text, sizeof(text), "%s", m.cz_possible);
+                col = t.work;
+                break;
             case GameEstimate::State::Worth:
                 std::snprintf(text, sizeof(text), m.cz_worth_fmt, int(e.gain * 100 + 0.5), draw::Size(e.saved).c_str());
                 col = t.ok;
@@ -163,7 +238,7 @@ void App::DrawCompress(NVGcontext* vg) {
                                                                  : m.cz_unsupported);
                 break;
         }
-        const bool spin = known && e.state == GameEstimate::State::Pending;
+        const bool spin = known && (e.state == GameEstimate::State::Pending || e.state == GameEstimate::State::Possible) && c.analyzing;
         if (spin) ui::Spinner(vg, rx + rw - 30, ry + 25, 8, t.muted, m_time);
         ui::Text(vg, rx + rw - (spin ? 48 : 24), ry + 25, 15, col, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         // the share it saves, as a small bar under the name
@@ -197,6 +272,7 @@ void App::DrawCompress(NVGcontext* vg) {
         hints.push_back({ui::glyph::X, s.cancel, HidNpadButton_X});
     } else if (!rows.empty()) {
         hints.push_back({ui::glyph::DPad, m.jump_letters, HidNpadButton_AnyRight});
+        hints.push_back({ui::glyph::Y, m_compress_all ? m.cz_only_some : m.cz_show_all, HidNpadButton_Y});
         hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
     }
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
@@ -240,7 +316,11 @@ void App::FollowCompress(const Compressor::View& c) {
 void App::UpdateCompress(u64 down, u64 held) {
     const auto v = m_space->Snapshot();
     const auto c = m_compress->Snapshot();
-    const auto rows = CompressRows(v);
+    const auto rows = CompressVisible(v, c);
+    if (down & HidNpadButton_Y) {
+        m_compress_all = !m_compress_all; // every game, or only those that can be compressed
+        return;
+    }
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_compress_focus > 0) m_compress_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_compress_focus < int(rows.size()) - 1) m_compress_focus++;
     // by first letter, for long lists
@@ -249,6 +329,10 @@ void App::UpdateCompress(u64 down, u64 held) {
         std::vector<std::string> names;
         for (int r : rows) names.push_back(v.apps[size_t(r)].name);
         m_compress_focus = ListJump(names, m_compress_focus, right ? 1 : -1);
+    }
+    if (!rows.empty()) {
+        m_compress_focus = std::clamp(m_compress_focus, 0, int(rows.size()) - 1);
+        m_compress_app = v.apps[size_t(rows[size_t(m_compress_focus)])].app_id;
     }
     if (down & HidNpadButton_B) {
         m_space_mode = 0; // a compression that runs goes on
@@ -271,9 +355,10 @@ void App::UpdateCompress(u64 down, u64 held) {
             known = true;
         }
     }
-    if (!known) {
-        // this game only: a sample of its data, read now
-        if (!m_compress->StartAnalysis({a.app_id})) Notice(m.cz_pending);
+    if (!known || e.state == GameEstimate::State::Pending || e.state == GameEstimate::State::Possible) {
+        // still being checked: it says so
+        if (!c.analyzing && !m_compress->StartAnalysis({a.app_id})) Notice(m.cz_pending);
+        else Notice(m.cz_pending);
         return;
     }
     if (e.state == GameEstimate::State::Ours) {

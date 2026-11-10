@@ -293,6 +293,8 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
         std::lock_guard lock(m_mutex);
         if (m_view.running || m_view.analyzing) return false;
         m_view.analyzing = true;
+        m_view.check_done = m_view.measure_done = m_view.measure_total = 0;
+        m_view.check_total = int(apps.size());
         for (auto a : apps) m_view.games.try_emplace(a);
     }
     Join();
@@ -301,20 +303,25 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
         const auto marks = Marks();
         keys::Keys k;
         const bool ready = R_SUCCEEDED(splCryptoInitialize()) && R_SUCCEEDED(keys::parse_keys(k, false)) && R_SUCCEEDED(ncmInitialize());
-        std::vector<u8> work, block(lz4pack::kBlock);
+        std::vector<u8> work;
+        // 1. every game, from the header of its program alone: fast, even with hundreds
+        std::vector<unsigned long long> possible;
         for (const auto app : apps) {
             if (m_stop || !ready) break;
+            GameEstimate e;
             {
                 std::lock_guard lock(m_mutex);
-                if (m_view.games[app].state != GameEstimate::State::Pending) continue;
+                m_view.check_done++;
+                e = m_view.games[app];
             }
-            GameEstimate e;
+            if (e.state != GameEstimate::State::Pending && e.state != GameEstimate::State::Possible) continue;
             e.state = GameEstimate::State::Unsupported;
             e.why = GameEstimate::Why::NotFound;
             for (const auto& m : marks) {
                 if (m.app_id == app) {
                     e.state = GameEstimate::State::Ours;
                     e.saved = m.saved;
+                    e.why = GameEstimate::Why::None;
                 }
             }
             for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
@@ -323,32 +330,61 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                 GameContents g;
                 if (!s.ok || !FindGame(s, app, g)) continue;
                 e.bytes = u64(g.program_size);
+                e.why = GameEstimate::Why::Read;
                 u8 raw[0xC00];
                 nca::Header h;
-                e.why = GameEstimate::Why::Read;
                 if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) break;
                 bool already = false, sparse = false;
                 const int r = RomfsSection(h, already, sparse);
                 if (already) {
                     e.state = GameEstimate::State::Already;
-                    break;
-                }
-                if (r < 0) {
+                    e.why = GameEstimate::Why::None;
+                } else if (r < 0) {
                     e.why = sparse ? GameEstimate::Why::Sparse : GameEstimate::Why::Read;
-                    break;
+                } else {
+                    e.state = GameEstimate::State::Possible;
+                    e.why = GameEstimate::Why::None;
+                    possible.push_back(app);
                 }
+                break;
+            }
+            std::lock_guard lock(m_mutex);
+            m_view.games[app] = e;
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.measure_total = int(possible.size());
+        }
+        // 2. what those that can be compressed would save, from a sample of their data
+        for (const auto app : possible) {
+            if (m_stop) break;
+            GameEstimate e;
+            {
+                std::lock_guard lock(m_mutex);
+                e = m_view.games[app];
+            }
+            for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+                Storage s(sid);
+                GameContents g;
+                if (!s.ok || !FindGame(s, app, g)) continue;
+                u8 raw[0xC00];
+                nca::Header h;
+                if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) break;
+                bool already = false, sparse = false;
+                const int r = RomfsSection(h, already, sparse);
+                if (r < 0) break;
                 nca::Header copy = h;
                 keys::KeyEntry key;
                 if (R_FAILED(nca::GetDecryptedTitleKey(copy, k, key))) {
+                    e.state = GameEstimate::State::Unsupported;
                     e.why = GameEstimate::Why::Key;
                     break;
                 }
-                e.why = GameEstimate::Why::None;
                 const auto& fh = h.fs_header[r];
                 const u64 base = h.fs_table[r].GetOffset() + DataLevel(fh).logical_offset;
                 const u64 size = DataLevel(fh).hash_data_size;
                 e.gain = lz4pack::EstimateGain(size, kLevel, kSample, [&](u64 o, u8* b, size_t n) {
-                    return R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, base + o, b, n, work));
+                    return !m_stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, base + o, b, n, work));
                 });
                 e.saved = u64(double(size) * e.gain);
                 e.state = e.gain >= kCompressWorth ? GameEstimate::State::Worth : GameEstimate::State::Low;
@@ -356,6 +392,7 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
             }
             std::lock_guard lock(m_mutex);
             m_view.games[app] = e;
+            m_view.measure_done++;
         }
         ncmExit();
         splCryptoExit();
