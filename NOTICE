@@ -62,19 +62,17 @@ The install core "yati" from Sphaira (commit 05bd057, 5 November 2026)
     or nothing; the way an MTP install folder hands a file to the installer
     follows Sphaira's haze_helper.cpp.
 
+MTP
+  NXDock's own responder (source/mtp_proto.cpp, mtp_storage.cpp, mtp_usb.cpp),
+  written from the PTP (ISO 15740) and MTP 1.1 specifications; its USB setup
+  follows libnx's usb_comms.c (ISC licence). No code of haze or libhaze.
+
 libusbhsfs (revision 625269b)
   https://github.com/ITotalJustice/libusbhsfs (fork of DarkMatterCore's)
   Copyright (c) 2020-2026 DarkMatterCore, Rhys Koedijk, XorTroll
   ISC licence. Fetched at build time; FAT32 and exFAT USB disks (FatFs by
   ChaN, its own BSD-style licence). The NTFS and EXT4 parts (GPL) are off.
 
-libhaze (revision 9f5467c), only when built with NXDOCK_MTP=ON
-  https://github.com/R-YaTian/libhaze, from haze in Atmosphère
-  Copyright (c) Atmosphère-NX, ITotalJustice
-  GPL-2.0. Fetched at build time; the MTP responder. Its licence is GPL-2.0
-  without "or later", which may not be combined with GPL-3.0 code when the
-  program is given to others: decide before publishing a build with MTP,
-  or build with -DNXDOCK_MTP=OFF.
 
   Inside yati, from nxdumptool (https://github.com/DarkMatterCore/nxdumptool),
   GPL-3.0, with their own notices kept in each file:

@@ -56,17 +56,6 @@ FetchContent_Declare(libusbhsfs
 )
 FetchContent_MakeAvailable(libusbhsfs)
 
-# MTP with libhaze (GPL-2.0, from Atmosphère's haze), the revision Sphaira uses. Its licence is
-# GPL-2.0 only, see NOTICE: NXDOCK_MTP=OFF builds NXDock without it.
-option(NXDOCK_MTP "Install by dragging files from the computer (MTP, libhaze)" ON)
-if (NXDOCK_MTP)
-    FetchContent_Declare(libhaze
-        GIT_REPOSITORY https://github.com/R-YaTian/libhaze.git
-        GIT_TAG 9f5467c
-    )
-    FetchContent_MakeAvailable(libhaze)
-endif()
-
 # The install core "yati" from Sphaira (GPL-3.0), with NXDock's layer in place of Sphaira's
 # app, settings, translations and log (compat/). See NOTICE.
 add_library(yati STATIC
@@ -141,6 +130,9 @@ add_executable(nxdock
     source/vault_json.cpp
     source/zip.cpp
     source/mtp.cpp
+    source/mtp_proto.cpp
+    source/mtp_storage.cpp
+    source/mtp_usb.cpp
     source/usb_disks.cpp
     source/usb_tinfoil.cpp
     source/errors.cpp
@@ -162,10 +154,6 @@ find_library(curl_lib curl REQUIRED)
 find_library(z_lib z REQUIRED)
 target_include_directories(nxdock PRIVATE ${curl_inc} ${zstd_inc})
 target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg libusbhsfs ${deko3d_lib} ${curl_lib} ${z_lib})
-if (NXDOCK_MTP)
-    target_compile_definitions(nxdock PRIVATE NXDOCK_MTP)
-    target_link_libraries(nxdock PRIVATE haze)
-endif()
 
 nx_generate_nacp(
     OUTPUT nxdock.nacp

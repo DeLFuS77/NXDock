@@ -161,3 +161,9 @@
   three seconds and turns the backlight off; any button or touch lights it,
   and the end of the queue lights it by itself. In Settings, "Screen off for
   long queues" (off by default) does it when a queue of 2 GB or more starts.
+- MTP with a responder of its own, written from the PTP and MTP
+  specifications (no third-party MTP code): file explorers see the install
+  folders and the SD card; files over 4 GB come the MTP way
+  (SendObjectPropList).
+- The planner of the queue marks the games played least lately first; the
+  page of an installed game opens its cheats and mods with X.

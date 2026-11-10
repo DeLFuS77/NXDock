@@ -15,7 +15,7 @@ class ProgressBox;
 
 namespace nxdock {
 
-// Installing by dragging files from the computer (MTP, with libhaze). The console shows three
+// Installing by dragging files from the computer (MTP, with NXDock's own responder). The console shows three
 // places in the file explorer of the computer:
 //  - "Install to the SD card": a game file dropped there is installed as it arrives, nothing is
 //    kept on the SD card (a stream install: all or nothing as always);

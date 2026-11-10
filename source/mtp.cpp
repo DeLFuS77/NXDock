@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 //
-// MTP with libhaze (GPL-2.0, from Atmosphère's haze, as Sphaira uses it). The file systems the
-// computer sees are written here; the way a file dropped in an install folder becomes a stream
-// for the install core follows Sphaira's haze_helper.cpp (GPL-3.0).
+// MTP with NXDock's own responder (mtp_proto.cpp, mtp_usb.cpp). The way a file dropped in an
+// install folder becomes a stream for the install core follows Sphaira's haze_helper.cpp
+// (GPL-3.0).
 #include "mtp.hpp"
 
 #include "defines.hpp"
@@ -18,9 +18,13 @@
 #include <mutex>
 #include <vector>
 
-#ifdef NXDOCK_MTP
-#include <haze.h>
-#endif
+#include "mtp_storage.hpp"
+#include "mtp_usb.hpp"
+
+#include <switch.h>
+
+#include <atomic>
+#include <thread>
 
 namespace nxdock {
 namespace {
@@ -161,336 +165,180 @@ void MtpAllowNand(bool on) {
     g_view.nand_allowed = on;
 }
 
-#ifdef NXDOCK_MTP
 namespace {
 
-constexpr Result kPathNotFound = MAKERESULT(2, 1);
-constexpr Result kDeviceBusy = MAKERESULT(420, 20);
-constexpr Result kNotAllowed = MAKERESULT(2, 6);
-
-// The path inside a storage: without the storage's own name in front.
-std::string Inside(const char* name, const char* path) {
-    std::string p = path ? path : "";
-    while (!p.empty() && p.front() == '/') p.erase(p.begin());
-    const size_t n = std::strlen(name);
-    if (n && p.compare(0, n, name) == 0 && (p.size() == n || p[n] == '/')) p.erase(0, n);
-    while (!p.empty() && p.front() == '/') p.erase(p.begin());
-    return "/" + p;
-}
-
-// The SD card itself.
-class SdProxy final : public haze::FileSystemProxyImpl {
+// An install folder: a game file dropped there goes to the install queue as it arrives.
+class InstallStorage final : public mtp::Storage {
 public:
-    SdProxy() { m_ok = R_SUCCEEDED(fsOpenSdCardFileSystem(&m_fs)); }
-    ~SdProxy() {
-        if (m_ok) {
-            fsFsCommit(&m_fs);
-            fsFsClose(&m_fs);
+    InstallStorage(std::string description, bool nand) : m_description(std::move(description)), m_nand(nand) {}
+    std::string Description() const override { return m_description; }
+    void Space(uint64_t& total, uint64_t& free) override {
+        total = free = 0;
+        NcmContentStorage cs{};
+        if (R_SUCCEEDED(ncmOpenContentStorage(&cs, m_nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard))) {
+            s64 t = 0, f = 0;
+            ncmContentStorageGetTotalSpaceSize(&cs, &t);
+            ncmContentStorageGetFreeSpaceSize(&cs, &f);
+            total = uint64_t(t);
+            free = uint64_t(f);
+            ncmContentStorageClose(&cs);
         }
     }
-    const char* GetName() const override { return "sd"; }
-    const char* GetDisplayName() const override { return m_display.c_str(); }
-    void SetDisplay(std::string s) { m_display = std::move(s); }
-
-    Result GetTotalSpace(const char* path, s64* out) override { return fsFsGetTotalSpace(&m_fs, Path(path), out); }
-    Result GetFreeSpace(const char* path, s64* out) override { return fsFsGetFreeSpace(&m_fs, Path(path), out); }
-    Result GetEntryType(const char* path, haze::FileAttrType* out) override {
-        FsDirEntryType type;
-        R_TRY(fsFsGetEntryType(&m_fs, Path(path), &type));
-        *out = type == FsDirEntryType_Dir ? haze::FileAttrType_DIR : haze::FileAttrType_FILE;
-        R_SUCCEED();
+    bool List(const std::string& dir, std::vector<mtp::Entry>& out) override {
+        if (!dir.empty()) return false;
+        std::lock_guard lock(g_mutex);
+        // the file arriving now shows while it arrives
+        if (g_pipe && !g_view.file.empty()) out.push_back({g_view.file, false, g_view.size, 0});
+        return true;
     }
-    Result CreateFile(const char* path, s64 size) override { return fsFsCreateFile(&m_fs, Path(path), size, 0); }
-    Result DeleteFile(const char* path) override { return fsFsDeleteFile(&m_fs, Path(path)); }
-    Result RenameFile(const char* a, const char* b) override {
-        const std::string from = Path(a);
-        return fsFsRenameFile(&m_fs, from.c_str(), Path(b));
-    }
-    Result OpenFile(const char* path, haze::FileOpenMode mode, haze::File* out) override {
-        auto f = new FsFile();
-        const u32 flags = mode == haze::FileOpenMode_WRITE ? FsOpenMode_Write | FsOpenMode_Append : FsOpenMode_Read;
-        const Result rc = fsFsOpenFile(&m_fs, Path(path), flags, f);
-        if (R_FAILED(rc)) {
-            delete f;
-            return rc;
+    bool Stat(const std::string& path, mtp::Entry& out) override {
+        std::vector<mtp::Entry> list;
+        List("", list);
+        for (const auto& e : list) {
+            if (e.name == path) {
+                out = e;
+                return true;
+            }
         }
-        out->impl = f;
-        R_SUCCEED();
+        return false;
     }
-    Result GetFileSize(haze::File* f, s64* out) override { return fsFileGetSize(static_cast<FsFile*>(f->impl), out); }
-    Result SetFileSize(haze::File* f, s64 size) override { return fsFileSetSize(static_cast<FsFile*>(f->impl), size); }
-    Result ReadFile(haze::File* f, s64 off, void* buf, u64 size, u64* got) override {
-        return fsFileRead(static_cast<FsFile*>(f->impl), off, buf, size, FsReadOption_None, got);
-    }
-    Result WriteFile(haze::File* f, s64 off, const void* buf, u64 size) override {
-        return fsFileWrite(static_cast<FsFile*>(f->impl), off, buf, size, FsWriteOption_None);
-    }
-    void CloseFile(haze::File* f) override {
-        auto file = static_cast<FsFile*>(f->impl);
-        if (file) {
-            fsFileClose(file);
-            delete file;
-        }
-        f->impl = nullptr;
-    }
-    Result CreateDirectory(const char* path) override { return fsFsCreateDirectory(&m_fs, Path(path)); }
-    Result DeleteDirectoryRecursively(const char* path) override { return fsFsDeleteDirectoryRecursively(&m_fs, Path(path)); }
-    Result RenameDirectory(const char* a, const char* b) override {
-        const std::string from = Path(a);
-        return fsFsRenameDirectory(&m_fs, from.c_str(), Path(b));
-    }
-    Result OpenDirectory(const char* path, haze::Dir* out) override {
-        auto d = new FsDir();
-        const Result rc = fsFsOpenDirectory(&m_fs, Path(path), FsDirOpenMode_ReadDirs | FsDirOpenMode_ReadFiles | FsDirOpenMode_NoFileSize, d);
-        if (R_FAILED(rc)) {
-            delete d;
-            return rc;
-        }
-        out->impl = d;
-        R_SUCCEED();
-    }
-    Result ReadDirectory(haze::Dir* d, s64* total, size_t max, haze::DirEntry* buf) override {
-        std::vector<FsDirectoryEntry> entries(max);
-        R_TRY(fsDirRead(static_cast<FsDir*>(d->impl), total, max, entries.data()));
-        for (s64 i = 0; i < *total; i++) {
-            std::strncpy(buf[i].name, entries[i].name, sizeof(buf[i].name) - 1);
-        }
-        R_SUCCEED();
-    }
-    Result GetDirectoryEntryCount(haze::Dir* d, s64* out) override { return fsDirGetEntryCount(static_cast<FsDir*>(d->impl), out); }
-    void CloseDirectory(haze::Dir* d) override {
-        auto dir = static_cast<FsDir*>(d->impl);
-        if (dir) {
-            fsDirClose(dir);
-            delete dir;
-        }
-        d->impl = nullptr;
-    }
-
-private:
-    const char* Path(const char* p) {
-        m_path = Inside(GetName(), p);
-        return m_path.c_str();
-    }
-    FsFileSystem m_fs{};
-    bool m_ok = false;
-    std::string m_path, m_display = "SD card";
-};
-
-// An install folder: what is dropped there goes to the install queue as it arrives.
-class InstallProxy final : public haze::FileSystemProxyImpl {
-public:
-    InstallProxy(const char* name, std::string display, bool nand) : m_name(name), m_display(std::move(display)), m_nand(nand) {}
-    const char* GetName() const override { return m_name; }
-    const char* GetDisplayName() const override { return m_display.c_str(); }
-
-    Result GetTotalSpace(const char*, s64* out) override {
-        return ncmSpace(true, out);
-    }
-    Result GetFreeSpace(const char*, s64* out) override {
-        return ncmSpace(false, out);
-    }
-    Result GetEntryType(const char* path, haze::FileAttrType* out) override {
-        const std::string p = Inside(m_name, path);
-        if (p == "/") {
-            *out = haze::FileAttrType_DIR;
-            R_SUCCEED();
-        }
-        std::lock_guard lock(m_mutex);
-        R_UNLESS(Find(p) != m_files.end(), kPathNotFound);
-        *out = haze::FileAttrType_FILE;
-        R_SUCCEED();
-    }
-    Result GetEntryAttributes(const char* path, haze::FileAttr* out) override {
-        R_TRY(GetEntryType(path, &out->type));
-        if (out->type == haze::FileAttrType_FILE) {
-            std::lock_guard lock(m_mutex);
-            out->size = u64(Find(Inside(m_name, path))->size);
-        }
-        R_SUCCEED();
-    }
-    Result CreateFile(const char* path, s64 size) override {
-        const std::string p = Inside(m_name, path);
-        R_UNLESS(!GameFormat(p).empty(), kNotAllowed);
-        {
-            std::lock_guard lock(g_mutex);
-            if (m_nand && !g_view.nand_allowed) R_THROW(kNotAllowed);
-            // one file at a time, and only when the queue is free: the computer waits and retries
-            if (g_pipe || g_handed || (g_busy && g_busy())) R_THROW(kDeviceBusy);
-        }
-        std::lock_guard lock(m_mutex);
-        if (Find(p) == m_files.end()) m_files.push_back({p, size});
-        R_SUCCEED();
-    }
-    Result DeleteFile(const char* path) override {
-        std::lock_guard lock(m_mutex);
-        auto it = Find(Inside(m_name, path));
-        if (it != m_files.end()) m_files.erase(it);
-        R_SUCCEED();
-    }
-    Result RenameFile(const char*, const char*) override { R_THROW(kNotAllowed); }
-    Result OpenFile(const char* path, haze::FileOpenMode mode, haze::File* out) override {
-        const std::string p = Inside(m_name, path);
-        s64 size = 0;
-        {
-            std::lock_guard lock(m_mutex);
-            auto it = Find(p);
-            R_UNLESS(it != m_files.end(), kPathNotFound);
-            size = it->size;
-        }
-        if (mode != haze::FileOpenMode_WRITE) {
-            out->impl = nullptr;
-            R_SUCCEED();
-        }
+    std::unique_ptr<mtp::Source> Open(const std::string&) override { return nullptr; }
+    std::unique_ptr<mtp::Sink> Create(const std::string& path, uint64_t size, bool& busy) override {
+        busy = false;
+        if (path.find('/') != std::string::npos || GameFormat(path).empty()) return nullptr;
         auto pipe = std::make_shared<Pipe>();
-        InstallJob job;
-        const std::string name = p.substr(1);
-        job.game = name;
-        job.label = m_nand ? TrM().mtp_to_nand : TrM().mtp_to_sd;
-        job.format = GameFormat(name);
-        job.origin = InstallJob::Origin::Mtp;
-        job.parts = {name};
-        job.file_id = "mtp:" + name;
-        job.size = u64(size);
-        job.nand = m_nand;
-        job.color_key = name;
         {
             std::lock_guard lock(g_mutex);
-            R_UNLESS(!g_pipe && !g_handed, kDeviceBusy);
+            if (m_nand && !g_view.nand_allowed) return nullptr;
+            // one file at a time, and only when the queue is free: the computer waits and retries
+            if (g_pipe || g_handed || (g_busy && g_busy())) {
+                busy = true;
+                return nullptr;
+            }
             g_pipe = pipe;
             g_handed = pipe;
-            g_view.file = name;
-            g_view.size = u64(size);
+            g_view.file = path;
+            g_view.size = size;
             g_view.received = 0;
         }
+        InstallJob job;
+        job.game = path;
+        job.label = m_nand ? TrM().mtp_to_nand : TrM().mtp_to_sd;
+        job.format = GameFormat(path);
+        job.origin = InstallJob::Origin::Mtp;
+        job.parts = {path};
+        job.file_id = "mtp:" + path;
+        job.size = size;
+        job.nand = m_nand;
+        job.color_key = path;
         if (!g_enqueue || !g_enqueue(std::move(job))) {
             std::lock_guard lock(g_mutex);
             g_pipe.reset();
             g_handed.reset();
             g_view.file.clear();
-            R_THROW(kDeviceBusy);
+            busy = true;
+            return nullptr;
         }
-        out->impl = new std::shared_ptr<Pipe>(pipe);
-        R_SUCCEED();
+        return std::make_unique<PipeSink>(pipe);
     }
-    Result GetFileSize(haze::File*, s64* out) override {
-        *out = 0;
-        R_SUCCEED();
-    }
-    Result SetFileSize(haze::File*, s64) override { R_SUCCEED(); }
-    Result ReadFile(haze::File*, s64, void*, u64, u64* got) override {
-        *got = 0;
-        R_SUCCEED();
-    }
-    Result WriteFile(haze::File* f, s64, const void* buf, u64 size) override {
-        auto pipe = static_cast<std::shared_ptr<Pipe>*>(f->impl);
-        R_UNLESS(pipe && (*pipe)->Push(buf, size_t(size)), kNotAllowed);
-        std::lock_guard lock(g_mutex);
-        g_view.received = (*pipe)->Received();
-        R_SUCCEED();
-    }
-    void CloseFile(haze::File* f) override {
-        auto pipe = static_cast<std::shared_ptr<Pipe>*>(f->impl);
-        if (pipe) {
-            (*pipe)->Close();
+    bool MakeDir(const std::string&) override { return false; }
+    bool Remove(const std::string&, bool) override { return false; }
+    bool Rename(const std::string&, const std::string&) override { return false; }
+
+private:
+    // the data of the file, into the pipe the install reads
+    class PipeSink final : public mtp::Sink {
+    public:
+        explicit PipeSink(std::shared_ptr<Pipe> pipe) : m_pipe(std::move(pipe)) {}
+        ~PipeSink() override {
+            if (m_pipe) Close(false);
+        }
+        bool Write(const void* data, size_t size) override {
+            if (!m_pipe->Push(data, size)) return false;
             std::lock_guard lock(g_mutex);
-            if (g_pipe == *pipe) {
+            g_view.received = m_pipe->Received();
+            return true;
+        }
+        bool Close(bool ok) override {
+            if (ok) m_pipe->Close();
+            else m_pipe->Break();
+            std::lock_guard lock(g_mutex);
+            if (g_pipe == m_pipe) {
                 g_pipe.reset();
                 g_view.file.clear();
             }
-            delete pipe;
+            m_pipe.reset();
+            return ok;
         }
-        f->impl = nullptr;
-        // the file is not kept: it leaves the folder once it was handed over
-        std::lock_guard lock(m_mutex);
-        m_files.clear();
-    }
-    Result CreateDirectory(const char*) override { R_THROW(kNotAllowed); }
-    Result DeleteDirectoryRecursively(const char*) override { R_THROW(kNotAllowed); }
-    Result RenameDirectory(const char*, const char*) override { R_THROW(kNotAllowed); }
-    Result OpenDirectory(const char*, haze::Dir* out) override {
-        out->impl = nullptr;
-        R_SUCCEED();
-    }
-    Result ReadDirectory(haze::Dir*, s64* total, size_t max, haze::DirEntry* buf) override {
-        std::lock_guard lock(m_mutex);
-        *total = 0;
-        for (size_t i = 0; i < m_files.size() && i < max; i++) {
-            std::strncpy(buf[i].name, m_files[i].path.c_str() + 1, sizeof(buf[i].name) - 1);
-            (*total)++;
-        }
-        R_SUCCEED();
-    }
-    Result GetDirectoryEntryCount(haze::Dir*, s64* out) override {
-        std::lock_guard lock(m_mutex);
-        *out = s64(m_files.size());
-        R_SUCCEED();
-    }
-    void CloseDirectory(haze::Dir*) override {}
 
-private:
-    struct Entry {
-        std::string path;
-        s64 size;
+    private:
+        std::shared_ptr<Pipe> m_pipe;
     };
-    std::vector<Entry>::iterator Find(const std::string& p) {
-        return std::find_if(m_files.begin(), m_files.end(), [&](const Entry& e) { return e.path == p; });
-    }
-    Result ncmSpace(bool total, s64* out) {
-        NcmContentStorage cs{};
-        R_TRY(ncmOpenContentStorage(&cs, m_nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard));
-        const Result rc = total ? ncmContentStorageGetTotalSpaceSize(&cs, out) : ncmContentStorageGetFreeSpaceSize(&cs, out);
-        ncmContentStorageClose(&cs);
-        return rc;
-    }
-    const char* m_name;
-    std::string m_display;
+
+    std::string m_description;
     bool m_nand;
-    std::mutex m_mutex;
-    std::vector<Entry> m_files;
 };
 
-bool g_running = false;
+std::thread g_thread;
+std::atomic<bool> g_running{false};
+mtp::UsbTransport* g_usb = nullptr;
 bool g_ncm = false;
-haze::FsEntries g_entries;
-
-void OnHaze(const haze::CallbackData*) {}
 
 } // namespace
 
 bool MtpStart(std::function<bool(InstallJob)> enqueue, std::function<bool()> queue_busy) {
-    std::lock_guard lock(g_mutex);
     if (g_running) return true;
-    g_enqueue = std::move(enqueue);
-    g_busy = std::move(queue_busy);
-    g_view = MtpView{};
+    {
+        std::lock_guard lock(g_mutex);
+        g_enqueue = std::move(enqueue);
+        g_busy = std::move(queue_busy);
+        g_view = MtpView{};
+    }
     g_ncm = R_SUCCEEDED(ncmInitialize());
+    static mtp::UsbTransport usb;
+    if (!usb.Start()) {
+        if (g_ncm) ncmExit();
+        g_ncm = false;
+        return false;
+    }
+    g_usb = &usb;
     const More& m = TrM();
-    auto sd = std::make_shared<SdProxy>();
-    sd->SetDisplay(m.mtp_sd_card);
-    g_entries.clear();
-    g_entries.push_back(std::make_shared<InstallProxy>("install_sd", m.mtp_install_sd, false));
-    g_entries.push_back(std::make_shared<InstallProxy>("install_nand", m.mtp_install_nand, true));
-    g_entries.push_back(sd);
-    g_running = haze::Initialize(OnHaze, g_entries, 0x057e, 0x201d, "NXDock");
-    g_view.running = g_running;
-    return g_running;
+    std::vector<std::shared_ptr<mtp::Storage>> storages = {
+        std::make_shared<InstallStorage>(m.mtp_install_sd, false),
+        std::make_shared<InstallStorage>(m.mtp_install_nand, true),
+        std::make_shared<mtp::FolderStorage>("sdmc:/", m.mtp_sd_card),
+    };
+    g_running = true;
+    {
+        std::lock_guard lock(g_mutex);
+        g_view.running = true;
+    }
+    g_thread = std::thread([storages] {
+        // a new session each time a computer connects, until stopped
+        while (g_running && g_usb->WaitConnected()) {
+            mtp::Responder responder(*g_usb, storages, "NXDock");
+            responder.Run();
+            // the cable went: what was arriving is broken, the install leaves nothing
+            std::lock_guard lock(g_mutex);
+            if (g_pipe) g_pipe->Break();
+        }
+    });
+    return true;
 }
 
 void MtpStop() {
+    if (!g_running) return;
+    g_running = false;
     {
         std::lock_guard lock(g_mutex);
-        if (!g_running) return;
-        // a file still arriving or waiting is broken, so the MTP thread can leave
         if (g_pipe) g_pipe->Break();
         if (g_handed) g_handed->Break();
     }
-    haze::Exit();
+    g_usb->Stop();
+    if (g_thread.joinable()) g_thread.join();
     std::lock_guard lock(g_mutex);
-    g_entries.clear();
     g_pipe.reset();
     g_handed.reset();
-    g_running = false;
     g_view.running = false;
     if (g_ncm) {
         ncmExit();
@@ -501,21 +349,8 @@ void MtpStop() {
 MtpView MtpSnapshot() {
     std::lock_guard lock(g_mutex);
     MtpView v = g_view;
-    UsbState state = UsbState_Detached;
-    v.connected = g_running && R_SUCCEEDED(usbDsGetState(&state)) && state == UsbState_Configured;
+    v.connected = g_running && g_usb && g_usb->Connected();
     return v;
 }
-
-#else
-
-bool MtpStart(std::function<bool(InstallJob)>, std::function<bool()>) {
-    return false;
-}
-void MtpStop() {}
-MtpView MtpSnapshot() {
-    return {};
-}
-
-#endif
 
 } // namespace nxdock

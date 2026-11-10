@@ -22,6 +22,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # mod packages put and taken away
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -o /tmp/mods_test tests/mods_test.cpp source/mods.cpp source/zip.cpp /usr/lib/x86_64-linux-gnu/libz.so.1
   /tmp/mods_test
+  # the MTP responder of NXDock, with a fake cable
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/mtp_test tests/mtp_test.cpp source/mtp_proto.cpp source/mtp_storage.cpp
+  /tmp/mtp_test /tmp
   # clear errors and the check before installing, in every language
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp
   /tmp/errors_test
