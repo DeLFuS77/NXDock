@@ -176,3 +176,7 @@
   their head; the console is drawn with what arrives over MTP or the cable
   flying into it; the screen-off count drains a ring; soft lights move
   behind everything. Settings › Animations: full, gentle or none.
+- The first-run wizard asks for the animations next to the theme, offers
+  "Turn the screen off for long queues" next to the saver mode, tells those
+  without the library app that More installs without it, and its walk ends
+  on More.

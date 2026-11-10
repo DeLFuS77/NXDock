@@ -60,6 +60,8 @@ struct More {
     const char *idle_days_fmt, *idle_today, *idle_never;
     const char *no_installed;
     const char *anim_row, *anim_full, *anim_soft, *anim_none;
+    // the first-run wizard, updated for More, the animations and the screen off
+    const char *wiz_screen_off, *wiz_no_app, *tour_more, *tour_count4;
 };
 
 const More& TrM();

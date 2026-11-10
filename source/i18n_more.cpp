@@ -276,6 +276,10 @@ constexpr More kEnglish{
     .anim_full = "Full",
     .anim_soft = "Gentle",
     .anim_none = "None",
+    .wiz_screen_off = "Turn the screen off for long queues (2 GB or more)",
+    .wiz_no_app = "No library app? Skip this step and install from More: the SD card or a USB disk, the computer (MTP or NS-USBloader) and shops.",
+    .tour_more = "More: install without the library, saves, space and dumps, shops, cheats and mods.",
+    .tour_count4 = "%d / 4 · press any button to skip",
 };
 
 constexpr More kSpanish{
@@ -545,6 +549,10 @@ constexpr More kSpanish{
     .anim_full = "Completas",
     .anim_soft = "Suaves",
     .anim_none = "Ninguna",
+    .wiz_screen_off = "Apagar la pantalla en colas largas (2 GB o más)",
+    .wiz_no_app = "¿Sin la app de la biblioteca? Salta este paso e instala desde Más: la SD o un disco USB, el PC (MTP o NS-USBloader) y tiendas.",
+    .tour_more = "Más: instalar sin la biblioteca, partidas, espacio y volcados, tiendas, trucos y mods.",
+    .tour_count4 = "%d / 4 · pulsa cualquier botón para saltar",
 };
 
 constexpr More kFrench{
@@ -814,6 +822,10 @@ constexpr More kFrench{
     .anim_full = "Complètes",
     .anim_soft = "Douces",
     .anim_none = "Aucune",
+    .wiz_screen_off = "Éteindre l'écran pour les longues files (2 Go ou plus)",
+    .wiz_no_app = "Pas d'appli de bibliothèque ? Passe cette étape et installe depuis Plus : la SD ou un disque USB, l'ordinateur (MTP ou NS-USBloader) et les boutiques.",
+    .tour_more = "Plus : installer sans la bibliothèque, sauvegardes, espace et dumps, boutiques, codes et mods.",
+    .tour_count4 = "%d / 4 · appuie sur un bouton pour passer",
 };
 
 constexpr More kGerman{
@@ -1083,6 +1095,10 @@ constexpr More kGerman{
     .anim_full = "Voll",
     .anim_soft = "Sanft",
     .anim_none = "Keine",
+    .wiz_screen_off = "Bildschirm aus bei langen Warteschlangen (2 GB oder mehr)",
+    .wiz_no_app = "Keine Bibliotheks-App? Überspringe diesen Schritt und installiere über Mehr: SD oder USB-Laufwerk, Computer (MTP oder NS-USBloader) und Shops.",
+    .tour_more = "Mehr: ohne Bibliothek installieren, Spielstände, Speicher und Dumps, Shops, Cheats und Mods.",
+    .tour_count4 = "%d / 4 · beliebige Taste zum Überspringen",
 };
 
 constexpr More kItalian{
@@ -1352,6 +1368,10 @@ constexpr More kItalian{
     .anim_full = "Complete",
     .anim_soft = "Leggere",
     .anim_none = "Nessuna",
+    .wiz_screen_off = "Spegni lo schermo con code lunghe (2 GB o più)",
+    .wiz_no_app = "Niente app della libreria? Salta questo passo e installa da Altro: la SD o un disco USB, il computer (MTP o NS-USBloader) e i negozi.",
+    .tour_more = "Altro: installare senza libreria, salvataggi, spazio e dump, negozi, trucchi e mod.",
+    .tour_count4 = "%d / 4 · premi un tasto per saltare",
 };
 
 constexpr More kPortuguese{
@@ -1621,6 +1641,10 @@ constexpr More kPortuguese{
     .anim_full = "Completas",
     .anim_soft = "Suaves",
     .anim_none = "Nenhuma",
+    .wiz_screen_off = "Desligar a tela em filas longas (2 GB ou mais)",
+    .wiz_no_app = "Sem o app da biblioteca? Pule este passo e instale por Mais: o SD ou um disco USB, o computador (MTP ou NS-USBloader) e lojas.",
+    .tour_more = "Mais: instalar sem a biblioteca, saves, espaço e dumps, lojas, trapaças e mods.",
+    .tour_count4 = "%d / 4 · pressione um botão para pular",
 };
 
 constexpr More kDutch{
@@ -1890,6 +1914,10 @@ constexpr More kDutch{
     .anim_full = "Volledig",
     .anim_soft = "Rustig",
     .anim_none = "Geen",
+    .wiz_screen_off = "Scherm uit bij lange wachtrijen (2 GB of meer)",
+    .wiz_no_app = "Geen bibliotheek-app? Sla deze stap over en installeer via Meer: de SD of een USB-schijf, de computer (MTP of NS-USBloader) en winkels.",
+    .tour_more = "Meer: installeren zonder bibliotheek, opslagbestanden, ruimte en dumps, winkels, cheats en mods.",
+    .tour_count4 = "%d / 4 · druk op een knop om over te slaan",
 };
 
 constexpr More kRussian{
@@ -2159,6 +2187,10 @@ constexpr More kRussian{
     .anim_full = "Полные",
     .anim_soft = "Мягкие",
     .anim_none = "Нет",
+    .wiz_screen_off = "Выключать экран при длинной очереди (2 ГБ и больше)",
+    .wiz_no_app = "Нет приложения библиотеки? Пропустите шаг и устанавливайте через «Ещё»: SD или USB-диск, компьютер (MTP или NS-USBloader) и магазины.",
+    .tour_more = "Ещё: установка без библиотеки, сохранения, место и дампы, магазины, читы и моды.",
+    .tour_count4 = "%d / 4 · нажмите любую кнопку, чтобы пропустить",
 };
 
 constexpr More kJapanese{
@@ -2428,6 +2460,10 @@ constexpr More kJapanese{
     .anim_full = "すべて",
     .anim_soft = "控えめ",
     .anim_none = "なし",
+    .wiz_screen_off = "長いキュー（2 GB 以上）では画面を消す",
+    .wiz_no_app = "ライブラリアプリがない場合は、この手順を飛ばして「その他」から SD や USB ディスク、PC（MTP か NS-USBloader）、ショップでインストールできます。",
+    .tour_more = "その他: ライブラリなしでのインストール、セーブデータ、容量とダンプ、ショップ、チートと MOD。",
+    .tour_count4 = "%d / 4 · ボタンでスキップ",
 };
 
 constexpr More kKorean{
@@ -2697,6 +2733,10 @@ constexpr More kKorean{
     .anim_full = "전체",
     .anim_soft = "부드럽게",
     .anim_none = "없음",
+    .wiz_screen_off = "긴 대기열(2 GB 이상)에서 화면 끄기",
+    .wiz_no_app = "라이브러리 앱이 없나요? 이 단계를 건너뛰고 더보기에서 SD나 USB 디스크, PC(MTP 또는 NS-USBloader), 상점으로 설치하세요.",
+    .tour_more = "더보기: 라이브러리 없이 설치, 세이브, 공간과 덤프, 상점, 치트와 모드.",
+    .tour_count4 = "%d / 4 · 아무 버튼이나 눌러 건너뛰기",
 };
 
 constexpr More kChinese{
@@ -2966,6 +3006,10 @@ constexpr More kChinese{
     .anim_full = "完整",
     .anim_soft = "柔和",
     .anim_none = "无",
+    .wiz_screen_off = "长队列（2 GB 及以上）时关闭屏幕",
+    .wiz_no_app = "没有游戏库应用？跳过此步，在“更多”中从 SD 或 USB 硬盘、电脑（MTP 或 NS-USBloader）和商店安装。",
+    .tour_more = "更多：不用游戏库安装、存档、空间与转储、商店、金手指和模组。",
+    .tour_count4 = "%d / 4 · 按任意按钮跳过",
 };
 
 // In the order of LanguageName in i18n.cpp.

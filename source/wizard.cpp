@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdio>
 #include "i18n.hpp"
+#include "i18n_more.hpp"
 
 namespace nxdock {
 namespace {
@@ -224,7 +225,7 @@ std::vector<App::WizGroup> App::WizardGroups() {
     const auto toggle = [](const char* label, bool on) { return WizItem{label, "", on, WizKind::Toggle}; };
     switch (m_wiz_step) {
         case 0: {
-            WizGroup lang{s.wiz_language, {}, 4};
+            WizGroup lang{s.wiz_language, {}, 6}; // two rows, so the theme and the animations fit below
             lang.items.push_back({s.wiz_console_lang, LanguageName(ConsoleLanguage()), m_ui.language < 0, WizKind::Choice});
             for (int i = 0; i < LanguageCount(); i++) {
                 lang.items.push_back({LanguageName(i), "", m_ui.language == i, WizKind::Choice});
@@ -233,6 +234,9 @@ std::vector<App::WizGroup> App::WizardGroups() {
             const int theme = m_ui.theme_auto ? 2 : m_theme.dark ? 1 : 0;
             groups.push_back({s.wiz_theme, {{s.light, "", theme == 0, WizKind::Choice}, {s.dark, "", theme == 1, WizKind::Choice},
                                             {s.wiz_theme_auto, "", theme == 2, WizKind::Choice}}, 3});
+            const More& m = TrM();
+            groups.push_back({m.anim_row, {{m.anim_full, "", m_ui.anim == 0, WizKind::Choice}, {m.anim_soft, "", m_ui.anim == 1, WizKind::Choice},
+                                           {m.anim_none, "", m_ui.anim == 2, WizKind::Choice}}, 3});
             break;
         }
         case 1:
@@ -265,6 +269,7 @@ std::vector<App::WizGroup> App::WizardGroups() {
         }
         case 4:
             groups.push_back({"", {toggle(s.wiz_saver_toggle, m_ui.saver)}, 1});
+            groups.push_back({"", {toggle(TrM().wiz_screen_off, m_ui.screen_off_auto)}, 1});
             groups.push_back({"", {{s.wiz_speed_row, m_speed.Running() ? s.cancel : s.start, false, WizKind::Action}}, 1});
             break;
         default: break;
@@ -307,8 +312,13 @@ void App::ActivateWizard(int group, int item) {
                 m_ui.language = item == 0 ? -1 : item - 1;
                 UseLanguage(m_ui.language);
                 m_ui.Save();
-            } else {
+            } else if (group == 1) {
                 ApplyTheme(item);
+            } else {
+                // the change shows at once
+                m_ui.anim = std::clamp(item, 0, 2);
+                ui::SetMotion(m_ui.anim);
+                m_ui.Save();
             }
             break;
         case 1:
@@ -340,6 +350,9 @@ void App::ActivateWizard(int group, int item) {
         case 4:
             if (group == 0) {
                 m_ui.saver = !m_ui.saver;
+                m_ui.Save();
+            } else if (group == 1) {
+                m_ui.screen_off_auto = !m_ui.screen_off_auto;
                 m_ui.Save();
             } else if (m_speed.Running()) {
                 m_speed.Cancel();
@@ -447,6 +460,19 @@ void App::DrawWizard(NVGcontext* vg) {
         ui::Text(vg, 48, 30, 14, t.muted, step_text);
         ui::Text(vg, 48, 60, 26, t.text, titles[1]);
         music_button(kWidth - 48 - music_width(), 30);
+        {
+            // without the library app: what to do instead
+            const float nx = 440, nw = kWidth - 48 - music_width() - 24 - nx, ny = 22;
+            if (nw > 200) {
+                NVGcolor edge = t.work;
+                edge.a = 0.55f;
+                ui::StrokeRound(vg, nx, ny, nw, 50, 10, edge, 1.2f);
+                nvgSave(vg);
+                nvgScissor(vg, nx + 8, ny + 4, nw - 16, 42);
+                TextBox(vg, nx + 14, ny + 7, nw - 28, 13, t.muted, TrM().wiz_no_app);
+                nvgRestore(vg);
+            }
+        }
         DrawPairing(vg, link);
         m_hint_rects.clear();
         const bool code_shown = link.state == Link::State::Waiting || link.state == Link::State::Expired || link.state == Link::State::Refused;
@@ -558,10 +584,14 @@ void App::DrawWizard(NVGcontext* vg) {
             nvgSave(vg);
             nvgIntersectScissor(vg, x, iy, iw - (toggles ? 90 : 8), ih);
             if (it.kind == WizKind::Choice) {
+                // a label longer than its tile gets a little smaller, never cut
+                const float room = iw - 18 - 10;
+                const float lw = ui::TextWidth(vg, 17, it.label.c_str());
+                const float fs = lw > room ? std::max(13.f, 17 * room / lw) : 17.f;
                 if (it.sub.empty()) {
-                    ui::Text(vg, x + 18, iy + ih / 2, 17, t.text, it.label.c_str());
+                    ui::Text(vg, x + 18, iy + ih / 2, fs, t.text, it.label.c_str());
                 } else {
-                    ui::Text(vg, x + 18, iy + 19, 17, t.text, it.label.c_str());
+                    ui::Text(vg, x + 18, iy + 19, fs, t.text, it.label.c_str());
                     ui::Text(vg, x + 18, iy + 40, 13, t.muted, it.sub.c_str());
                 }
             } else {
@@ -652,7 +682,7 @@ void App::DrawWizard(NVGcontext* vg) {
 }
 
 bool App::TourActive() const {
-    return m_time - m_tour_at < 3 * kTourStop;
+    return m_time - m_tour_at < 4 * kTourStop;
 }
 
 void App::FollowTour() {
@@ -663,8 +693,9 @@ void App::FollowTour() {
         }
         return;
     }
-    static constexpr Tab kStops[] = {Tab::Library, Tab::Queue, Tab::Installed};
-    m_tab = kStops[std::clamp(int((m_time - m_tour_at) / kTourStop), 0, 2)];
+    static constexpr Tab kStops[] = {Tab::Library, Tab::Queue, Tab::Installed, Tab::More};
+    m_tab = kStops[std::clamp(int((m_time - m_tour_at) / kTourStop), 0, 3)];
+    if (m_tab == Tab::More) m_more = MoreScreen::Tiles;
 }
 
 void App::EndTour() {
@@ -678,9 +709,10 @@ void App::DrawTour(NVGcontext* vg) {
     }
     const Theme& t = m_theme;
     const auto& s = Tr();
-    const int stop = std::clamp(int((m_time - m_tour_at) / kTourStop), 0, 2);
+    const int stop = std::clamp(int((m_time - m_tour_at) / kTourStop), 0, 3);
     const double in_stop = m_time - m_tour_at - stop * kTourStop;
-    const ui::HitRect r = m_tab_rects[stop];
+    static constexpr int kStopTab[] = {0, 1, 2, 3}; // Library, Queue, Installed, More
+    const ui::HitRect r = m_tab_rects[kStopTab[stop]];
     const float x = r.x + 2, y = 16, w = r.w - 4, h = 40;
     // everything goes dark but the tab, which glows
     nvgBeginPath(vg);
@@ -694,9 +726,9 @@ void App::DrawTour(NVGcontext* vg) {
     ring.a = pulse;
     ui::StrokeRound(vg, x - 3, y - 3, w + 6, h + 6, 22, ring, 3);
     // the bubble under it, with what the tab is for
-    const char* texts[] = {s.tour_library, s.tour_queue, s.tour_installed};
+    const char* texts[] = {s.tour_library, s.tour_queue, s.tour_installed, TrM().tour_more};
     char count[64];
-    std::snprintf(count, sizeof(count), s.tour_count, stop + 1);
+    std::snprintf(count, sizeof(count), TrM().tour_count4, stop + 1);
     const float bw = 440, bx = std::clamp(x + w / 2 - bw / 2, 24.f, kWidth - 24 - bw), by = 82;
     nvgFontFace(vg, "ui");
     nvgFontSize(vg, 17);
