@@ -626,6 +626,23 @@ void App::Draw(NVGcontext* vg) {
     for (int i = 0; i < 4; i++) {
         m_hits.push_back({tabs[i], HitKind::Tab, i});
     }
+    if (m_tab != m_shown_tab) {
+        // the content comes in from the side of the new tab (L wraps from the first to the last)
+        const int from = int(m_shown_tab), to = int(m_tab);
+        m_tab_dir = ((to - from + 4) % 4) <= 2 ? 1.f : -1.f;
+        m_shown_tab = m_tab;
+        m_tab_at = m_time;
+    }
+    if (m_detail != m_shown_detail) {
+        m_shown_detail = m_detail;
+        m_detail_at = m_time;
+    }
+    const float tab_e = float(std::min(1.0, (m_time - m_tab_at) / 0.22));
+    nvgSave(vg);
+    if (tab_e < 1) {
+        const float k = 1 - tab_e;
+        nvgTranslate(vg, 30 * m_tab_dir * k * k, 0);
+    }
     switch (m_tab) {
         case Tab::Library: {
             const Link::View link = m_link.Snapshot();
@@ -644,6 +661,8 @@ void App::Draw(NVGcontext* vg) {
         case Tab::Installed: DrawInstalled(vg); break;
         case Tab::Settings: DrawSettings(vg); break;
     }
+    nvgRestore(vg);
+    DrawTransitions(vg);
     AddHints(m_hint_rects);
     if (m_dialog.kind != DialogKind::None) {
         DrawDialog(vg);
@@ -660,6 +679,41 @@ void App::Draw(NVGcontext* vg) {
     }
     DrawFinish(vg);
     DrawTouchFeedback(vg);
+}
+
+void App::DrawTransitions(NVGcontext* vg) {
+    // what is new appears out of the background: a veil of it that clears (the top bar stays)
+    const auto veil = [&](float amount) {
+        NVGcolor c = m_theme.bg;
+        c.a = amount;
+        nvgBeginPath(vg);
+        nvgRect(vg, 0, 73, kWidth, kHeight - 73);
+        nvgFillColor(vg, c);
+        nvgFill(vg);
+    };
+    const float tab_e = float(std::min(1.0, (m_time - m_tab_at) / 0.22));
+    if (tab_e < 1) {
+        veil(0.9f * (1 - tab_e));
+    }
+    const double age = m_time - m_detail_at;
+    if (m_tab != Tab::Library || age >= 0.3 || m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
+        return;
+    }
+    // the page of a game grows out of its cover, and goes back into it
+    const float p = float(age / 0.3), e = 1 - (1 - p) * (1 - p) * (1 - p);
+    veil(0.85f * (1 - e));
+    const float gx = kGridX + (m_focus % kColumns) * (kCoverSize + kGridGap);
+    const float gy = kGridTop + (m_focus / kColumns) * kRowPitch - m_scroll;
+    const float dx = 48, dy = 72 + 34, ds = 330;
+    const float k = m_detail ? e : 1 - e; // 0: in the grid, 1: on the page
+    const float x = gx + (dx - gx) * k, y = gy + (dy - gy) * k, s = kCoverSize + (ds - kCoverSize) * k;
+    const Game& g = m_games[m_detail_game];
+    nvgBeginPath(vg);
+    nvgRect(vg, x - 30, y - 10, s + 60, s + 60);
+    nvgFillPaint(vg, nvgBoxGradient(vg, x + 6, y + 12, s - 12, s, 14, 30, nvgRGBAf(0, 0, 0, 0.4f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    ui::Cover(vg, m_theme, x, y, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10 + 4 * k,
+              m_covers.Get(g.cover));
 }
 
 void App::InitRumble() {
@@ -1016,24 +1070,41 @@ void App::DrawLibrary(NVGcontext* vg) {
     // Grid of covers, clipped to its viewport and scrolled.
     nvgSave(vg);
     nvgScissor(vg, 0, kGridTop - kGridMargin, kWidth, kGridViewH + 2 * kGridMargin);
+    if (m_focus != m_lift_focus) {
+        // the cover in focus lifts and leans a little toward where the focus came from
+        if (m_lift_focus >= 0) {
+            m_lift_dx = float((m_focus % kColumns) - (m_lift_focus % kColumns));
+            m_lift_dy = float((m_focus / kColumns) - (m_lift_focus / kColumns));
+        }
+        m_lift_focus = m_focus;
+        m_lift_at = m_time;
+    }
     for (int i = 0; i < int(m_view.size()); i++) {
         const float cx = kGridX + (i % kColumns) * (kCoverSize + kGridGap);
         const float cy = kGridTop + (i / kColumns) * kRowPitch - m_scroll;
         if (cy + kCoverSize < kGridTop - kGridMargin || cy > kGridTop + kGridViewH + kGridMargin) {
             continue;
         }
-        if (i == m_focus) {
-            ui::Focus(vg, t, cx, cy, kCoverSize, kCoverSize, 10, m_time);
-        }
         const Game& g = m_games[m_view[i]];
-        const std::string format = FormatOf(g);
-        ui::Cover(vg, t, cx, cy, kCoverSize, PlaceholderColor(g.key), Initial(g.name).c_str(), format.c_str(),
-                  g.installed.base, g.UpdateAvailable(), 10, m_covers.Get(g.cover));
         // Only the visible part of a cover can be tapped.
         const float top = std::max(cy, kGridTop - kGridMargin), bottom = std::min(cy + kCoverSize, kGridTop + kGridViewH + kGridMargin);
         if (bottom > top) {
             AddHit(cx - kGridGap / 2, top, kCoverSize + kGridGap, bottom - top, HitKind::Cover, i);
         }
+        if (i == m_focus) {
+            continue; // drawn last, over its neighbours
+        }
+        const std::string format = FormatOf(g);
+        ui::Cover(vg, t, cx, cy, kCoverSize, PlaceholderColor(g.key), Initial(g.name).c_str(), format.c_str(),
+                  g.installed.base, g.UpdateAvailable(), 10, m_covers.Get(g.cover));
+    }
+    if (m_focus >= 0 && m_focus < int(m_view.size())) {
+        // a little more room above and below for the lifted cover and its glow
+        nvgScissor(vg, 0, kGridTop - kGridMargin - 10, kWidth, kGridViewH + 2 * kGridMargin + 20);
+        const float cx = kGridX + (m_focus % kColumns) * (kCoverSize + kGridGap);
+        const float cy = kGridTop + (m_focus / kColumns) * kRowPitch - m_scroll;
+        const Game& g = m_games[m_view[m_focus]];
+        DrawLiftedCover(vg, g, cx, cy, kCoverSize);
     }
     nvgRestore(vg);
     if (m_view.empty()) {
@@ -1079,6 +1150,54 @@ void App::DrawLibrary(NVGcontext* vg) {
     ui::HintBar(vg, t, where.c_str(), hints, m_hint_rects);
 }
 
+void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float s) {
+    const Theme& t = m_theme;
+    const double age = m_time - m_lift_at;
+    // up in a fifth of a second, slowing at the end
+    const float p = float(std::min(1.0, age / 0.2));
+    const float e = 1 - (1 - p) * (1 - p) * (1 - p);
+    const float lift = 6 * e, scale = 1 + 0.05f * e;
+    // the lean settles like a card set down: a few degrees, gone in a quarter of a second
+    const float settle = float(std::exp(-age * 10.0) * std::cos(age * 15.0));
+    const float angle = -0.045f * settle * std::clamp(m_lift_dx, -1.f, 1.f);
+    const float squash = 1 - 0.035f * settle * std::fabs(std::clamp(m_lift_dy, -1.f, 1.f));
+
+    // the shadow under it, on the grid
+    nvgBeginPath(vg);
+    nvgRect(vg, x - 30, y - 10, s + 60, s + 60);
+    nvgFillPaint(vg, nvgBoxGradient(vg, x + 8, y + 10 + lift, s - 16, s, 14, 26, nvgRGBAf(0, 0, 0, (t.dark ? 0.5f : 0.3f) * e),
+                                    nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+
+    nvgSave(vg);
+    nvgTranslate(vg, x + s / 2, y + s / 2 - lift);
+    nvgRotate(vg, angle);
+    nvgScale(vg, scale, scale * squash);
+    nvgTranslate(vg, -s / 2, -s / 2);
+    ui::Focus(vg, t, 0, 0, s, s, 10, m_time);
+    const std::string format = FormatOf(g);
+    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), format.c_str(), g.installed.base,
+              g.UpdateAvailable(), 10, m_covers.Get(g.cover));
+    // a light that passes once over it
+    if (age > 0.08 && age < 0.75) {
+        const float pos = float((age - 0.08) / 0.67);
+        nvgIntersectScissor(vg, 0, 0, s, s);
+        nvgTranslate(vg, s / 2, s / 2);
+        nvgRotate(vg, 0.45f);
+        const float bx = -s + 2 * s * pos, bw = s * 0.22f;
+        const NVGcolor clear = nvgRGBAf(1, 1, 1, 0), light = nvgRGBAf(1, 1, 1, 0.22f * (1 - pos * 0.5f));
+        nvgBeginPath(vg);
+        nvgRect(vg, bx - bw, -s, bw, 2 * s);
+        nvgFillPaint(vg, nvgLinearGradient(vg, bx - bw, 0, bx, 0, clear, light));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgRect(vg, bx, -s, bw, 2 * s);
+        nvgFillPaint(vg, nvgLinearGradient(vg, bx, 0, bx + bw, 0, light, clear));
+        nvgFill(vg);
+    }
+    nvgRestore(vg);
+}
+
 void App::DrawDetail(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
@@ -1094,11 +1213,13 @@ void App::DrawDetail(NVGcontext* vg) {
 
     // the cover
     const float cs = 330, cx = 48, cy = top + 34;
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, cx + 4, cy + 14, cs - 8, cs, 14);
-    nvgFillPaint(vg, nvgBoxGradient(vg, cx, cy + 14, cs, cs, 14, 30, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
-    nvgFill(vg);
-    ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, m_covers.Get(g.cover));
+    if (m_time - m_detail_at >= 0.3) { // while the page opens, the cover is still on its way (DrawTransitions)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, cx + 4, cy + 14, cs - 8, cs, 14);
+        nvgFillPaint(vg, nvgBoxGradient(vg, cx, cy + 14, cs, cs, 14, 30, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
+        nvgFill(vg);
+        ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, m_covers.Get(g.cover));
+    }
 
     // name and facts
     const float rx = cx + cs + 44, rw = kWidth - rx - 48;

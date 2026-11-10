@@ -75,3 +75,6 @@
 - When the queue ends: a short notice with what was installed, a soft blue
   glow with a tick, two gentle pulses of HD rumble (in the hands and on
   player 1's controllers) and a sound.
+- The cover in focus lifts a little, leans for a moment toward where the
+  focus came from and a light passes over it once. Tabs slide in from their
+  side, and the page of a game grows out of its cover (and goes back into it).

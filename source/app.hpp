@@ -141,6 +141,18 @@ private:
     int m_battery = -1;
     bool m_charging = false;
     double m_battery_checked = -100;
+    // the cover in focus lifts and leans a little (1A); tabs slide in and the page of a game grows
+    // out of its cover (1T-A)
+    void DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float s);
+    void DrawTransitions(NVGcontext* vg);
+    int m_lift_focus = -1;
+    double m_lift_at = -100;
+    float m_lift_dx = 0, m_lift_dy = 0;
+    Tab m_shown_tab = Tab::Library;
+    double m_tab_at = -100;
+    float m_tab_dir = 1;
+    bool m_shown_detail = false;
+    double m_detail_at = -100;
     // when the queue ends (2A): a soft blue glow with a tick, two gentle pulses of HD rumble, a sound
     void FollowFinish();
     void DrawFinish(NVGcontext* vg);
