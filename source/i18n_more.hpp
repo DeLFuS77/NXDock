@@ -56,6 +56,8 @@ struct More {
     const char *cm_pick, *cm_cheats_head_fmt, *cm_cheats_lib, *cm_cheats_count_fmt, *cm_no_cheats, *cm_loading, *cm_mods_head, *cm_no_mods, *cm_mod_files_fmt, *cm_note, *cm_toggle, *cm_conflict_t, *cm_conflict_d, *cm_failed_t, *cm_failed_d, *cm_put, *cm_removed;
     // the screen off (phase 15)
     const char *so_body, *so_button, *so_auto_row, *so_nothing;
+    // when a game was last played (the planner)
+    const char *idle_days_fmt, *idle_today, *idle_never;
 };
 
 const More& TrM();

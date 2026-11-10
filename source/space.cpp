@@ -379,6 +379,24 @@ void Space::ScanNow() {
                 apps.push_back(a);
             }
         }
+        // when each game was last played
+        if (R_SUCCEEDED(pdmqryInitialize())) {
+            std::vector<u64> ids;
+            for (const auto& a : apps) ids.push_back(a.app_id);
+            for (size_t at = 0; at < ids.size(); at += 64) {
+                const s32 n = s32(std::min<size_t>(64, ids.size() - at));
+                std::vector<PdmLastPlayTime> times(static_cast<size_t>(n));
+                s32 total = 0;
+                if (R_FAILED(pdmqryQueryLastPlayTime(true, times.data(), ids.data() + at, n, &total))) continue;
+                for (s32 i = 0; i < total; i++) {
+                    if (!times[size_t(i)].flag) continue;
+                    for (auto& a : apps) {
+                        if (a.app_id == times[size_t(i)].application_id) a.idle_minutes = times[size_t(i)].last_played_minutes;
+                    }
+                }
+            }
+            pdmqryExit();
+        }
         auto control = std::make_unique<NsApplicationControlData>();
         for (auto& a : apps) {
             u64 size = 0;

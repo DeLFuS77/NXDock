@@ -11,7 +11,12 @@ std::vector<int> PlanArchive(const std::vector<InstalledApp>& apps, unsigned lon
     std::vector<int> order(apps.size());
     std::iota(order.begin(), order.end(), 0);
     const auto bytes = [&](int i) { return nand ? apps[size_t(i)].nand_bytes : apps[size_t(i)].sd_bytes; };
-    std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return bytes(a) > bytes(b); });
+    // never played counts as the longest time
+    const auto idle = [&](int i) { return apps[size_t(i)].idle_minutes < 0 ? (1ll << 60) : apps[size_t(i)].idle_minutes; };
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+        if (idle(a) != idle(b)) return idle(a) > idle(b);
+        return bytes(a) > bytes(b);
+    });
     std::vector<int> out;
     unsigned long long freed = 0;
     for (const int i : order) {
@@ -20,7 +25,6 @@ std::vector<int> PlanArchive(const std::vector<InstalledApp>& apps, unsigned lon
         out.push_back(i);
         freed += bytes(i);
     }
-    // the largest alone may be enough: then not a list of many small ones before it
     if (freed < needed) return {};
     return out;
 }

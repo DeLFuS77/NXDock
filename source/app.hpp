@@ -183,6 +183,7 @@ private:
     bool m_screen_off = false, m_lbl = false, m_screen_busy_before = false;
     unsigned m_mods_version = 0;
     int m_mods_game = -1, m_mods_pick = 0, m_mods_side = 0, m_mods_focus = 0;
+    bool m_mods_from_detail = false; // opened from the page of a game: B goes back there
     // saver mode: dark after a minute without input while installing
     void DrawSaver(NVGcontext* vg);
     double m_last_input = 0;

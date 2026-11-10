@@ -242,9 +242,17 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
             size = draw::Size(a.Bytes());
         }
         nvgSave(vg);
-        nvgScissor(vg, x, y, kWidth - x - 300, 46);
+        nvgScissor(vg, x, y, kWidth - x - 480, 46);
         ui::Text(vg, x, cy, 16, t.text, name.c_str());
         nvgRestore(vg);
+        if (m_pick_kind == 0) {
+            // when it was last played: the planner archives the least used first
+            char idle[64];
+            if (a.idle_minutes < 0) std::snprintf(idle, sizeof(idle), "%s", m.idle_never);
+            else if (a.idle_minutes < 60 * 24) std::snprintf(idle, sizeof(idle), "%s", m.idle_today);
+            else std::snprintf(idle, sizeof(idle), m.idle_days_fmt, int(a.idle_minutes / (60 * 24)));
+            ui::Text(vg, kWidth - 330, cy, 14, t.muted, idle, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
         ui::Text(vg, kWidth - 200, cy, 15, t.muted, where.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         ui::Text(vg, kWidth - 60, cy, 15, t.muted, size.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     }

@@ -18,6 +18,7 @@ struct InstalledApp {
     std::string name;
     unsigned long long sd_bytes = 0, nand_bytes = 0;
     bool archived = false; // a record without content: archived from the HOME menu or here
+    long long idle_minutes = -1; // since it was last played (-1: never, or unknown)
     struct Content {
         unsigned long long id = 0;
         unsigned version = 0;
@@ -41,8 +42,9 @@ struct Storage {
     long long sd_free = -1, sd_total = -1, nand_free = -1, nand_total = -1;
 };
 
-// The games that free at least `needed` bytes of the SD card when archived, largest first: the
-// suggestion of the planner ("this queue needs X GB: archive these"). Tested on the computer.
+// The games that free at least `needed` bytes of the SD card when archived: the ones played least
+// lately first (never played before all), the largest first among equals. The suggestion of the
+// planner ("this queue needs X GB: archive these"). Tested on the computer.
 std::vector<int> PlanArchive(const std::vector<InstalledApp>& apps, unsigned long long needed, bool nand);
 
 class Space {

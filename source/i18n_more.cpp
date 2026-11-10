@@ -268,6 +268,9 @@ constexpr More kEnglish{
     .so_button = "Screen off",
     .so_auto_row = "Screen off for long queues",
     .so_nothing = "Nothing is installing.",
+    .idle_days_fmt = "played %d days ago",
+    .idle_today = "played today",
+    .idle_never = "never played",
 };
 
 constexpr More kSpanish{
@@ -529,6 +532,9 @@ constexpr More kSpanish{
     .so_button = "Apagar pantalla",
     .so_auto_row = "Apagar la pantalla en colas largas",
     .so_nothing = "No se está instalando nada.",
+    .idle_days_fmt = "jugado hace %d días",
+    .idle_today = "jugado hoy",
+    .idle_never = "nunca jugado",
 };
 
 constexpr More kFrench{
@@ -790,6 +796,9 @@ constexpr More kFrench{
     .so_button = "Éteindre l'écran",
     .so_auto_row = "Éteindre l'écran pour les longues files",
     .so_nothing = "Rien ne s'installe.",
+    .idle_days_fmt = "joué il y a %d jours",
+    .idle_today = "joué aujourd'hui",
+    .idle_never = "jamais joué",
 };
 
 constexpr More kGerman{
@@ -1051,6 +1060,9 @@ constexpr More kGerman{
     .so_button = "Bildschirm aus",
     .so_auto_row = "Bildschirm aus bei langen Warteschlangen",
     .so_nothing = "Es wird nichts installiert.",
+    .idle_days_fmt = "vor %d Tagen gespielt",
+    .idle_today = "heute gespielt",
+    .idle_never = "nie gespielt",
 };
 
 constexpr More kItalian{
@@ -1312,6 +1324,9 @@ constexpr More kItalian{
     .so_button = "Spegni lo schermo",
     .so_auto_row = "Spegni lo schermo con code lunghe",
     .so_nothing = "Non si sta installando nulla.",
+    .idle_days_fmt = "giocato %d giorni fa",
+    .idle_today = "giocato oggi",
+    .idle_never = "mai giocato",
 };
 
 constexpr More kPortuguese{
@@ -1573,6 +1588,9 @@ constexpr More kPortuguese{
     .so_button = "Desligar a tela",
     .so_auto_row = "Desligar a tela em filas longas",
     .so_nothing = "Nada está sendo instalado.",
+    .idle_days_fmt = "jogado há %d dias",
+    .idle_today = "jogado hoje",
+    .idle_never = "nunca jogado",
 };
 
 constexpr More kDutch{
@@ -1834,6 +1852,9 @@ constexpr More kDutch{
     .so_button = "Scherm uit",
     .so_auto_row = "Scherm uit bij lange wachtrijen",
     .so_nothing = "Er wordt niets geïnstalleerd.",
+    .idle_days_fmt = "%d dagen geleden gespeeld",
+    .idle_today = "vandaag gespeeld",
+    .idle_never = "nooit gespeeld",
 };
 
 constexpr More kRussian{
@@ -2095,6 +2116,9 @@ constexpr More kRussian{
     .so_button = "Выключить экран",
     .so_auto_row = "Выключать экран при длинной очереди",
     .so_nothing = "Сейчас ничего не устанавливается.",
+    .idle_days_fmt = "играли %d дн. назад",
+    .idle_today = "играли сегодня",
+    .idle_never = "не запускалась",
 };
 
 constexpr More kJapanese{
@@ -2356,6 +2380,9 @@ constexpr More kJapanese{
     .so_button = "画面を消す",
     .so_auto_row = "長いキューでは画面を消す",
     .so_nothing = "インストール中のものはありません。",
+    .idle_days_fmt = "%d 日前に遊んだ",
+    .idle_today = "今日遊んだ",
+    .idle_never = "未プレイ",
 };
 
 constexpr More kKorean{
@@ -2617,6 +2644,9 @@ constexpr More kKorean{
     .so_button = "화면 끄기",
     .so_auto_row = "긴 대기열에서 화면 끄기",
     .so_nothing = "설치 중인 것이 없습니다.",
+    .idle_days_fmt = "%d일 전에 플레이",
+    .idle_today = "오늘 플레이",
+    .idle_never = "플레이한 적 없음",
 };
 
 constexpr More kChinese{
@@ -2878,6 +2908,9 @@ constexpr More kChinese{
     .so_button = "关闭屏幕",
     .so_auto_row = "长队列时关闭屏幕",
     .so_nothing = "当前没有在安装。",
+    .idle_days_fmt = "%d 天前玩过",
+    .idle_today = "今天玩过",
+    .idle_never = "从未玩过",
 };
 
 // In the order of LanguageName in i18n.cpp.

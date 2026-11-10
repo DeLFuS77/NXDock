@@ -53,6 +53,7 @@ void App::OpenMods() {
     m_space->StartScan();
     m_mods_game = -1;
     m_mods_pick = 0;
+    m_mods_from_detail = false;
     m_more = MoreScreen::Mods;
 }
 
@@ -223,6 +224,11 @@ void App::UpdateMods(u64 down, u64 held) {
     }
     if (down & HidNpadButton_B) {
         m_mods_game = -1;
+        if (m_mods_from_detail) {
+            m_mods_from_detail = false;
+            m_more = MoreScreen::Tiles;
+            m_tab = Tab::Library; // the page of the game is still open there
+        }
         return;
     }
     if (Repeat(down, held, HidNpadButton_AnyLeft)) m_mods_side = 0;

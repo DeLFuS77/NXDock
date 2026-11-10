@@ -1652,6 +1652,14 @@ void App::UpdateDetail(u64 down, u64 held) {
             Notice(Tr().verify_wait);
         }
     }
+    if ((down & HidNpadButton_X) && g.installed.base && !m_shop_active) {
+        // the cheats and mods of this game; B comes back here
+        OpenMods();
+        OpenModsGame(g.title_id, g.name);
+        m_mods_from_detail = true;
+        m_tab = Tab::More;
+        return;
+    }
     if (down & HidNpadButton_B) {
         m_detail = false;
     }
@@ -1989,6 +1997,9 @@ void App::DrawDetail(NVGcontext* vg) {
                                    {ui::glyph::R, s.internal, HidNpadButton_R}};
     if (g.installed.base || !g.installed.dlc.empty()) {
         hints.push_back({ui::glyph::Y, s.verify, HidNpadButton_Y});
+    }
+    if (g.installed.base && !m_shop_active) {
+        hints.push_back({ui::glyph::X, TrM().t_mods, HidNpadButton_X}); // its cheats and mods (10A)
     }
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);

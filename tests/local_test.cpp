@@ -107,9 +107,16 @@ int main(int argc, char** argv) {
         apps[1].name = "big", apps[1].sd_bytes = 9000;
         apps[2].name = "middle", apps[2].sd_bytes = 4000;
         apps[3].name = "gone", apps[3].archived = true, apps[3].sd_bytes = 20000;
+        // nobody played them: the largest first
         const auto plan = PlanArchive(apps, 10000, false);
         CHECK(plan.size() == 2 && plan[0] == 1 && plan[1] == 2);
         CHECK(PlanArchive(apps, 5000, false).size() == 1);
+        // the one played least lately goes first, even if smaller
+        apps[0].idle_minutes = 60 * 24 * 300; // a year ago, nearly
+        apps[1].idle_minutes = 10;            // just now
+        apps[2].idle_minutes = 60 * 24 * 30;
+        const auto by_use = PlanArchive(apps, 4500, false);
+        CHECK(by_use.size() == 2 && by_use[0] == 0 && by_use[1] == 2);
         CHECK(PlanArchive(apps, 50000, false).empty()); // not enough even with all
         CHECK(PlanArchive(apps, 100, true).empty());     // nothing in the internal memory
     }
