@@ -96,7 +96,11 @@ void App::DrawCompress(NVGcontext* vg) {
     // ---- the right: the games
     const auto rows = CompressRows(v);
     draw::Panel(vg, t, rx, 92, rw, 460, 16);
-    if (rows.empty()) {
+    if (!v.scanned) {
+        // the console is still being read: the list comes when it ends
+        ui::Spinner(vg, rx + rw / 2, 300, 14, t.work, m_time);
+        ui::Text(vg, rx + rw / 2, 340, 17, t.muted, m.scanning, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    } else if (rows.empty()) {
         ui::Text(vg, rx + rw / 2, 320, 17, t.muted, m.cz_no_games, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
     m_compress_focus = std::clamp(m_compress_focus, 0, std::max(0, int(rows.size()) - 1));

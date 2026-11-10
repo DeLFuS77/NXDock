@@ -385,8 +385,11 @@ void App::UpdateSpace(u64 down, u64 held) {
         return;
     }
     if ((down & HidNpadButton_A) && m_space_focus == 7) {
-        if (!v.scanned) return;
-        OpenCompress();
+        OpenCompress(); // it opens at once; the list comes when the scan ends
+        return;
+    }
+    if ((down & HidNpadButton_A) && !v.scanned) {
+        Notice(m.scanning); // never silent: the console is still being read
         return;
     }
     if (!(down & HidNpadButton_A) || !v.scanned) return;
