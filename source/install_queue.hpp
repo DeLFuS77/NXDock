@@ -46,6 +46,7 @@ struct InstallJob {
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took
     u64 written = 0;    // bytes installed
+    u64 saved = 0;      // bytes not downloaded: the console had them already (16A)
 };
 
 // What NXDock installed since it was opened, for "Undo what was installed in this session".
@@ -78,6 +79,7 @@ public:
         u64 total = 0;         // bytes the install writes, once known
         u32 checked = 0;       // NCAs whose SHA-256 matched
         u32 ncas = 0;          // NCAs to install
+        u64 saved = 0;         // bytes the console had already (16A)
         int threads = -1;      // decompression threads: 3 for NCZBLOCK, 1 solid, 0 none, -1 unknown
         int connections = 0;
         double net_rate = 0, ready_rate = 0, write_rate = 0; // MB/s

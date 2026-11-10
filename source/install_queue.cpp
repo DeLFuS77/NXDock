@@ -349,6 +349,7 @@ InstallQueue::Live InstallQueue::GetLive() {
     l.total = m_box->TotalBytes();
     l.checked = m_box->NcasChecked();
     l.ncas = m_box->NcasTotal();
+    l.saved = m_box->SavedBytes();
     l.threads = m_box->Threads();
     l.connections = m_connections;
     const double now = Now();
@@ -416,6 +417,7 @@ void InstallQueue::Run() {
                 j.error = job.error;
                 j.seconds = job.seconds;
                 j.written = job.written;
+                j.saved = job.saved;
             }
         }
         m_version++;
@@ -518,6 +520,7 @@ void InstallQueue::RunJob(InstallJob& job) {
 
     job.seconds = Now() - m_started;
     job.written = box.WrittenBytes();
+    job.saved = box.SavedBytes();
     if (R_SUCCEEDED(rc)) {
         job.state = InstallJob::State::Done;
     } else {

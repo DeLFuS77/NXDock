@@ -2494,7 +2494,18 @@ void App::DrawQueue(NVGcontext* vg) {
             std::snprintf(eta, sizeof(eta), "%s / %s%s%s", SizeText(live.written).c_str(), SizeText(live.total).c_str(),
                           left >= 0 ? (std::string(" · ") + s.left + " ").c_str() : "", left >= 0 ? Duration(left).c_str() : "");
         }
-        ui::Text(vg, cx, py + 70, 16, t.muted, eta);
+        const float ew = ui::Text(vg, cx, py + 70, 16, t.muted, eta) - cx;
+        if (live.saved > 0) {
+            // what the console had already, in the green of what went well (16A)
+            char saved[64];
+            std::snprintf(saved, sizeof(saved), TrM().saved_fmt, SizeText(live.saved).c_str());
+            const float sx = cx + ew + 12;
+            nvgBeginPath(vg);
+            nvgCircle(vg, sx + 4, py + 70, 4);
+            nvgFillColor(vg, t.ok);
+            nvgFill(vg);
+            ui::Text(vg, sx + 14, py + 70, 16, t.ok, saved);
+        }
         ui::Progress(vg, t, cx, py + 88, pw - 168 - 24, 12, frac, t.work, m_time);
 
         struct Lane { std::string title; NVGcolor color; std::string value; std::string unit; float meter; int segments; };
@@ -2601,6 +2612,11 @@ void App::DrawQueue(NVGcontext* vg) {
         nvgRestore(vg);
         std::string info = Upper(j.format) + " · " + SizeText(j.size) + " · " + (j.nand ? s.internal_short : "SD");
         if (j.state == InstallJob::State::Done) info += " · " + Duration(j.seconds);
+        if (j.state == InstallJob::State::Done && j.saved > 0) {
+            char saved[64];
+            std::snprintf(saved, sizeof(saved), TrM().saved_fmt, SizeText(j.saved).c_str());
+            info += std::string(" · ") + saved;
+        }
         if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
             // why, in place of the figures
             nvgSave(vg);

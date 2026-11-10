@@ -45,6 +45,8 @@ public:
     int Threads() const { return m_threads.load(); }
     // set when the install stopped for room or firmware: what it needed.
     u64 NeededBytes() const { return m_needed.load(); }
+    // bytes not downloaded because the console had them already (16A)
+    u64 SavedBytes() const { return m_saved.load(); }
     u32 NeededFirmware() const { return m_needed_fw.load(); }
     std::string Current() {
         std::lock_guard lock(m_mutex);
@@ -81,6 +83,7 @@ public:
     void AddNet(u64 bytes) { m_net += bytes; }
     void AddReady(u64 bytes) { m_ready += bytes; }
     void NcaChecked() { m_checked++; }
+    void AddSaved(u64 bytes) { m_saved += bytes; }
     void AddRegistered(const NcmContentMetaKey& key) {
         std::lock_guard lock(m_mutex);
         m_registered.push_back(key);
@@ -90,7 +93,7 @@ private:
     UEvent m_cancel_event{};
     std::atomic<bool> m_cancel{false};
     std::atomic<Phase> m_phase{Phase::Starting};
-    std::atomic<u64> m_net{0}, m_ready{0}, m_done_bytes{0}, m_current{0}, m_total{0}, m_needed{0};
+    std::atomic<u64> m_net{0}, m_ready{0}, m_done_bytes{0}, m_current{0}, m_total{0}, m_needed{0}, m_saved{0};
     std::atomic<u32> m_checked{0}, m_ncas{0}, m_needed_fw{0};
     std::atomic<int> m_threads{-1};
     std::mutex m_mutex;

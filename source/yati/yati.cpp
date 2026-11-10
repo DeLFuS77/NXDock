@@ -369,6 +369,9 @@ struct Yati {
     Result Setup(const ConfigOverride& override);
     Result InstallNca(std::span<TikCollection> tickets, NcaCollection& nca);
     Result InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection& nca);
+    // NXDock: an NCA the other storage has, copied from there instead of downloaded (16A).
+    Result CopyFromOther(std::span<TikCollection> tickets, NcaCollection& nca, NcmContentStorage& other);
+    bool KeptOrCopied(std::span<TikCollection> tickets, NcaCollection& nca);
     Result InstallCnmtNca(std::span<TikCollection> tickets, CnmtCollection& cnmt, const container::Collections& collections);
 
     Result readFuncInternal(ThreadData* t);
@@ -1406,7 +1409,77 @@ Result Yati::Setup(const ConfigOverride& override) {
     R_SUCCEED();
 }
 
+// NXDock: the copy of an NCA from the other storage, checked with its SHA-256 as a download is.
+Result Yati::CopyFromOther(std::span<TikCollection> tickets, NcaCollection& nca, NcmContentStorage& other) {
+    s64 size{};
+    R_TRY(ncmContentStorageGetSizeFromContentId(std::addressof(other), std::addressof(size), std::addressof(nca.content_id)));
+    R_UNLESS(size >= s64(sizeof(nca.header)), Result_YatiInvalidNcaSha256);
+    R_TRY(ncmContentStorageGeneratePlaceHolderId(std::addressof(cs), std::addressof(nca.placeholder_id)));
+    R_TRY(ncmContentStorageCreatePlaceHolder(std::addressof(cs), std::addressof(nca.content_id), std::addressof(nca.placeholder_id), size));
+    std::vector<u8> buf(4 * 1024 * 1024);
+    Sha256Context sha{};
+    sha256ContextCreate(std::addressof(sha));
+    for (s64 off = 0; off < size;) {
+        R_TRY(pbox->ShouldExitResult());
+        const s64 n = std::min<s64>(s64(buf.size()), size - off);
+        R_TRY(ncmContentStorageReadContentIdFile(std::addressof(other), buf.data(), n, std::addressof(nca.content_id), off));
+        if (off == 0) {
+            std::memcpy(std::addressof(nca.header), buf.data(), sizeof(nca.header));
+            crypto::cryptoAes128Xts(std::addressof(nca.header), std::addressof(nca.header), keys.header_key, 0, 0x200, sizeof(nca.header), false);
+        }
+        sha256ContextUpdate(std::addressof(sha), buf.data(), n);
+        R_TRY(ncmContentStorageWritePlaceHolder(std::addressof(cs), std::addressof(nca.placeholder_id), off, buf.data(), n));
+        off += n;
+        pbox->UpdateTransfer(off, size);
+    }
+    sha256ContextGetHash(std::addressof(sha), nca.hash);
+    R_UNLESS(!std::memcmp(std::addressof(nca.content_id), nca.hash, sizeof(nca.content_id)), Result_YatiInvalidNcaSha256);
+    R_TRY(HasRequiredTicket(nca.header, tickets));
+    pbox->NcaChecked();
+    pbox->AddSaved(u64(size));
+    log_write("[NXDock] copied %s from the other storage\n", nca.name.c_str());
+    R_SUCCEED();
+}
+
+// NXDock: true when the NCA needs no download: kept where it is, or copied from the other storage.
+bool Yati::KeptOrCopied(std::span<TikCollection> tickets, NcaCollection& nca) {
+    if (!config.reuse_installed || config.repair) {
+        return false;
+    }
+    bool here{};
+    if (R_SUCCEEDED(ncmContentStorageHas(std::addressof(cs), std::addressof(here), std::addressof(nca.content_id))) && here) {
+        if (R_SUCCEEDED(ncmContentStorageReadContentIdFile(std::addressof(cs), std::addressof(nca.header), sizeof(nca.header), std::addressof(nca.content_id), 0))) {
+            crypto::cryptoAes128Xts(std::addressof(nca.header), std::addressof(nca.header), keys.header_key, 0, 0x200, sizeof(nca.header), false);
+            if (R_SUCCEEDED(HasRequiredTicket(nca.header, tickets))) {
+                s64 size{};
+                ncmContentStorageGetSizeFromContentId(std::addressof(cs), std::addressof(size), std::addressof(nca.content_id));
+                nca.skipped = true;
+                pbox->AddSaved(u64(size));
+                log_write("[NXDock] kept %s: the console has it\n", nca.name.c_str());
+                return true;
+            }
+        }
+    }
+    auto& other = ncm_cs[!config.sd_card_install];
+    bool there{};
+    if (R_SUCCEEDED(ncmContentStorageHas(std::addressof(other), std::addressof(there), std::addressof(nca.content_id))) && there) {
+        if (R_SUCCEEDED(CopyFromOther(tickets, nca, other))) {
+            return true;
+        }
+        // the copy did not work out: the download goes on as usual
+        log_write("[NXDock] the copy of %s failed; downloading it\n", nca.name.c_str());
+        ncmContentStorageDeletePlaceHolder(std::addressof(cs), std::addressof(nca.placeholder_id));
+        nca.placeholder_id = {};
+        std::memset(nca.hash, 0, sizeof(nca.hash));
+        pbox->UpdateTransfer(0, 0);
+    }
+    return false;
+}
+
 Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection& nca) {
+    if (KeptOrCopied(tickets, nca)) {
+        R_SUCCEED();
+    }
     if (config.skip_if_already_installed || config.ticket_only || config.repair) {
         R_TRY(ncmContentStorageHas(std::addressof(cs), std::addressof(nca.skipped), std::addressof(nca.content_id)));
         if (nca.skipped) {
@@ -1874,8 +1947,9 @@ Result Yati::CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span
         for (const auto& packed : cnmt.infos) {
             u64 size;
             ncmContentInfoSizeToU64(&packed.info, &size);
-            if (config.repair) {
-                // a repair writes only what the storage does not have
+            if (config.repair || config.reuse_installed) {
+                // a repair, or an install that keeps what is there (16A), writes only what the
+                // storage does not have
                 bool has{};
                 if (R_SUCCEEDED(ncmContentStorageHas(std::addressof(cs), std::addressof(has), std::addressof(packed.info.content_id))) && has) {
                     continue;
@@ -1947,6 +2021,7 @@ void Yati::UndoRegister(const CnmtCollection& cnmt) {
 Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const container::Collections& collections, const ConfigOverride& override) {
     auto yati = std::make_unique<Yati>(pbox, source);
     R_TRY(yati->Setup(override));
+    yati->config.reuse_installed = true;
 
     pbox->SetPhase(ui::ProgressBox::Phase::Reading);
     std::vector<TikCollection> tickets{};

@@ -71,6 +71,11 @@ struct Config {
     // NXDock: a repair. Content already in the storage is kept; only what is missing is
     // downloaded, and the content meta is registered again.
     bool repair{};
+
+    // NXDock: what the console has already is not downloaded again (16A). An NCA with the same
+    // content id in the storage the install goes to is kept; one in the other storage is copied
+    // over from there (and checked). Set for every install that is not a stream.
+    bool reuse_installed{};
 };
 
 // overridable options, set to avoid

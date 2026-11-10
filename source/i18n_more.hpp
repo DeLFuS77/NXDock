@@ -62,6 +62,8 @@ struct More {
     const char *anim_row, *anim_full, *anim_soft, *anim_none;
     // the first-run wizard, updated for More, the animations and the screen off
     const char *wiz_screen_off, *wiz_no_app, *tour_more, *tour_count4;
+    // only what is missing is installed (phase 16)
+    const char *saved_fmt;
 };
 
 const More& TrM();
