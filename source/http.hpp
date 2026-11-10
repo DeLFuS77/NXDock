@@ -3,6 +3,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <string>
 
 namespace nxdock::http {
@@ -19,6 +21,16 @@ Response Get(const std::string& url, const std::string& key = "", long timeout_m
 // A larger answer: the catalog, a cover. Cut at max_bytes.
 Response GetLarge(const std::string& url, const std::string& key, long timeout_ms, size_t max_bytes);
 Response PostJson(const std::string& url, const std::string& json, const std::string& key = "", long timeout_ms = 4000);
+
+// Large bodies, sent or received in pieces, for saves and dumps. No time limit while bytes keep
+// moving; a minute without any stops it. `progress` gets the bytes so far and returns false to
+// stop (a cancel).
+// Sends `size` bytes that `read(buffer, max)` gives (0 at the end, -1 on error), with POST or PUT.
+Response Send(const std::string& method, const std::string& url, const std::string& key, uint64_t size,
+              const std::function<long(char*, size_t)>& read, const std::function<bool(uint64_t)>& progress = {});
+// Gives the body of a GET to `write` (false stops), up to `max_bytes`.
+Response Receive(const std::string& url, const std::string& key, uint64_t max_bytes,
+                 const std::function<bool(const char*, size_t)>& write, const std::function<bool(uint64_t)>& progress = {});
 
 // Reads a field of a flat JSON object: a string, a number or a boolean. Enough for the
 // answers of the app, which never nest the fields NXDock reads.

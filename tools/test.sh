@@ -8,9 +8,16 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   set -e
   g++ -std=c++20 -Wall -Wextra -O1 -o /tmp/json_test tests/json_test.cpp source/json.cpp && /tmp/json_test
   # installing without a server: split files and the USB protocol of Tinfoil
-  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/local_test tests/local_test.cpp source/file_source.cpp source/usb_tinfoil.cpp && /tmp/local_test /tmp
+  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/local_test tests/local_test.cpp source/file_source.cpp source/usb_tinfoil.cpp
+  /tmp/local_test /tmp
+  # the vault of saves: zips written and read, and the list of the library app
+  mkdir -p /tmp/zinc && cp /opt/devkitpro/portlibs/switch/include/zlib.h /opt/devkitpro/portlibs/switch/include/zconf.h /tmp/zinc/
+  gcc -O1 -c -o /tmp/yyjson_v.o build/_deps/yyjson-src/src/yyjson.c
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -Ibuild/_deps/yyjson-src/src -o /tmp/vault_test tests/vault_test.cpp source/zip.cpp source/vault_json.cpp /tmp/yyjson_v.o /usr/lib/x86_64-linux-gnu/libz.so.1
+  /tmp/vault_test /tmp
   # clear errors and the check before installing, in every language
-  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp && /tmp/errors_test
+  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp
+  /tmp/errors_test
   gcc -O1 -c -o /tmp/yyjson.o build/_deps/yyjson-src/src/yyjson.c
   g++ -std=c++20 -Wall -Wextra -O1 -Ibuild/_deps/yyjson-src/src -o /tmp/catalog_test tests/catalog_test.cpp source/catalog.cpp /tmp/yyjson.o && /tmp/catalog_test
   # the sounds, with the synth the console runs

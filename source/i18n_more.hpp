@@ -43,6 +43,11 @@ struct More {
     const char *mtp_sd_card, *mtp_sd_card_sub, *arriving, *connected_usb, *not_connected, *waiting_files, *stop_back;
     const char *allow_nand, *nand_allowed, *mtp_failed, *mtp_to_sd, *mtp_to_nand, *count_fmt, *nand_q_title, *nand_q_body;
     const char *usb_title, *usb_steps, *usb_from, *usb_failed, *wait_usb;
+    // the vault of saves (phase 11)
+    const char *saves_user_fmt, *copies_fmt, *copies_lib, *copy_now, *restore, *user_word, *restore_note, *note_guide;
+    const char *no_saves, *no_copies, *need_link, *st_copying, *st_sending, *st_receiving, *st_restoring, *copied, *restored;
+    const char *restore_title, *restore_body, *restore_go, *before_restore, *no_note;
+    const char *v_copy_failed, *v_copy_failed_d, *v_no_save, *v_no_save_d, *v_restore_failed, *v_restore_failed_d;
 };
 
 const More& TrM();

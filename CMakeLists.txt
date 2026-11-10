@@ -127,6 +127,10 @@ add_executable(nxdock
     source/i18n_more.cpp
     source/file_source.cpp
     source/more.cpp
+    source/more_vault.cpp
+    source/vault.cpp
+    source/vault_json.cpp
+    source/zip.cpp
     source/mtp.cpp
     source/usb_disks.cpp
     source/usb_tinfoil.cpp

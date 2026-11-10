@@ -669,6 +669,19 @@ void App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::MoreSide:
                 break;
+            case HitKind::VaultGame:
+                m_vault_side = 0;
+                if (m_vault_focus != it->index) m_vault_copy = 0;
+                m_vault_focus = it->index;
+                break;
+            case HitKind::VaultCopy:
+                if (m_vault_side == 1 && m_vault_copy == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_vault_side = 1;
+                    m_vault_copy = it->index;
+                }
+                break;
             case HitKind::DialogBack: down |= HidNpadButton_B; break; // as B: each question answers its own way
             case HitKind::DialogButton:
                 // a button of the question acts at once: tapping it is the choice
@@ -3352,6 +3365,21 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = s.risk_go;
             break;
         }
+        case DialogKind::VaultRestore: {
+            const More& m = TrM();
+            title = m.restore_title;
+            const std::string game = m_dialog.game >= 0 && m_dialog.game < int(m_vault_saves.size()) ? m_vault_saves[m_dialog.game].name : "";
+            char text[512];
+            std::snprintf(text, sizeof(text), m.restore_body, game.c_str(), m_dialog.save.note.empty() ? m.no_note : m_dialog.save.note.c_str(),
+                          WhenText(m_dialog.save.when).c_str());
+            body = text;
+            primary = m.restore_go;
+            break;
+        }
+        case DialogKind::VaultError:
+            title = TrM().t_saves;
+            error = m_dialog.from;
+            break;
         case DialogKind::MtpNand: {
             const More& m = TrM();
             title = m.nand_q_title;
@@ -3690,6 +3718,14 @@ void App::ConfirmDialog() {
         case DialogKind::MtpNand:
             MtpAllowNand(true);
             break;
+        case DialogKind::VaultRestore: {
+            const Config c = m_link.CurrentConfig();
+            if (m_vault && c.Linked() && m_dialog.game >= 0 && m_dialog.game < int(m_vault_saves.size()) && !m_vault_users.empty()) {
+                m_vault->StartRestore(c.url, c.key, m_vault_users[m_vault_user], m_vault_saves[m_dialog.game].app_id, m_dialog.save,
+                                      TrM().before_restore);
+            }
+            break;
+        }
         case DialogKind::PreCheck:
             // the user goes on: what needs a newer firmware is installed all the same
             for (auto& j : m_dialog.jobs) j.firmware_ok = true;

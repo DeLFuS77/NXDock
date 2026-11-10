@@ -128,3 +128,9 @@
   - from the computer over the USB cable with NS-USBloader (the Tinfoil
     protocol).
   Everything goes to the same queue, all or nothing.
+- A vault of saves (More › Saves): the games with a save of a user on the
+  left, the copies kept in the library app on the right, with their note,
+  date, console and version. X copies a save now (with a note that can stay
+  empty); A restores a copy, always after a question, and the save it
+  replaces goes to the library first ("Before restoring"). R changes the
+  user.

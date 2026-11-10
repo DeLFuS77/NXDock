@@ -68,7 +68,111 @@ Response Request(const std::string& url, const std::string* json, const std::str
     return r;
 }
 
+struct Stream {
+    const std::function<long(char*, size_t)>* read = nullptr;
+    const std::function<bool(const char*, size_t)>* write = nullptr;
+    const std::function<bool(uint64_t)>* progress = nullptr;
+    uint64_t done = 0, max = 0;
+    std::string* body = nullptr; // a short answer to a send
+};
+
+size_t OnRead(char* data, size_t size, size_t count, void* user) {
+    auto* s = static_cast<Stream*>(user);
+    const long n = (*s->read)(data, size * count);
+    if (n < 0) return CURL_READFUNC_ABORT;
+    s->done += uint64_t(n);
+    if (s->progress && *s->progress && !(*s->progress)(s->done)) return CURL_READFUNC_ABORT;
+    return size_t(n);
+}
+
+size_t OnWrite(char* data, size_t size, size_t count, void* user) {
+    auto* s = static_cast<Stream*>(user);
+    const size_t n = size * count;
+    if (s->body) {
+        if (s->body->size() + n <= kMaxBody) s->body->append(data, n);
+        return n;
+    }
+    if (s->done + n > s->max || !(*s->write)(data, n)) return 0;
+    s->done += n;
+    if (s->progress && *s->progress && !(*s->progress)(s->done)) return 0;
+    return n;
+}
+
+CURL* Prepare(const std::string& url, const std::string& key) {
+    CURL* curl = curl_easy_init();
+    if (!curl) return nullptr;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    tls::Apply(curl, url);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "NXDock/" NXDOCK_VERSION);
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
+    if (!key.empty()) {
+        curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+        curl_easy_setopt(curl, CURLOPT_USERNAME, "nxdock");
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, key.c_str());
+    }
+    return curl;
+}
+
+Response Finish(CURL* curl, CURLcode res) {
+    Response r;
+    if (res == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &r.status);
+    } else {
+        r.error = curl_easy_strerror(res);
+    }
+    curl_easy_cleanup(curl);
+    return r;
+}
+
 } // namespace
+
+Response Send(const std::string& method, const std::string& url, const std::string& key, uint64_t size,
+              const std::function<long(char*, size_t)>& read, const std::function<bool(uint64_t)>& progress) {
+    CURL* curl = Prepare(url, key);
+    if (!curl) return {0, {}, "curl"};
+    std::string body;
+    Stream s;
+    s.read = &read;
+    s.progress = &progress;
+    s.body = &body;
+    curl_easy_setopt(curl, CURLOPT_READFUNCTION, OnRead);
+    curl_easy_setopt(curl, CURLOPT_READDATA, &s);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, OnWrite);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &s);
+    curl_slist* headers = curl_slist_append(nullptr, "Content-Type: application/octet-stream");
+    headers = curl_slist_append(headers, "Expect:");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    if (method == "PUT") {
+        curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+        curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, curl_off_t(size));
+    } else {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, curl_off_t(size));
+    }
+    const CURLcode res = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    Response r = Finish(curl, res);
+    r.body = std::move(body);
+    return r;
+}
+
+Response Receive(const std::string& url, const std::string& key, uint64_t max_bytes,
+                 const std::function<bool(const char*, size_t)>& write, const std::function<bool(uint64_t)>& progress) {
+    CURL* curl = Prepare(url, key);
+    if (!curl) return {0, {}, "curl"};
+    Stream s;
+    s.write = &write;
+    s.progress = &progress;
+    s.max = max_bytes;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, OnWrite);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &s);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    return Finish(curl, curl_easy_perform(curl));
+}
 
 Response Get(const std::string& url, const std::string& key, long timeout_ms) {
     return Request(url, nullptr, key, timeout_ms);

@@ -14,6 +14,7 @@
 #include "install_queue.hpp"
 #include "link.hpp"
 #include "precheck.hpp"
+#include "vault.hpp"
 #include "push.hpp"
 #include "sound.hpp"
 #include "safety.hpp"
@@ -41,7 +42,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -115,6 +116,16 @@ private:
     double m_places_checked = -100;
     bool m_usb_active = false;       // a list of the computer is being installed
     std::string m_more_error;
+    // the vault of saves (6A, more_vault.cpp)
+    void OpenVault();
+    std::vector<LibrarySave> VaultCopies();
+    void FollowVault();
+    void DrawVault(NVGcontext* vg);
+    void UpdateVault(u64 down, u64 held);
+    std::unique_ptr<Vault> m_vault;
+    std::vector<Vault::User> m_vault_users;
+    std::vector<Vault::Save> m_vault_saves;
+    int m_vault_user = 0, m_vault_focus = 0, m_vault_copy = 0, m_vault_side = 0, m_vault_finished = 0;
     // saver mode: dark after a minute without input while installing
     void DrawSaver(NVGcontext* vg);
     double m_last_input = 0;
@@ -279,7 +290,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -291,6 +302,7 @@ private:
         std::vector<std::string> push;  // Push: the ids of what the web sent, to answer
         std::string from;               // Push: who sent it
         PreCheck check;                 // PreCheck: the firmware, the keys and Atmosphère
+        LibrarySave save;               // VaultRestore: the copy to bring back
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;
