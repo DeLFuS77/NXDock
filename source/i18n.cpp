@@ -151,6 +151,7 @@ constexpr Strings kEnglish{
     "Battery at %d %% and no charger: connect it so the install is not cut.",
     "Scan it with your phone to open your library:",
     "The notice to pair shows on any of its pages.",
+    "Sounds",
 };
 
 constexpr Strings kSpanish{
@@ -297,6 +298,7 @@ constexpr Strings kSpanish{
     "Batería al %d %% y sin cargador: conéctalo para que no se corte la instalación.",
     "Escanéalo con el móvil para abrir tu biblioteca:",
     "El aviso para emparejar sale en cualquier página.",
+    "Sonidos",
 };
 
 constexpr Strings kFrench{
@@ -524,6 +526,7 @@ constexpr Strings kFrench{
     "Batterie à %d %% et sans chargeur : branchez-le pour que l'installation ne soit pas coupée.",
     "Scannez-le avec votre téléphone pour ouvrir votre bibliothèque :",
     "L'avis d'appairage s'affiche sur n'importe quelle page.",
+    "Sons",
 };
 
 constexpr Strings kGerman{
@@ -751,6 +754,7 @@ constexpr Strings kGerman{
     "Akku bei %d %% und kein Ladegerät: Schließe es an, damit die Installation nicht abbricht.",
     "Scanne ihn mit dem Handy, um deine Bibliothek zu öffnen:",
     "Der Hinweis zum Koppeln erscheint auf jeder Seite.",
+    "Töne",
 };
 
 constexpr Strings kItalian{
@@ -978,6 +982,7 @@ constexpr Strings kItalian{
     "Batteria al %d %% e senza caricatore: collegalo perché l'installazione non si interrompa.",
     "Scansionalo con il telefono per aprire la tua libreria:",
     "L'avviso per l'abbinamento compare in ogni pagina.",
+    "Suoni",
 };
 
 constexpr Strings kPortuguese{
@@ -1205,6 +1210,7 @@ constexpr Strings kPortuguese{
     "Bateria a %d %% e sem carregador: liga-o para que a instalação não seja cortada.",
     "Lê-o com o telemóvel para abrir a tua biblioteca:",
     "O aviso para emparelhar aparece em qualquer página.",
+    "Sons",
 };
 
 constexpr Strings kDutch{
@@ -1432,6 +1438,7 @@ constexpr Strings kDutch{
     "Batterij op %d %% en geen lader: sluit hem aan zodat de installatie niet wordt afgebroken.",
     "Scan hem met je telefoon om je bibliotheek te openen:",
     "De melding om te koppelen staat op elke pagina.",
+    "Geluiden",
 };
 
 constexpr Strings kRussian{
@@ -1659,6 +1666,7 @@ constexpr Strings kRussian{
     "Заряд %d %%, зарядка не подключена: подключите её, чтобы установка не прервалась.",
     "Отсканируйте телефоном, чтобы открыть библиотеку:",
     "Уведомление о сопряжении видно на любой странице.",
+    "Звуки",
 };
 
 constexpr Strings kJapanese{
@@ -1886,6 +1894,7 @@ constexpr Strings kJapanese{
     "バッテリー残量 %d %%、充電器なし：インストールが途切れないよう接続してください。",
     "スマートフォンで読み取るとライブラリが開きます：",
     "ペアリングの通知はどのページにも表示されます。",
+    "効果音",
 };
 
 constexpr Strings kKorean{
@@ -2113,6 +2122,7 @@ constexpr Strings kKorean{
     "배터리 %d %%, 충전기 없음: 설치가 끊기지 않도록 연결하세요.",
     "휴대폰으로 스캔하면 라이브러리가 열립니다:",
     "페어링 알림은 어느 페이지에나 표시됩니다.",
+    "효과음",
 };
 
 constexpr Strings kChinese{
@@ -2340,6 +2350,7 @@ constexpr Strings kChinese{
     "电量 %d %%，未连接充电器：请连接，以免安装中断。",
     "用手机扫描即可打开你的游戏库：",
     "配对提示会显示在任意页面上。",
+    "音效",
 };
 
 const Strings* g_strings = &kEnglish;

@@ -69,3 +69,6 @@
   (the install is not stopped).
 - A QR on the pairing screen, under the code: scanned with a phone it opens
   the library app NXDock found, where the notice to pair shows on any page.
+- Soft sounds when moving, choosing, going back and when the queue ends, made
+  by NXDock while it plays (nothing recorded is shipped). They are turned off
+  in Settings › Sounds.

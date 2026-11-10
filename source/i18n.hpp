@@ -44,6 +44,7 @@ struct Strings {
     const char *push_title, *push_from, *push_install, *not_now, *share_title, *share_body, *share_yes, *no_word, *share_row, *yes_word;
     const char *battery_low;
     const char *qr_scan, *qr_notice;
+    const char *sounds_row;
 };
 
 // Picks the language of the console: English, Spanish, French, German, Italian, Portuguese,

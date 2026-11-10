@@ -139,7 +139,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowLibrary, kRowForget, kRowShare, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -204,6 +204,7 @@ bool App::Init() {
     m_prefs = InstallPrefs::Load();
     m_ui = UiPrefs::Load();
     m_psm = R_SUCCEEDED(psmInitialize());
+    m_sound.Start();
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_push = std::make_unique<Push>();
@@ -215,6 +216,7 @@ void App::Exit() {
     // a job running is cancelled and cleaned up before the network goes
     m_queue.reset();
     m_push.reset();
+    m_sound.Stop();
     m_speed.Cancel();
     m_link.Stop();
     m_covers.Stop();
@@ -248,6 +250,10 @@ void App::ActivateSetting(int row) {
         case kRowTheme:
             m_theme = m_theme.dark ? LightTheme() : DarkTheme();
             m_link.SaveTheme(!m_theme.dark);
+            break;
+        case kRowSounds:
+            m_ui.sounds = !m_ui.sounds;
+            m_ui.Save();
             break;
         case kRowLibrary:
             // the pairing screen, or the library when linked
@@ -542,8 +548,10 @@ bool App::Frame() {
 
     padUpdate(&m_pad);
     u64 down = padGetButtonsDown(&m_pad);
+    const u64 focus_before = FocusSignature();
     ReadTouch(down);
     Update(down, padGetButtons(&m_pad));
+    PlaySounds(down, focus_before);
     FollowLink();
     FollowQueue();
     FollowPush();
@@ -562,6 +570,39 @@ bool App::Frame() {
     Draw(vg);
     m_gfx.EndFrame();
     return !m_quit;
+}
+
+u64 App::FocusSignature() const {
+    // every place a focus can be, mixed into one number
+    u64 h = 1469598103934665603ull;
+    const auto mix = [&](long long v) { h = (h ^ u64(v)) * 1099511628211ull; };
+    mix(int(m_tab));
+    mix(m_detail);
+    mix(m_focus);
+    mix(m_filter);
+    mix(m_setting);
+    mix(m_pair_focus);
+    mix(m_detail_focus);
+    mix(m_to_nand);
+    mix(m_queue_focus);
+    mix(m_installed_view);
+    mix(m_installed_focus);
+    mix(int(m_dialog.kind));
+    mix(m_dialog.focus);
+    return h;
+}
+
+void App::PlaySounds(u64 down, u64 before) {
+    if (!m_ui.sounds) {
+        return;
+    }
+    if (down & HidNpadButton_A) {
+        m_sound.Play(synth::Effect::Select);
+    } else if (down & HidNpadButton_B) {
+        m_sound.Play(synth::Effect::Back);
+    } else if (FocusSignature() != before) {
+        m_sound.Play(synth::Effect::Move);
+    }
 }
 
 void App::AddHints(const std::vector<ui::HitRect>& rects) {
@@ -1688,6 +1729,7 @@ void App::DrawSettings(NVGcontext* vg) {
     struct Row { const char* label; std::string value; bool accent; };
     const Row rows[kSettingRows] = {
         {s.theme, t.dark ? s.dark : s.light, true},
+        {s.sounds_row, m_ui.sounds ? s.yes_word : s.no_word, m_ui.sounds},
         {s.library, library, linked},
         {s.forget, "", false},
         {s.share_row, m_prefs.share_installed == 1 ? s.yes_word : s.no_word, m_prefs.share_installed == 1},
@@ -1695,8 +1737,19 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
     };
-    const float x = 48, w = 540, h = 62, gap = 10;
-    float y = 96;
+    const float x = 48, w = 540, h = 56, gap = 8;
+    // the rows scroll when they do not fit, keeping the one in focus in sight
+    const float view_top = 88, view_bottom = 652;
+    const float list_h = float(int(kSettingRows)) * (h + gap) + 8 + 70;
+    const float focus_top = m_setting * (h + gap) + (m_setting >= kRowAddress ? 8 : 0);
+    float target = m_settings_scroll;
+    if (focus_top - target < 0) target = focus_top;
+    if (focus_top + h + 12 - target > view_bottom - view_top) target = focus_top + h + 12 - (view_bottom - view_top);
+    if (m_setting == kSettingRows - 1) target = std::max(target, list_h - (view_bottom - view_top));
+    m_settings_scroll = std::clamp(target, 0.f, std::max(0.f, list_h - (view_bottom - view_top)));
+    nvgSave(vg);
+    nvgScissor(vg, 0, view_top - 8, 600, view_bottom - view_top + 8);
+    float y = view_top + 8 - m_settings_scroll;
     for (int i = 0; i < kSettingRows; i++) {
         if (i == kRowAddress) {
             y += 8; // the ones by hand apart
@@ -1707,7 +1760,11 @@ void App::DrawSettings(NVGcontext* vg) {
         if (i == m_setting) {
             ui::Focus(vg, t, x, y, w, h, 14, m_time);
         }
-        AddHit(x, y, w, h, HitKind::SettingsRow, i);
+        // only the part in sight can be tapped
+        const float hit_top = std::max(y, view_top - 8), hit_bottom = std::min(y + h, view_bottom);
+        if (hit_bottom > hit_top) {
+            AddHit(x, hit_top, w, hit_bottom - hit_top, HitKind::SettingsRow, i);
+        }
         ui::Text(vg, x + 22, y + h / 2, 18, i == kRowForget ? t.warn : t.text, rows[i].label);
         ui::Text(vg, x + w - 22, y + h / 2, 16, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(),
                  NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
@@ -1719,6 +1776,7 @@ void App::DrawSettings(NVGcontext* vg) {
     } else if (!linked) {
         TextBox(vg, x, y + 4, w, 15, t.muted, s.need_config);
     }
+    nvgRestore(vg);
 
     DrawSpeedPanel(vg, 620, 96, kWidth - 620 - 48, 548);
 

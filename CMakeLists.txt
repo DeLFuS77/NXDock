@@ -86,7 +86,9 @@ add_executable(nxdock
     source/link.cpp
     source/net.cpp
     source/push.cpp
+    source/sound.cpp
     source/speedtest.cpp
+    source/synth.cpp
     source/uninstall.cpp
     source/verify.cpp
     source/gfx.cpp

@@ -13,6 +13,7 @@
 #include "install_queue.hpp"
 #include "link.hpp"
 #include "push.hpp"
+#include "sound.hpp"
 #include "speedtest.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
@@ -129,6 +130,11 @@ private:
     bool m_speed_kept = false;      // the result of the last test went to install.ini
     InstallPrefs m_prefs;
     UiPrefs m_ui;
+    Sound m_sound;
+    // what is in focus anywhere, to hear a move when it changes
+    u64 FocusSignature() const;
+    void PlaySounds(u64 down, u64 before);
+    float m_settings_scroll = 0;
     // the battery in the top bar, read every few seconds
     void CheckBattery();
     bool m_psm = false;
