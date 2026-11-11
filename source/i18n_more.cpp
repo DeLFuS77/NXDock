@@ -514,6 +514,13 @@ constexpr More kEnglish{
     .ic_done_one_fmt = "Deleted: %s · %s free",
     .ic_picked_fmt = "%d marked · %s",
     .ic_rm_picked_fmt = "Delete %d marked",
+    .lb_installed = "Installed",
+    .lb_installed_tag = "Installed",
+    .lb_needs_update = "update missing",
+    .lb_needs_dlc = "DLC missing",
+    .lb_size = "Size of the covers",
+    .lb_size_big = "Large",
+    .lb_size_small = "Small",
 };
 
 constexpr More kSpanish{
@@ -1021,6 +1028,13 @@ constexpr More kSpanish{
     .ic_done_one_fmt = "Borrado: %s · %s libres",
     .ic_picked_fmt = "%d marcados · %s",
     .ic_rm_picked_fmt = "Borrar %d marcados",
+    .lb_installed = "Instalados",
+    .lb_installed_tag = "Instalado",
+    .lb_needs_update = "falta la actualización",
+    .lb_needs_dlc = "faltan DLC",
+    .lb_size = "Tamaño de las carátulas",
+    .lb_size_big = "Grande",
+    .lb_size_small = "Pequeña",
 };
 
 constexpr More kFrench{
@@ -1528,6 +1542,13 @@ constexpr More kFrench{
     .ic_done_one_fmt = "Supprimé : %s · %s libres",
     .ic_picked_fmt = "%d cochés · %s",
     .ic_rm_picked_fmt = "Supprimer %d cochés",
+    .lb_installed = "Installés",
+    .lb_installed_tag = "Installé",
+    .lb_needs_update = "mise à jour manquante",
+    .lb_needs_dlc = "DLC manquants",
+    .lb_size = "Taille des jaquettes",
+    .lb_size_big = "Grande",
+    .lb_size_small = "Petite",
 };
 
 constexpr More kGerman{
@@ -2035,6 +2056,13 @@ constexpr More kGerman{
     .ic_done_one_fmt = "Gelöscht: %s · %s frei",
     .ic_picked_fmt = "%d markiert · %s",
     .ic_rm_picked_fmt = "%d markierte löschen",
+    .lb_installed = "Installiert",
+    .lb_installed_tag = "Installiert",
+    .lb_needs_update = "Update fehlt",
+    .lb_needs_dlc = "DLC fehlen",
+    .lb_size = "Größe der Cover",
+    .lb_size_big = "Groß",
+    .lb_size_small = "Klein",
 };
 
 constexpr More kItalian{
@@ -2542,6 +2570,13 @@ constexpr More kItalian{
     .ic_done_one_fmt = "Eliminato: %s · %s liberi",
     .ic_picked_fmt = "%d segnati · %s",
     .ic_rm_picked_fmt = "Elimina %d segnati",
+    .lb_installed = "Installati",
+    .lb_installed_tag = "Installato",
+    .lb_needs_update = "manca l'aggiornamento",
+    .lb_needs_dlc = "mancano DLC",
+    .lb_size = "Dimensione delle copertine",
+    .lb_size_big = "Grande",
+    .lb_size_small = "Piccola",
 };
 
 constexpr More kPortuguese{
@@ -3049,6 +3084,13 @@ constexpr More kPortuguese{
     .ic_done_one_fmt = "Apagado: %s · %s livres",
     .ic_picked_fmt = "%d marcados · %s",
     .ic_rm_picked_fmt = "Apagar %d marcados",
+    .lb_installed = "Instalados",
+    .lb_installed_tag = "Instalado",
+    .lb_needs_update = "falta a atualização",
+    .lb_needs_dlc = "faltam DLC",
+    .lb_size = "Tamanho das capas",
+    .lb_size_big = "Grande",
+    .lb_size_small = "Pequena",
 };
 
 constexpr More kDutch{
@@ -3556,6 +3598,13 @@ constexpr More kDutch{
     .ic_done_one_fmt = "Gewist: %s · %s vrij",
     .ic_picked_fmt = "%d gemarkeerd · %s",
     .ic_rm_picked_fmt = "%d gemarkeerde wissen",
+    .lb_installed = "Geïnstalleerd",
+    .lb_installed_tag = "Geïnstalleerd",
+    .lb_needs_update = "update ontbreekt",
+    .lb_needs_dlc = "DLC ontbreken",
+    .lb_size = "Grootte van de covers",
+    .lb_size_big = "Groot",
+    .lb_size_small = "Klein",
 };
 
 constexpr More kRussian{
@@ -4063,6 +4112,13 @@ constexpr More kRussian{
     .ic_done_one_fmt = "Удалено: %s · свободно %s",
     .ic_picked_fmt = "Отмечено: %d · %s",
     .ic_rm_picked_fmt = "Удалить отмеченные (%d)",
+    .lb_installed = "Установленные",
+    .lb_installed_tag = "Установлено",
+    .lb_needs_update = "нет обновления",
+    .lb_needs_dlc = "нет DLC",
+    .lb_size = "Размер обложек",
+    .lb_size_big = "Крупные",
+    .lb_size_small = "Мелкие",
 };
 
 constexpr More kJapanese{
@@ -4570,6 +4626,13 @@ constexpr More kJapanese{
     .ic_done_one_fmt = "削除しました: %s · %s 空き",
     .ic_picked_fmt = "%d 件選択 · %s",
     .ic_rm_picked_fmt = "選択した %d 本を削除",
+    .lb_installed = "インストール済み",
+    .lb_installed_tag = "インストール済み",
+    .lb_needs_update = "更新データなし",
+    .lb_needs_dlc = "DLCなし",
+    .lb_size = "カバーの大きさ",
+    .lb_size_big = "大",
+    .lb_size_small = "小",
 };
 
 constexpr More kKorean{
@@ -5077,6 +5140,13 @@ constexpr More kKorean{
     .ic_done_one_fmt = "삭제됨: %s · %s 확보",
     .ic_picked_fmt = "%d개 선택 · %s",
     .ic_rm_picked_fmt = "선택한 %d개 삭제",
+    .lb_installed = "설치됨",
+    .lb_installed_tag = "설치됨",
+    .lb_needs_update = "업데이트 없음",
+    .lb_needs_dlc = "DLC 없음",
+    .lb_size = "표지 크기",
+    .lb_size_big = "크게",
+    .lb_size_small = "작게",
 };
 
 constexpr More kChinese{
@@ -5584,6 +5654,13 @@ constexpr More kChinese{
     .ic_done_one_fmt = "已删除：%s · 释放 %s",
     .ic_picked_fmt = "已选 %d 个 · %s",
     .ic_rm_picked_fmt = "删除所选 %d 个",
+    .lb_installed = "已安装",
+    .lb_installed_tag = "已安装",
+    .lb_needs_update = "缺少更新",
+    .lb_needs_dlc = "缺少 DLC",
+    .lb_size = "封面大小",
+    .lb_size_big = "大",
+    .lb_size_small = "小",
 };
 
 // In the order of LanguageName in i18n.cpp.

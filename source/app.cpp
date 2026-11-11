@@ -118,16 +118,30 @@ std::string FormatOf(const Game& game) {
 
 // The orders of the library, in Options: A-Z, size, not installed first, recent.
 constexpr int kSorts = 4;
+// The filters of the library: all, not installed, installed, with an update, with DLC.
+constexpr int kFilters = 5;
 
-// Library grid layout.
-constexpr int kColumns = 7;
+// Library grid layout: the size of the covers is chosen in Options (large, medium, small), so
+// these follow it (GridSize, once per frame).
 constexpr float kGridX = 36, kGridTop = 150, kGridGap = 20;
-constexpr float kCoverSize = (kWidth - 2 * kGridX - kGridGap * (kColumns - 1)) / kColumns;
-constexpr float kRowPitch = kCoverSize + kGridGap;
-constexpr float kGridViewH = 2 * kRowPitch - kGridGap; // two full rows in sight
+int g_columns = 7;
+float g_cover = (kWidth - 2 * kGridX - kGridGap * 6) / 7;
+float g_row_pitch = g_cover + kGridGap;
+float g_view_h = 2 * g_row_pitch - kGridGap; // the rows in sight, whole
+float g_az_height = g_view_h + 12;
 constexpr float kGridMargin = 10;                      // room for the focus glow, less than the gap
 // The A-Z bar on the right edge: as tall as the grid, 48 px wide for a finger.
-constexpr float kAzTop = kGridTop - 6, kAzHeight = kGridViewH + 12;
+constexpr float kAzTop = kGridTop - 6;
+
+void GridSize(int size) {
+    static constexpr int kCols[] = {7, 9, 12}, kRows[] = {2, 3, 4};
+    const int i = std::clamp(size, 0, 2);
+    g_columns = kCols[i];
+    g_cover = (kWidth - 2 * kGridX - kGridGap * float(g_columns - 1)) / float(g_columns);
+    g_row_pitch = g_cover + kGridGap;
+    g_view_h = float(kRows[i]) * g_row_pitch - kGridGap;
+    g_az_height = g_view_h + 12;
+}
 constexpr float kAzX = 1251, kAzW = 26, kAzTouchX = kWidth - 48;
 
 // Touch: how far a finger moves before a tap turns into a drag.
@@ -574,16 +588,45 @@ bool App::Repeat(u64 down, u64 held, u64 mask) {
 }
 
 float App::MaxScroll() const {
-    const int rows = (int(m_view.size()) + kColumns - 1) / kColumns;
-    return std::max(0.f, rows * kRowPitch - kGridGap - kGridViewH);
+    const int rows = (int(m_view.size()) + g_columns - 1) / g_columns;
+    return std::max(0.f, rows * g_row_pitch - kGridGap - g_view_h);
+}
+
+// On a cover of the library: Installed in green; what it lacks of the library (its update, its DLC)
+// in cyan below.
+void App::InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s) {
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    const bool small = s < 110;
+    const float size = small ? 10.f : 12.f, h = small ? 18.f : 22.f, pad = small ? 5.f : 7.f;
+    float by = y + s - pad - h;
+    const auto pill = [&](const char* text, NVGcolor fg, NVGcolor bg, bool tick) {
+        const float tw = ui::TextWidth(vg, size, text), w = std::min(s - 2 * pad, tw + (tick ? 30.f : 14.f));
+        ui::FillRound(vg, x + pad, by, w, h, h / 2, bg);
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x + pad, by, w, h);
+        float tx = x + pad + 7;
+        if (tick) {
+            ui::CheckMark(vg, tx + 6, by + h / 2, size, fg, 2.f);
+            tx += 16;
+        }
+        ui::Text(vg, tx, by + h / 2, size, fg, text);
+        nvgRestore(vg);
+        by -= h + 4;
+    };
+    if (g.installed.base) {
+        if (g.UpdateAvailable()) pill(m.lb_needs_update, Hex(0x082430), Hex(0x22bfe3), false);
+        else if (g.MissingDlc()) pill(m.lb_needs_dlc, Hex(0x082430), Hex(0x22bfe3), false);
+        pill(m.lb_installed_tag, nvgRGB(255, 255, 255), t.ok, true);
+    }
 }
 
 void App::KeepFocusVisible() {
-    const float row_top = (m_focus / kColumns) * kRowPitch;
+    const float row_top = (m_focus / g_columns) * g_row_pitch;
     if (row_top < m_scroll_target) {
         m_scroll_target = row_top;
-    } else if (row_top + kCoverSize > m_scroll_target + kGridViewH) {
-        m_scroll_target = row_top + kCoverSize - kGridViewH;
+    } else if (row_top + g_cover > m_scroll_target + g_view_h) {
+        m_scroll_target = row_top + g_cover - g_view_h;
     }
     m_scroll_target = std::clamp(m_scroll_target, 0.f, MaxScroll());
 }
@@ -606,16 +649,16 @@ void App::ReadTouch(u64& down) {
             m_drag_scroll0 = m_scroll;
             // the A-Z bar on the right edge: tapped or dragged along, it jumps to the letter
             m_az_touch = AzBarShown() && m_dialog.kind == DialogKind::None && !m_menu && x >= kAzTouchX &&
-                         y >= kAzTop - 8 && y < kAzTop + kAzHeight + 8;
+                         y >= kAzTop - 8 && y < kAzTop + g_az_height + 8;
         }
         m_touch_x = x;
         m_touch_y = y;
         if (m_az_touch) {
-            const int slot = std::clamp(int((y - kAzTop) / (kAzHeight / 27)), 0, 26);
+            const int slot = std::clamp(int((y - kAzTop) / (g_az_height / 27)), 0, 26);
             JumpToLetter(slot, 0);
             return;
         }
-        const bool in_grid = m_tab == Tab::Library && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + kGridViewH;
+        const bool in_grid = m_tab == Tab::Library && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + g_view_h;
         if (!m_dragging && std::fabs(y - m_touch_y0) > kDragSlop && in_grid) {
             m_dragging = true;
         }
@@ -977,7 +1020,13 @@ bool App::Frame() {
     }
     const u64 focus_before = FocusSignature();
     ReadTouch(down);
+    GridSize(m_ui.library_size);
     Update(down, held);
+    if (m_tab != m_tab_seen) {
+        // the Library again: what the console has now, also what DBI or the HOME menu changed
+        if (m_tab == Tab::Library && m_queue && !m_queue->Busy()) m_queue->ReadInstalledAgain();
+        m_tab_seen = m_tab;
+    }
     PlaySounds(down, focus_before);
     FollowTour();
     // saver mode: dark after a minute without input while something installs
@@ -1196,11 +1245,11 @@ void App::DrawTransitions(NVGcontext* vg) {
     // the page of a game grows out of its cover, and goes back into it
     const float p = float(age / 0.3), e = 1 - (1 - p) * (1 - p) * (1 - p);
     veil(0.85f * (1 - e));
-    const float gx = kGridX + (m_focus % kColumns) * (kCoverSize + kGridGap);
-    const float gy = kGridTop + (m_focus / kColumns) * kRowPitch - m_scroll;
+    const float gx = kGridX + (m_focus % g_columns) * (g_cover + kGridGap);
+    const float gy = kGridTop + (m_focus / g_columns) * g_row_pitch - m_scroll;
     const float dx = 48, dy = 72 + 34, ds = 330;
     const float k = m_detail ? e : 1 - e; // 0: in the grid, 1: on the page
-    const float x = gx + (dx - gx) * k, y = gy + (dy - gy) * k, s = kCoverSize + (ds - kCoverSize) * k;
+    const float x = gx + (dx - gx) * k, y = gy + (dy - gy) * k, s = g_cover + (ds - g_cover) * k;
     const Game& g = m_games[m_detail_game];
     nvgBeginPath(vg);
     nvgRect(vg, x - 30, y - 10, s + 60, s + 60);
@@ -1430,8 +1479,9 @@ void App::RebuildView() {
         bool keep = true;
         switch (m_filter) {
             case 1: keep = !g.installed.base; break;
-            case 2: keep = g.UpdateAvailable() || g.MissingDlc(); break;
-            case 3: keep = !g.Dlc().empty(); break;
+            case 2: keep = g.installed.base; break;
+            case 3: keep = g.UpdateAvailable() || g.MissingDlc(); break;
+            case 4: keep = !g.Dlc().empty(); break;
             default: break;
         }
         if (keep && !search.empty()) {
@@ -1495,10 +1545,10 @@ void App::UpdateLibrary(u64 down, u64 held) {
         LeaveShop();
         return;
     }
-    if (Repeat(down, held, left) && m_focus % kColumns > 0) m_focus--;
-    if (Repeat(down, held, right) && m_focus % kColumns < kColumns - 1 && m_focus + 1 < count) m_focus++;
-    if (Repeat(down, held, up) && m_focus >= kColumns) m_focus -= kColumns;
-    if (Repeat(down, held, dn) && m_focus + kColumns < count) m_focus += kColumns;
+    if (Repeat(down, held, left) && m_focus % g_columns > 0) m_focus--;
+    if (Repeat(down, held, right) && m_focus % g_columns < g_columns - 1 && m_focus + 1 < count) m_focus++;
+    if (Repeat(down, held, up) && m_focus >= g_columns) m_focus -= g_columns;
+    if (Repeat(down, held, dn) && m_focus + g_columns < count) m_focus += g_columns;
     if (count > 0) {
         const bool r_up = Repeat(down, held, HidNpadButton_StickRUp);
         const bool r_down = Repeat(down, held, HidNpadButton_StickRDown);
@@ -1507,18 +1557,18 @@ void App::UpdateLibrary(u64 down, u64 held) {
                 JumpToLetter(-1, r_down ? 1 : -1);
             } else {
                 // other orders have no letters: a page (two rows)
-                const int page = 2 * kColumns;
+                const int page = 2 * g_columns;
                 m_focus = std::clamp(m_focus + (r_down ? page : -page), 0, count - 1);
             }
         }
     }
     if (m_focus != before) KeepFocusVisible();
     if (down & (HidNpadButton_ZL)) {
-        m_filter = (m_filter + 3) % 4;
+        m_filter = (m_filter + kFilters - 1) % kFilters;
         RebuildView();
     }
     if (down & (HidNpadButton_ZR)) {
-        m_filter = (m_filter + 1) % 4;
+        m_filter = (m_filter + 1) % kFilters;
         RebuildView();
     }
     if ((down & HidNpadButton_A) && count > 0) {
@@ -1560,6 +1610,14 @@ void App::AskUpdateAll() {
 }
 
 void App::ActivateMenu(int row) {
+    if (row == kSorts) {
+        m_ui.library_size = (m_ui.library_size + 1) % 3;
+        m_ui.Save();
+        GridSize(m_ui.library_size);
+        m_scroll = m_scroll_target = 0;
+        KeepFocusVisible();
+        return;
+    }
     if (row < kSorts) {
         if (m_ui.sort != row) {
             m_ui.sort = row;
@@ -1574,7 +1632,7 @@ void App::ActivateMenu(int row) {
 }
 
 void App::UpdateMenu(u64 down, u64 held) {
-    const int rows = PendingUpdates().empty() ? kSorts : kSorts + 1;
+    const int rows = PendingUpdates().empty() ? kSorts + 1 : kSorts + 2;
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_menu_focus > 0) m_menu_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_menu_focus < rows - 1) m_menu_focus++;
     m_menu_focus = std::clamp(m_menu_focus, 0, rows - 1);
@@ -1636,8 +1694,8 @@ void App::DrawAzBar(NVGcontext* vg) {
     if (!AzBarShown()) {
         // the plain scroll indicator, when there is no letter to jump to
         if (MaxScroll() > 0 && m_tab == Tab::Library && !m_view.empty()) {
-            const float track_h = kGridViewH;
-            const float thumb_h = track_h * kGridViewH / (kGridViewH + MaxScroll());
+            const float track_h = g_view_h;
+            const float thumb_h = track_h * g_view_h / (g_view_h + MaxScroll());
             const float thumb_y = kGridTop + (track_h - thumb_h) * (m_scroll / MaxScroll());
             NVGcolor c = t.muted;
             c.a = 0.45f;
@@ -1650,11 +1708,11 @@ void App::DrawAzBar(NVGcontext* vg) {
     const int here = LetterSlot(m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]].name);
     NVGcolor back = t.panel2;
     back.a = m_az_touch ? 0.95f : 0.7f;
-    ui::FillRound(vg, kAzX, kAzTop, kAzW, kAzHeight, kAzW / 2, back);
+    ui::FillRound(vg, kAzX, kAzTop, kAzW, g_az_height, kAzW / 2, back);
     if (m_az_touch) {
-        ui::StrokeRound(vg, kAzX + .5f, kAzTop + .5f, kAzW - 1, kAzHeight - 1, kAzW / 2, t.work, 1.5f);
+        ui::StrokeRound(vg, kAzX + .5f, kAzTop + .5f, kAzW - 1, g_az_height - 1, kAzW / 2, t.work, 1.5f);
     }
-    const float pitch = kAzHeight / 27;
+    const float pitch = g_az_height / 27;
     for (int i = 0; i < 27; i++) {
         const char label[2] = {i == 0 ? '#' : char('A' + i - 1), 0};
         const float y = kAzTop + pitch * (i + 0.5f);
@@ -1674,7 +1732,7 @@ void App::DrawJumpLetter(NVGcontext* vg) {
     const Theme& t = m_theme;
     const float alpha = float(age < hold ? 1.0 : 1 - (age - hold) / 0.25);
     const char label[2] = {m_jump_letter == 0 ? '#' : char('A' + m_jump_letter - 1), 0};
-    const float s = 150, x = (kWidth - s) / 2, y = kGridTop + kGridViewH / 2 - s / 2;
+    const float s = 150, x = (kWidth - s) / 2, y = kGridTop + g_view_h / 2 - s / 2;
     nvgGlobalAlpha(vg, alpha);
     nvgBeginPath(vg);
     nvgRect(vg, x - 40, y - 30, s + 80, s + 90);
@@ -1698,9 +1756,9 @@ void App::DrawMenu(NVGcontext* vg) {
     nvgFill(vg);
     AddHit(0, 0, kWidth, kHeight, HitKind::MenuBack);
     const size_t updates = PendingUpdates().size();
-    const int rows = updates ? kSorts + 1 : kSorts;
+    const int rows = updates ? kSorts + 2 : kSorts + 1;
     const float w = 440, rh = 56, pad = 10;
-    const float h = pad * 2 + 34 + kSorts * rh + (updates ? rh + 13 : 0);
+    const float h = pad * 2 + 34 + kSorts * rh + rh + 13 + (updates ? rh : 0);
     const float x = kWidth - 36 - w, y = 664 - 14 - h;
     nvgBeginPath(vg);
     nvgRect(vg, x - 30, y - 20, w + 60, h + 60);
@@ -1724,7 +1782,13 @@ void App::DrawMenu(NVGcontext* vg) {
             ui::StrokeRound(vg, x + pad, ry, w - 2 * pad, rh, 10, t.work, 3);
         }
         AddHit(x + pad, ry, w - 2 * pad, rh, HitKind::MenuRow, i);
-        if (i < kSorts) {
+        if (i == kSorts) {
+            // the size of the covers: A changes it, the menu stays open to see it
+            const char* sizes[] = {TrM().lb_size_big, TrM().ic_size_mid, TrM().lb_size_small};
+            ui::Text(vg, x + pad + 26, ry + rh / 2 + 1, 20, t.work, ui::glyph::A, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            ui::Text(vg, x + pad + 50, ry + rh / 2, 18, t.text, TrM().lb_size);
+            ui::Text(vg, x + w - pad - 18, ry + rh / 2, 16, t.work, sizes[std::clamp(m_ui.library_size, 0, 2)], NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        } else if (i < kSorts) {
             const bool on = m_ui.sort == i;
             nvgBeginPath(vg);
             nvgCircle(vg, x + pad + 26, ry + rh / 2, on ? 7.5f : 10);
@@ -1853,12 +1917,13 @@ void App::DrawLibrary(NVGcontext* vg) {
     int counts[4] = {int(m_games.size()), 0, 0, 0};
     for (const auto& g : m_games) {
         counts[1] += !g.installed.base;
-        counts[2] += g.UpdateAvailable() || g.MissingDlc();
-        counts[3] += !g.Dlc().empty();
+        counts[2] += g.installed.base;
+        counts[3] += g.UpdateAvailable() || g.MissingDlc();
+        counts[4] += !g.Dlc().empty();
     }
-    const char* names[] = {s.all, s.not_installed, s.with_update, s.dlc};
+    const char* names[] = {s.all, s.not_installed, TrM().lb_installed, s.with_update, s.dlc};
     float x = kGridX;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < kFilters; i++) {
         char chip[64];
         std::snprintf(chip, sizeof(chip), "%s · %d", names[i], counts[i]);
         const float w = ui::Chip(vg, t, x, 92, chip, i == m_filter);
@@ -1875,46 +1940,47 @@ void App::DrawLibrary(NVGcontext* vg) {
 
     // Grid of covers, clipped to its viewport and scrolled.
     nvgSave(vg);
-    nvgScissor(vg, 0, kGridTop - kGridMargin, kWidth, kGridViewH + 2 * kGridMargin);
+    nvgScissor(vg, 0, kGridTop - kGridMargin, kWidth, g_view_h + 2 * kGridMargin);
     if (m_focus != m_lift_focus) {
         // the cover in focus lifts and leans a little toward where the focus came from
         if (m_lift_focus >= 0) {
-            m_lift_dx = float((m_focus % kColumns) - (m_lift_focus % kColumns));
-            m_lift_dy = float((m_focus / kColumns) - (m_lift_focus / kColumns));
+            m_lift_dx = float((m_focus % g_columns) - (m_lift_focus % g_columns));
+            m_lift_dy = float((m_focus / g_columns) - (m_lift_focus / g_columns));
         }
         m_lift_focus = m_focus;
         m_lift_at = m_time;
     }
     for (int i = 0; i < int(m_view.size()); i++) {
-        const float cx = kGridX + (i % kColumns) * (kCoverSize + kGridGap);
-        const float cy = kGridTop + (i / kColumns) * kRowPitch - m_scroll;
-        if (cy + kCoverSize < kGridTop - kGridMargin || cy > kGridTop + kGridViewH + kGridMargin) {
+        const float cx = kGridX + (i % g_columns) * (g_cover + kGridGap);
+        const float cy = kGridTop + (i / g_columns) * g_row_pitch - m_scroll;
+        if (cy + g_cover < kGridTop - kGridMargin || cy > kGridTop + g_view_h + kGridMargin) {
             continue;
         }
         const Game& g = m_games[m_view[i]];
         // Only the visible part of a cover can be tapped.
-        const float top = std::max(cy, kGridTop - kGridMargin), bottom = std::min(cy + kCoverSize, kGridTop + kGridViewH + kGridMargin);
+        const float top = std::max(cy, kGridTop - kGridMargin), bottom = std::min(cy + g_cover, kGridTop + g_view_h + kGridMargin);
         if (bottom > top) {
-            AddHit(cx - kGridGap / 2, top, kCoverSize + kGridGap, bottom - top, HitKind::Cover, i);
+            AddHit(cx - kGridGap / 2, top, g_cover + kGridGap, bottom - top, HitKind::Cover, i);
         }
         if (i == m_focus) {
             continue; // drawn last, over its neighbours
         }
         const std::string format = FormatOf(g);
-        ui::Cover(vg, t, cx, cy, kCoverSize, PlaceholderColor(g.key), Initial(g.name).c_str(), format.c_str(),
-                  g.installed.base, g.UpdateAvailable(), 10, m_covers.Get(g.cover));
+        ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), g_cover >= 110 ? format.c_str() : nullptr, false,
+                  false, 10, m_covers.Get(g.cover));
+        InstalledBadge(vg, g, cx, cy, g_cover);
     }
     if (m_focus >= 0 && m_focus < int(m_view.size())) {
         // a little more room above and below for the lifted cover and its glow
-        nvgScissor(vg, 0, kGridTop - kGridMargin - 10, kWidth, kGridViewH + 2 * kGridMargin + 20);
-        const float cx = kGridX + (m_focus % kColumns) * (kCoverSize + kGridGap);
-        const float cy = kGridTop + (m_focus / kColumns) * kRowPitch - m_scroll;
+        nvgScissor(vg, 0, kGridTop - kGridMargin - 10, kWidth, g_view_h + 2 * kGridMargin + 20);
+        const float cx = kGridX + (m_focus % g_columns) * (g_cover + kGridGap);
+        const float cy = kGridTop + (m_focus / g_columns) * g_row_pitch - m_scroll;
         const Game& g = m_games[m_view[m_focus]];
-        DrawLiftedCover(vg, g, cx, cy, kCoverSize);
+        DrawLiftedCover(vg, g, cx, cy, g_cover);
     }
     nvgRestore(vg);
     if (m_view.empty()) {
-        ui::Text(vg, kWidth / 2, kGridTop + kGridViewH / 2, 18, t.muted, s.empty_filter, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, kWidth / 2, kGridTop + g_view_h / 2, 18, t.muted, s.empty_filter, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
 
     // The A-Z bar, or the scroll indicator when the order has no letters.
@@ -1923,7 +1989,7 @@ void App::DrawLibrary(NVGcontext* vg) {
     // Name of the game in focus, with what matters of it.
     if (!m_view.empty()) {
         const Game& g = m_games[m_view[m_focus]];
-        const float ny = kGridTop + kGridViewH + 22;
+        const float ny = kGridTop + g_view_h + 22;
         nvgSave(vg);
         nvgScissor(vg, kGridX, ny - 20, 700, 40);
         const float nw = ui::Text(vg, kGridX, ny, 22, t.text, g.name.c_str()) - kGridX;
@@ -1936,7 +2002,7 @@ void App::DrawLibrary(NVGcontext* vg) {
     }
 
     // Queue strip, always in sight; tapping it opens the queue.
-    DrawQueueStrip(vg, 556);
+    DrawQueueStrip(vg, m_ui.library_size == 0 ? 556.f : 594.f); // below the rows of the size chosen
 
     std::vector<ui::Hint> hints = {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::ZR, s.filter, HidNpadButton_ZR},
                                    {ui::glyph::Y, s.search, HidNpadButton_Y}};
@@ -1977,8 +2043,9 @@ void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float
     nvgTranslate(vg, -s / 2, -s / 2);
     ui::Focus(vg, t, 0, 0, s, s, 10, m_time);
     const std::string format = FormatOf(g);
-    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), format.c_str(), g.installed.base,
-              g.UpdateAvailable(), 10, m_covers.Get(g.cover));
+    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), s >= 110 ? format.c_str() : nullptr, false, false, 10,
+              m_covers.Get(g.cover));
+    InstalledBadge(vg, g, 0, 0, s);
     // a light that passes once over it
     if (age > 0.08 && age < 0.75) {
         const float pos = float((age - 0.08) / 0.67);

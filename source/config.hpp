@@ -51,6 +51,7 @@ struct UiPrefs {
     int dest = 0;               // where the page of a game installs: 0 SD card, 1 internal memory, 2 ask each time
     int pick = 0;               // what the page of a game ticks: 0 what is missing, 1 the game only, 2 the game and its update
     int sort = 0;               // the order of the library: 0 A-Z, 1 size, 2 not installed first, 3 recent
+    int library_size = 0;       // the covers of the library: 0 large (7 in a row), 1 medium (9), 2 small (12)
     int console_size = 0;       // In the console, of the Installed tab: 0 list, 1 medium covers, 2 large covers
     std::string focus;          // the key of the game in focus in the library, for the next time
 
