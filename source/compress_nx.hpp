@@ -50,6 +50,16 @@ struct GameEstimate {
     // needs its base game, which the library has not (nothing is changed)
     enum class Why { None, NotFound, Sparse, Key, Read, Update };
     Why why = Why::None;           // Unsupported: why
+    // With its update installed, the game is merged with it ("Merge and compress", 25F): `bytes`
+    // and `saved` count the base and the update together. `merged`: NXDock merged it already, and
+    // a newer update installed over it (from the eShop, say) waits to be merged in the same way.
+    bool merge = false, merged = false;
+    unsigned patch = 0;            // the version of the update installed
+    // Its DLC go with it, in the same row and the same step (4A): those that save 10 % or more are
+    // compressed after the game, and `saved` counts them too.
+    int dlc_total = 0;
+    std::vector<unsigned long long> dlcs;
+    unsigned long long dlc_saved = 0;
 };
 
 // A game NXDock merged with its update (it keeps its recipe): a newer update installed over it is

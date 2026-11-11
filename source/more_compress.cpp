@@ -21,6 +21,24 @@
 
 namespace nxdock {
 
+namespace {
+
+// The game of a DLC: its ID with the last three digits at 000 and the 1 before them taken away.
+unsigned long long DlcGame(unsigned long long id) { return (id & ~0xFFFull) ^ 0x1000; }
+
+bool IsDlc(unsigned long long id) { return (id & 0xFFF) != 0; }
+
+// What the DLC of a game that NXDock compressed saved, from the marks.
+unsigned long long DlcSaved(const std::vector<CompressedGame>& marks, unsigned long long app) {
+    unsigned long long saved = 0;
+    for (const auto& m : marks) {
+        if (IsDlc(m.app_id) && DlcGame(m.app_id) == app) saved += m.saved;
+    }
+    return saved;
+}
+
+} // namespace
+
 void App::OpenCompress() {
     if (!m_ui.compress_on) {
         // the first time: what it is, the focus on Cancel
@@ -143,6 +161,18 @@ void App::DrawCompress(NVGcontext* vg) {
         m_compress_started = m_compress->StartAnalysis(apps);
     }
     const auto rows = CompressVisible(v, c);
+    if (!m_compress_told && !c.analyzing && v.scanned && m_compress_started) {
+        for (const auto& [app, e] : c.games) {
+            if (!e.merge || !e.merged || (e.state != GameEstimate::State::Worth && e.state != GameEstimate::State::Low)) continue;
+            for (const auto& a : v.apps) {
+                if (a.app_id != app) continue;
+                std::snprintf(text, sizeof(text), m.cz_update_notice_fmt, a.name.c_str());
+                Notice(text);
+                m_compress_told = true;
+            }
+            if (m_compress_told) break;
+        }
+    }
     draw::Panel(vg, t, rx, 92, rw, 460, 16);
     if (v.scanned) {
         // what the check found so far, and how far it got
@@ -208,11 +238,6 @@ void App::DrawCompress(NVGcontext* vg) {
             ui::StrokeRound(vg, rx + 8, ry, rw - 16, rh - 6, 10, t.work, 2.5f);
         }
         AddHit(rx + 8, ry, rw - 16, rh - 6, HitKind::CompressRow, r);
-        nvgSave(vg);
-        nvgScissor(vg, rx + 24, ry, rw * 0.5f, rh);
-        ui::Text(vg, rx + 24, ry + 18, 16, t.text, a.name.c_str());
-        ui::Text(vg, rx + 24, ry + 38, 13, t.muted, draw::Size(a.Bytes()).c_str());
-        nvgRestore(vg);
         // what it would save, or what it is
         GameEstimate e;
         const auto it = c.games.find(a.app_id);
@@ -221,10 +246,46 @@ void App::DrawCompress(NVGcontext* vg) {
         for (const auto& mark : m_compressed_marks) {
             if (!known && mark.app_id == a.app_id) {
                 e.state = GameEstimate::State::Ours;
-                e.saved = mark.saved;
+                e.saved = mark.saved + DlcSaved(m_compressed_marks, a.app_id);
                 known = true;
             }
         }
+        const bool merged_ours = e.state == GameEstimate::State::Ours && IsMergedGame(a.app_id);
+        // a newer update over a game NXDock merged: it waits to be merged in the same way
+        const bool waiting = e.merge && e.merged && (e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low);
+        nvgSave(vg);
+        nvgScissor(vg, rx + 24, ry, rw * 0.56f, rh);
+        ui::Text(vg, rx + 24, ry + 18, 16, t.text, a.name.c_str());
+        {
+            // under the name: its size, then the game with its update (and a tag), then its DLC
+            std::string sub = draw::Size(a.Bytes());
+            const char* tag = nullptr;
+            NVGcolor tag_col = t.violet;
+            if (waiting) {
+                std::snprintf(text, sizeof(text), m.cz_update_sub_fmt, e.patch);
+                sub += std::string(" \xC2\xB7 ") + text;
+                tag = m.cz_update_tag;
+                tag_col = t.orange;
+            } else if (e.merge) {
+                std::snprintf(text, sizeof(text), m.cz_merge_sub_fmt, e.patch);
+                sub += std::string(" \xC2\xB7 ") + text;
+                tag = m.cz_merge_tag;
+            } else if (merged_ours) {
+                sub += std::string(" \xC2\xB7 ") + m.cz_merged_sub;
+            }
+            float x = ui::Text(vg, rx + 24, ry + 38, 13, t.muted, sub.c_str());
+            if (tag) {
+                const float w = ui::TextWidth(vg, 11, tag) + 12;
+                ui::StrokeRound(vg, x + 8, ry + 30, w, 16, 8, tag_col, 1.f);
+                ui::Text(vg, x + 8 + w / 2, ry + 38, 11, tag_col, tag, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                x += 8 + w;
+            }
+            if (!e.dlcs.empty()) {
+                std::snprintf(text, sizeof(text), m.cz_dlc_fmt, int(e.dlcs.size()));
+                ui::Text(vg, x + 8, ry + 38, 13, t.muted, text);
+            }
+        }
+        nvgRestore(vg);
         NVGcolor col = t.muted;
         switch (e.state) {
             case GameEstimate::State::Pending: std::snprintf(text, sizeof(text), "%s", m.cz_pending); break;
@@ -233,13 +294,29 @@ void App::DrawCompress(NVGcontext* vg) {
                 col = t.work;
                 break;
             case GameEstimate::State::Worth:
-                std::snprintf(text, sizeof(text), m.cz_worth_fmt, int(e.gain * 100 + 0.5), draw::Size(e.saved).c_str());
-                col = t.ok;
+                if (waiting) {
+                    std::snprintf(text, sizeof(text), "%s", m.cz_update_wait);
+                    col = t.orange;
+                } else if (e.merge) {
+                    std::snprintf(text, sizeof(text), m.cz_merge_worth_fmt, draw::Size(e.saved).c_str());
+                    col = t.ok;
+                } else {
+                    std::snprintf(text, sizeof(text), m.cz_worth_fmt, int(e.gain * 100 + 0.5), draw::Size(e.saved).c_str());
+                    col = t.ok;
+                }
                 break;
-            case GameEstimate::State::Low: std::snprintf(text, sizeof(text), m.cz_low_fmt, int(e.gain * 100 + 0.5)); break;
+            case GameEstimate::State::Low:
+                if (waiting) {
+                    // a newer update is merged even when it saves little: it cannot stay over it
+                    std::snprintf(text, sizeof(text), "%s", m.cz_update_wait);
+                    col = t.orange;
+                } else {
+                    std::snprintf(text, sizeof(text), m.cz_low_fmt, int(e.gain * 100 + 0.5));
+                }
+                break;
             case GameEstimate::State::Already: std::snprintf(text, sizeof(text), "%s", m.cz_already); break;
             case GameEstimate::State::Ours:
-                std::snprintf(text, sizeof(text), m.cz_ours_fmt, draw::Size(e.saved).c_str());
+                std::snprintf(text, sizeof(text), merged_ours ? m.cz_merged_fmt : m.cz_ours_fmt, draw::Size(e.saved).c_str());
                 col = t.work;
                 break;
             default:
@@ -255,7 +332,7 @@ void App::DrawCompress(NVGcontext* vg) {
         if (spin) ui::Spinner(vg, rx + rw - 30, ry + 25, 8, t.muted, m_time);
         ui::Text(vg, rx + rw - (spin ? 48 : 24), ry + 25, 15, col, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         // the share it saves, as a small bar under the name
-        if (e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low) {
+        if ((e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low) && !waiting) {
             NVGcolor track = t.text;
             track.a = 0.08f;
             const float bw = rw * 0.3f, bx = rx + rw - 24 - bw;
@@ -381,7 +458,8 @@ void App::UpdateCompress(u64 down, u64 held) {
         m_dialog.text = a.name;
         return;
     }
-    if (e.state != GameEstimate::State::Worth) return;
+    const bool waiting = e.merge && e.merged && e.state == GameEstimate::State::Low;
+    if (e.state != GameEstimate::State::Worth && !waiting) return;
     if (!hosversionAtLeast(12, 0, 0)) {
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::CompressInfo;
@@ -420,17 +498,37 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
             body = m.cz_intro_body;
             primary = m.cz_turn_on;
             break;
-        case DialogKind::CompressGo:
-            std::snprintf(text, sizeof(text), m.cz_go_title_fmt, m_dialog.text.c_str());
-            title = text;
-            std::snprintf(text, sizeof(text), m.cz_go_body_fmt, draw::Size(m_dialog.size).c_str());
-            body = std::string(text) + "\n" + m.cz_risks;
-            primary = m.cz_go;
+        case DialogKind::CompressGo: {
+            GameEstimate e;
+            if (m_compress && !m_dialog.ids.empty()) {
+                const auto c = m_compress->Snapshot();
+                const auto it = c.games.find(m_dialog.ids[0]);
+                if (it != c.games.end()) e = it->second;
+            }
+            std::string dlc;
+            if (!e.dlcs.empty()) {
+                std::snprintf(text, sizeof(text), m.cz_go_dlc_fmt, int(e.dlcs.size()), draw::Size(e.dlc_saved).c_str());
+                dlc = std::string(text) + "\n";
+            }
+            if (e.merge) {
+                std::snprintf(text, sizeof(text), m.cz_go_merge_title_fmt, m_dialog.text.c_str());
+                title = text;
+                std::snprintf(text, sizeof(text), m.cz_go_merge_body_fmt, e.patch, draw::Size(m_dialog.size).c_str());
+                body = std::string(text) + "\n" + m.cz_merge_risks + "\n" + dlc + m.cz_risks;
+                primary = m.cz_merge_go;
+            } else {
+                std::snprintf(text, sizeof(text), m.cz_go_title_fmt, m_dialog.text.c_str());
+                title = text;
+                std::snprintf(text, sizeof(text), m.cz_go_body_fmt, draw::Size(m_dialog.size).c_str());
+                body = std::string(text) + "\n" + dlc + m.cz_risks;
+                primary = m.cz_go;
+            }
             break;
+        }
         case DialogKind::CompressUndo:
             std::snprintf(text, sizeof(text), m.cz_undo_title_fmt, m_dialog.text.c_str());
             title = text;
-            body = m.cz_undo_body;
+            body = !m_dialog.ids.empty() && IsMergedGame(m_dialog.ids[0]) ? m.cz_undo_merged_body : m.cz_undo_body;
             primary = m.cz_undo_go;
             break;
         case DialogKind::CompressInfo:
@@ -457,15 +555,41 @@ void App::ConfirmCompressDialog() {
         case DialogKind::CompressUndo: {
             // the original again, from the library: its game file, where the game is
             const u64 app = m_dialog.ids.empty() ? 0 : m_dialog.ids[0];
+            const bool merged = IsMergedGame(app);
             for (const auto& g : m_games) {
                 if (g.title_id != app) continue;
-                for (const auto& f : g.files) {
-                    if (f.kind != CatalogFile::Kind::Game) continue;
-                    InstallJob job = JobFor(g, f);
-                    job.nand = g.installed.base_nand;
-                    AddJobs({job});
-                    return;
+                const CatalogFile* base = g.Base();
+                if (!base) break;
+                std::vector<InstallJob> jobs;
+                InstallJob job = JobFor(g, *base);
+                job.nand = g.installed.base_nand;
+                // a merged game is an Application of the version of its update: the original
+                // takes its place
+                if (merged) job.downgrade = true;
+                jobs.push_back(job);
+                if (merged) {
+                    // the update it was merged with (the version it holds), or the newest
+                    const CatalogFile* update = nullptr;
+                    for (const auto& f : g.files) {
+                        if (f.kind == CatalogFile::Kind::Update && f.version == g.installed.patch) update = &f;
+                    }
+                    if (!update) update = g.NewestUpdate();
+                    if (update) {
+                        InstallJob uj = JobFor(g, *update);
+                        uj.nand = g.installed.base_nand;
+                        uj.downgrade = true;
+                        jobs.push_back(uj);
+                    }
                 }
+                // its DLC NXDock compressed
+                for (const auto& mark : m_compressed_marks) {
+                    if (!IsDlc(mark.app_id) || DlcGame(mark.app_id) != app) continue;
+                    for (const auto& f : g.files) {
+                        if (f.kind == CatalogFile::Kind::Dlc && f.title_id == mark.app_id) jobs.push_back(JobFor(g, f));
+                    }
+                }
+                AddJobs(jobs);
+                return;
             }
             Notice(m.cz_undo_missing);
             break;

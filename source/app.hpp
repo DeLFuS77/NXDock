@@ -177,6 +177,7 @@ private:
     unsigned long long m_compress_app = 0; // the game in focus: kept when the order changes
     bool m_compress_all = false;     // the list shows every game, or only those that can be compressed
     bool m_compress_started = false; // the check of every game began
+    bool m_compress_told = false;    // the notice of an update not merged was shown (once)
     std::vector<int> CompressVisible(const Space::View& v, const Compressor::View& c) const;
     std::vector<CompressedGame> m_compressed_marks;
     bool m_marks_read = false;

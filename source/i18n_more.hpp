@@ -88,6 +88,8 @@ struct More {
     const char *cz_action, *cz_action_sub, *cz_title, *cz_tag, *cz_intro_title, *cz_intro_body, *cz_turn_on, *cz_row, *cz_fw_ok, *cz_fw_old, *cz_sig_ok_fmt, *cz_sig_missing, *cz_explain, *cz_pending, *cz_worth_fmt, *cz_low_fmt, *cz_already, *cz_ours_fmt, *cz_unsupported, *cz_no_games, *cz_go_title_fmt, *cz_go_body_fmt, *cz_risks, *cz_go, *cz_nosig_title, *cz_nosig_body, *cz_fw_title, *cz_fw_body, *cz_undo_title_fmt, *cz_undo_body, *cz_undo_go, *cz_undo_missing, *cz_phase1, *cz_phase2, *cz_phase3, *cz_done_fmt, *cz_hist_label, *cz_badge, *cz_busy, *cz_failed_t, *cz_failed_d, *cz_unsupported_t, *cz_unsupported_d, *cz_stopped_t, *cz_stopped_d, *cz_low_t, *cz_low_d, *cz_room_t, *cz_room_d;
     const char *cz_tap, *cz_why_sparse, *cz_why_key, *cz_why_missing, *cz_why_update, *cz_base_t, *cz_base_d, *qm_tag, *qm_merging, *qm_playable, *qm_read, *qm_pack, *qm_check, *qm_installed, *qm_note, *qm_merged_fmt, *qm_at_end, *cz_keys_ok, *cz_keys_missing, *cz_keys_t, *cz_keys_d, *sp_reading_fmt, *sp_names_fmt, *jump_letters;
     const char *cz_possible, *cz_checking_fmt, *cz_measuring_fmt, *cz_counts_fmt, *cz_only_some, *cz_show_all, *cz_none_possible;
+    // merge and compress, and the DLC with their game (25F: 1A, 4A)
+    const char *cz_merge_tag, *cz_merge_sub_fmt, *cz_merge_worth_fmt, *cz_merged_fmt, *cz_merged_sub, *cz_update_wait, *cz_update_tag, *cz_update_sub_fmt, *cz_dlc_fmt, *cz_go_merge_title_fmt, *cz_go_merge_body_fmt, *cz_merge_risks, *cz_go_dlc_fmt, *cz_merge_go, *cz_update_notice_fmt, *cz_undo_merged_body;
 };
 
 const More& TrM();

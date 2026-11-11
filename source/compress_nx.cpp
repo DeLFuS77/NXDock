@@ -172,6 +172,24 @@ bool HasUpdate(u64 app) {
     return false;
 }
 
+// The version of the update of a game installed (0 without one), for its row.
+unsigned UpdateVersion(u64 app) {
+    unsigned version = 0;
+    for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+        NcmContentMetaDatabase db{};
+        if (R_FAILED(ncmOpenContentMetaDatabase(&db, sid))) continue;
+        NcmContentMetaKey key{};
+        s32 total = 0, written = 0;
+        if (R_SUCCEEDED(ncmContentMetaDatabaseList(&db, &total, &written, &key, 1, NcmContentMetaType_Patch, app, 0, UINT64_MAX,
+                                                   NcmContentInstallType_Full)) &&
+            written > 0) {
+            version = std::max(version, unsigned(key.version));
+        }
+        ncmContentMetaDatabaseClose(&db);
+    }
+    return version;
+}
+
 void Sha256(const u8* d, size_t n, u8 out[32]) { sha256CalculateHash(out, d, n); }
 
 // The levels of the IVFC of a RomFS, from its FS header.
@@ -939,6 +957,451 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
     log_write("[NXDock] merged %016llX v%u: %llu bytes saved\n", (unsigned long long)app, p.patch.version, (unsigned long long)saved);
 }
 
+// Compresses the RomFS of one content in place (the program of a game, or the data of a DLC): the
+// NCA written again with the LZ4 layer, its CNMT made again, both registered and the record of the
+// title changed; only then do the old ones go. `error` empty when it went well; `saved` what it
+// saved, `out` the new content.
+void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::atomic<bool>& stop,
+                 const std::function<void(int, u64, u64)>& progress, std::string& error, u64& saved, NcmContentId& out) {
+    const More& m = TrM();
+    Result rc = 0;
+        // 1. the program NCA and its RomFS
+        u8 raw[0xC00];
+        nca::Header h;
+        if (R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(rc = nca::DecryptHeader(raw, k, h))) {
+            error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
+            return;
+        }
+        bool already = false, sparse = false;
+        const int r = RomfsSection(h, already, sparse);
+        if (r < 0) {
+            error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+            return;
+        }
+        nca::Header copy = h;
+        keys::KeyEntry key;
+        if (R_FAILED(rc = nca::GetDecryptedTitleKey(copy, k, key))) {
+            error = k.from_file ? Packed(m.cz_failed_t, m.cz_failed_d, rc) : Packed(m.cz_keys_t, m.cz_keys_d);
+            return;
+        }
+        const nca::FsHeader fh = h.fs_header[r];
+        const u64 start = h.fs_table[r].GetOffset(), old_end = h.fs_table[r].GetOffsetEnd();
+        const u64 data_at = DataLevel(fh).logical_offset;
+        u64 virt = DataLevel(fh).hash_data_size;
+        std::vector<u8> work;
+        // the data level as it is stored now
+        const lz4pack::ReadFn raw_read = [&](u64 o, u8* b, size_t n) {
+            return !stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, start + data_at + o, b, n, work));
+        };
+        // compressed by Nintendo (with its fast level): read decompressed through its table
+        std::vector<lz4pack::Entry> old;
+        u64 old_virt_end = 0;
+        if (already) {
+            if (!ReadOldTable(s.cs, g.program, key.key, fh, start + data_at, old, old_virt_end, work) ||
+                lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
+                error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+                return;
+            }
+            virt = old_virt_end;
+        }
+        const lz4pack::ReadFn read = already ? lz4pack::ReadFn([&](u64 o, u8* b, size_t n) {
+            return lz4pack::Unpack(old, old_virt_end, raw_read, o, b, n);
+        }) : raw_read;
+        // 2. measured: what the compressed data level takes, and the hashes of it, from which
+        // the IVFC is made again (it hashes the data level as it is stored)
+        const u32 data_block = 1u << DataLevel(fh).block_size;
+        lz4pack::BlockHasher hasher(data_block, Sha256);
+        lz4pack::Packed sizes;
+        if (!lz4pack::Pack(virt, kLevel, kMinGain, read, [&](u64, const u8* d, size_t n) { hasher.Feed(d, n); return true; },
+                           [&](u64 d) { progress(1, d, virt); return !stop; }, sizes, kThreads)) {
+            error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d);
+            return;
+        }
+        const auto table = lz4pack::BuildTable(sizes.entries, virt);
+        const u64 stored = sizes.table_offset + table.size();
+        hasher.Feed(table.data(), table.size());
+        const std::vector<u8> data_hashes = hasher.Finish();
+        std::vector<lz4pack::IvfcLevel> lv = IvfcLevels(fh);
+        lv.back().size = stored;
+        std::vector<std::vector<u8>> levels;
+        u8 master[32];
+        if (lv.back().offset != data_at || !lz4pack::BuildIvfc(data_hashes, lv, Sha256, levels, master)) {
+            error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+            return;
+        }
+        const u64 new_end = start + ((data_at + stored + 0x3FFF) & ~u64(0x3FFF));
+        if (new_end >= old_end) {
+            error = Packed(m.cz_low_t, m.cz_low_d);
+            return;
+        }
+        const s64 shift = s64(new_end) - s64(old_end);
+        // 3. the new header: the sections after the RomFS move up, the RomFS says what it holds
+        nca::Header nh = h;
+        for (int i = 0; i < NCA_SECTION_TOTAL; i++) {
+            if (!nh.fs_table[i].IsValid()) continue;
+            if (i == r) {
+                nh.fs_table[i].media_end_offset = u32(new_end / 0x200);
+            } else if (nh.fs_table[i].GetOffset() >= old_end) {
+                nh.fs_table[i].media_start_offset = u32((s64(nh.fs_table[i].GetOffset()) + shift) / 0x200);
+                nh.fs_table[i].media_end_offset = u32((s64(nh.fs_table[i].GetOffsetEnd()) + shift) / 0x200);
+            }
+        }
+        auto& nfh = nh.fs_header[r];
+        auto& ivfc = nfh.hash_data.integrity_meta_info;
+        for (size_t i = 0; i < lv.size(); i++) ivfc.info_level_hash.levels[i].hash_data_size = lv[i].size;
+        std::memcpy(ivfc.master_hash, master, sizeof(master));
+        nfh.compression_info.table_offset = sizes.table_offset;
+        nfh.compression_info.table_size = table.size();
+        nfh.compression_info.table_header.magic = 0x52544B42; // BKTR
+        nfh.compression_info.table_header.version = 1;
+        nfh.compression_info.table_header.count = u32(sizes.entries.size());
+        sha256CalculateHash(nh.fs_header_hash[r].sha256, &nfh, sizeof(nfh));
+        const u64 new_size = u64(s64(h.size) + shift);
+        nh.size = new_size;
+        u8 enc_header[0xC00];
+        sphaira::crypto::cryptoAes128Xts(&nh, enc_header, k.header_key, 0, 0x200, sizeof(nh), true);
+
+        // 4. written in order into a placeholder, encrypted and hashed
+        NcmPlaceHolderId ph{};
+        if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
+            R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &g.program, &ph, s64(new_size)))) {
+            error = Packed(m.cz_room_t, m.cz_room_d, rc);
+            return;
+        }
+        bool keep_ph = false;
+        auto drop = [&] {
+            if (!keep_ph) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
+        };
+        Writer w(s.cs, ph);
+        std::vector<u8> buf;
+        const auto fail = [&](Result why) {
+            drop();
+            error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d, why);
+        };
+        if (R_FAILED(rc = w.Write(enc_header, sizeof(enc_header)))) return fail(rc);
+        // the sections in the order they are in the NCA, with what lies between them
+        std::vector<int> order;
+        for (int i = 0; i < NCA_SECTION_TOTAL; i++) {
+            if (h.fs_table[i].IsValid()) order.push_back(i);
+        }
+        std::sort(order.begin(), order.end(), [&](int a, int b) { return h.fs_table[a].GetOffset() < h.fs_table[b].GetOffset(); });
+        u64 old_at = sizeof(enc_header);
+        for (int i : order) {
+            const u64 os = h.fs_table[i].GetOffset(), oe = h.fs_table[i].GetOffsetEnd();
+            if (os > old_at) {
+                // between sections: as it is, the same size
+                if (R_FAILED(rc = CopyRaw(s.cs, g.program, w, old_at, os, buf))) return fail(rc);
+            }
+            if (i == r) {
+                // the hash levels made again, then the data level compressed, then the
+                // table, all encrypted for their places
+                std::vector<u8> head(size_t(data_at), 0);
+                for (size_t l = 0; l < levels.size(); l++) std::memcpy(head.data() + lv[l].offset, levels[l].data(), levels[l].size());
+                w.Encrypt(&fh, key.key);
+                if (R_FAILED(rc = w.Write(head.data(), head.size()))) return fail(rc);
+                lz4pack::BlockHasher check(data_block, Sha256);
+                lz4pack::Packed again;
+                Result wrc = 0;
+                const bool ok = lz4pack::Pack(virt, kLevel, kMinGain, read,
+                    [&](u64, const u8* d, size_t n) { check.Feed(d, n); wrc = w.Write(d, n); return R_SUCCEEDED(wrc); },
+                    [&](u64 d) { progress(2, d, virt); return !stop; }, again, kThreads);
+                if (!ok || again.entries.size() != sizes.entries.size() || again.table_offset != sizes.table_offset) {
+                    return fail(R_FAILED(wrc) ? wrc : Result(0));
+                }
+                if (R_FAILED(rc = w.Write(table.data(), table.size())) || R_FAILED(rc = w.Zeros(new_end - (os + data_at + stored)))) return fail(rc);
+                // what was written is what the hashes were made of (a read that went wrong
+                // the second time would leave a game that does not open)
+                check.Feed(table.data(), table.size());
+                if (check.Finish() != data_hashes) return fail(Result(0));
+            } else if (os >= old_end) {
+                // after the RomFS: moved up, so encrypted again for its new place
+                const nca::FsHeader& sfh = h.fs_header[i];
+                if (sfh.encryption_type == nca::EncryptionType_None) {
+                    w.Encrypt(nullptr, nullptr);
+                    buf.resize(4 * 1024 * 1024);
+                    for (u64 o = os; o < oe;) {
+                        const size_t n = size_t(std::min<u64>(buf.size(), oe - o));
+                        if (R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, buf.data(), n, &g.program, s64(o))) ||
+                            R_FAILED(rc = w.Write(buf.data(), n))) {
+                            return fail(rc);
+                        }
+                        o += n;
+                    }
+                } else if (sfh.encryption_type == nca::EncryptionType_AesCtr) {
+                    w.Encrypt(&sfh, key.key);
+                    std::vector<u8> plain(1024 * 1024);
+                    for (u64 o = os; o < oe;) {
+                        const size_t n = size_t(std::min<u64>(plain.size(), oe - o));
+                        if (R_FAILED(rc = ReadPlain(s.cs, g.program, key.key, sfh, o, plain.data(), n, work)) || R_FAILED(rc = w.Write(plain.data(), n))) {
+                            return fail(rc);
+                        }
+                        o += n;
+                    }
+                } else {
+                    return fail(Result(0));
+                }
+            } else {
+                // before the RomFS: in the same place, as it is
+                if (R_FAILED(rc = CopyRaw(s.cs, g.program, w, os, oe, buf))) return fail(rc);
+            }
+            old_at = oe;
+        }
+        if (R_FAILED(rc = w.Flush()) || w.At() != new_size) return fail(rc);
+        u8 program_hash[32];
+        w.Hash(program_hash);
+        NcmContentId new_program;
+        std::memcpy(&new_program, program_hash, sizeof(new_program));
+
+        // 5. the CNMT with the new program, made again (when the record lists it)
+        progress(3, 0, 1);
+        NcmContentId new_meta{};
+        NcmPlaceHolderId mph{};
+        s64 meta_size = 0;
+        if (g.has_meta) {
+        if (R_FAILED(rc = ncmContentStorageGetSizeFromContentId(&s.cs, &meta_size, &g.meta)) || meta_size <= 0xC00 || meta_size > 16 * 1024 * 1024) {
+            return fail(rc);
+        }
+        std::vector<u8> mn(static_cast<size_t>(meta_size));
+        if (R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, mn.data(), mn.size(), &g.meta, 0))) return fail(rc);
+        nca::Header mh;
+        if (R_FAILED(rc = nca::DecryptHeader(mn.data(), k, mh))) return fail(rc);
+        nca::Header mcopy = mh;
+        keys::KeyEntry mkey;
+        if (R_FAILED(rc = nca::GetDecryptedTitleKey(mcopy, k, mkey))) return fail(rc);
+        auto& mfh = mh.fs_header[0];
+        const u64 ms = mh.fs_table[0].GetOffset(), me = mh.fs_table[0].GetOffsetEnd();
+        if (mfh.hash_type != 2 || mfh.encryption_type != nca::EncryptionType_AesCtr || me > mn.size()) return fail(Result(0));
+        std::vector<u8> section(mn.begin() + ms, mn.begin() + me);
+        {
+            u8 ctr[16];
+            CtrAt(mfh, ms, ctr);
+            Aes128CtrContext ctx;
+            aes128CtrContextCreate(&ctx, mkey.key, ctr);
+            aes128CtrCrypt(&ctx, section.data(), section.data(), section.size());
+        }
+        const auto& hs = mfh.hash_data.hierarchical_sha256_data;
+        CnmtLayers layers;
+        layers.block_size = hs.block_size;
+        layers.hash_offset = hs.hash_layer.offset;
+        layers.hash_size = hs.hash_layer.size;
+        layers.pfs0_offset = hs.pfs0_layer.offset;
+        layers.pfs0_size = hs.pfs0_layer.size;
+        u8 master[32];
+        if (!PatchCnmt(section, layers, reinterpret_cast<const u8*>(&g.program), reinterpret_cast<const u8*>(&new_program), program_hash,
+                       new_size, [](const u8* d, size_t n, u8 out[32]) { sha256CalculateHash(out, d, n); }, master)) {
+            return fail(Result(0));
+        }
+        std::memcpy(mfh.hash_data.hierarchical_sha256_data.master_hash, master, 32);
+        sha256CalculateHash(mh.fs_header_hash[0].sha256, &mfh, sizeof(mfh));
+        {
+            u8 ctr[16];
+            CtrAt(mfh, ms, ctr);
+            Aes128CtrContext ctx;
+            aes128CtrContextCreate(&ctx, mkey.key, ctr);
+            aes128CtrCrypt(&ctx, section.data(), section.data(), section.size());
+        }
+        std::copy(section.begin(), section.end(), mn.begin() + ms);
+        sphaira::crypto::cryptoAes128Xts(&mh, mn.data(), k.header_key, 0, 0x200, sizeof(mh), true);
+        u8 meta_hash[32];
+        sha256CalculateHash(meta_hash, mn.data(), mn.size());
+        std::memcpy(&new_meta, meta_hash, sizeof(new_meta));
+        if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &mph)) ||
+            R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &g.meta, &mph, meta_size)) ||
+            R_FAILED(rc = ncmContentStorageWritePlaceHolder(&s.cs, &mph, 0, mn.data(), mn.size()))) {
+            ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
+            return fail(rc);
+        }
+        }
+
+        // 6. both registered, then the record of the game; only then the old ones go
+        if (R_FAILED(rc = RegisterAs(s.cs, new_program, ph))) {
+            ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
+            return fail(rc);
+        }
+        keep_ph = true;
+        const auto undo = [&] {
+            sphaira::ncm::Delete(&s.cs, &new_program);
+            if (g.has_meta) {
+                sphaira::ncm::Delete(&s.cs, &new_meta);
+                ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
+            }
+        };
+        if (g.has_meta && R_FAILED(rc = RegisterAs(s.cs, new_meta, mph))) {
+            undo();
+            error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
+            return;
+        }
+        std::vector<u8> rec(0x10000);
+        u64 rec_size = 0;
+        if (R_FAILED(rc = ncmContentMetaDatabaseGet(&s.db, &g.key, &rec_size, rec.data(), rec.size())) || rec_size < 8) {
+            undo();
+            error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
+            return;
+        }
+        const u16 ext = u16(rec[0] | rec[1] << 8), count = u16(rec[2] | rec[3] << 8);
+        bool program_set = false;
+        for (u16 c = 0; c < count; c++) {
+            const size_t at = 8 + ext + size_t(c) * sizeof(NcmContentInfo);
+            if (at + sizeof(NcmContentInfo) > rec_size) break;
+            NcmContentInfo ci;
+            std::memcpy(&ci, rec.data() + at, sizeof(ci));
+            if (!std::memcmp(&ci.content_id, &g.program, sizeof(ci.content_id))) {
+                ci.content_id = new_program;
+                ncmU64ToContentInfoSize(new_size, &ci);
+                program_set = true;
+            } else if (g.has_meta && !std::memcmp(&ci.content_id, &g.meta, sizeof(ci.content_id))) {
+                ci.content_id = new_meta;
+                ncmU64ToContentInfoSize(u64(meta_size), &ci);
+            }
+            std::memcpy(rec.data() + at, &ci, sizeof(ci));
+        }
+        if (!program_set || R_FAILED(rc = ncmContentMetaDatabaseSet(&s.db, &g.key, rec.data(), rec_size)) ||
+            R_FAILED(rc = ncmContentMetaDatabaseCommit(&s.db))) {
+            undo();
+            error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
+            return;
+        }
+        sphaira::ncm::Delete(&s.cs, &g.program);
+        if (g.has_meta) sphaira::ncm::Delete(&s.cs, &g.meta);
+        saved = u64(g.program_size) - new_size;
+        out = new_program;
+        log_write("[NXDock] compressed %016llX: %llu bytes saved\n", (unsigned long long)g.key.id, (unsigned long long)saved);
+        return;
+}
+
+// What compressing one content would save, from a sample of its RomFS (`e` gets the state, the
+// share and the bytes). The program of a game, or the data of a DLC.
+void EstimateNca(Storage& s, const keys::Keys& k, const GameContents& g, const std::atomic<bool>& stop, std::vector<u8>& work, GameEstimate& e) {
+    u8 raw[0xC00];
+    nca::Header h;
+    e.state = GameEstimate::State::Unsupported;
+    e.why = GameEstimate::Why::Read;
+    if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) return;
+    bool already = false, sparse = false;
+    const int r = RomfsSection(h, already, sparse);
+    if (r < 0) {
+        e.why = sparse ? GameEstimate::Why::Sparse : GameEstimate::Why::Read;
+        return;
+    }
+    nca::Header copy = h;
+    keys::KeyEntry key;
+    if (R_FAILED(nca::GetDecryptedTitleKey(copy, k, key))) {
+        e.why = GameEstimate::Why::Key;
+        return;
+    }
+    const auto& fh = h.fs_header[r];
+    const u64 base = h.fs_table[r].GetOffset() + DataLevel(fh).logical_offset;
+    const u64 size = DataLevel(fh).hash_data_size;
+    const lz4pack::ReadFn stored = [&](u64 o, u8* b, size_t n) {
+        return !stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, base + o, b, n, work));
+    };
+    e.why = GameEstimate::Why::None;
+    if (already) {
+        // compressed by Nintendo: packed again when it used its fast level
+        std::vector<lz4pack::Entry> old;
+        u64 old_end = 0;
+        if (!ReadOldTable(s.cs, g.program, key.key, fh, base, old, old_end, work)) {
+            e.why = GameEstimate::Why::Read;
+            return;
+        }
+        if (lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
+            e.state = GameEstimate::State::Already;
+            return;
+        }
+        e.gain = lz4pack::EstimateRepack(old, old_end, kLevel, kSample, stored);
+    } else {
+        e.gain = lz4pack::EstimateGain(size, kLevel, kSample, stored);
+    }
+    e.saved = u64(double(size) * e.gain);
+    e.state = e.gain >= kCompressWorth ? GameEstimate::State::Worth : GameEstimate::State::Low;
+}
+
+// A DLC in a storage: its key and its data content (found by its own ID).
+bool FindAddOn(Storage& s, u64 id, GameContents& g) {
+    NcmContentMetaKey key{};
+    s32 total = 0, written = 0;
+    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, &key, 1, NcmContentMetaType_AddOnContent, (id & ~u64(0xFFF)) ^ 0x1000, id, id,
+                                            NcmContentInstallType_Full)) ||
+        written < 1) {
+        return false;
+    }
+    g.key = key;
+    NcmContentInfo infos[16];
+    s32 n = 0;
+    if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, infos, 16, &g.key, 0))) return false;
+    bool data = false, meta = false;
+    for (s32 i = 0; i < n; i++) {
+        if (infos[i].content_type == NcmContentType_Data && !data) {
+            g.program = infos[i].content_id;
+            data = true;
+        }
+        if (infos[i].content_type == NcmContentType_Meta) {
+            g.meta = infos[i].content_id;
+            meta = true;
+        }
+    }
+    g.has_meta = meta;
+    if (!data) return false;
+    return R_SUCCEEDED(ncmContentStorageGetSizeFromContentId(&s.cs, &g.program_size, &g.program));
+}
+
+// The DLC of a game in a storage, by their IDs.
+std::vector<u64> AddOnsOf(Storage& s, u64 app) {
+    std::vector<NcmContentMetaKey> found(64);
+    s32 total = 0, written = 0;
+    std::vector<u64> ids;
+    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, found.data(), s32(found.size()), NcmContentMetaType_AddOnContent, app, 0,
+                                            UINT64_MAX, NcmContentInstallType_Full))) {
+        return ids;
+    }
+    if (total > written) {
+        found.resize(size_t(total));
+        if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, found.data(), s32(found.size()), NcmContentMetaType_AddOnContent, app, 0,
+                                                UINT64_MAX, NcmContentInstallType_Full))) {
+            return ids;
+        }
+    }
+    for (s32 i = 0; i < written; i++) ids.push_back(found[size_t(i)].id);
+    return ids;
+}
+
+// A content NXDock compressed (a game, or a DLC), in the list of marks.
+void Mark(u64 id, const NcmContentId& content, u64 saved) {
+    auto marks = LoadCompressed(kCompressedList);
+    std::erase_if(marks, [id](const CompressedGame& c) { return c.app_id == id; });
+    marks.push_back({id, Hex(&content, sizeof(content)), saved, (long long)time(nullptr)});
+    SaveCompressed(kCompressedList, marks);
+}
+
+// The DLC of a game that are worth it, compressed one after another, after the game itself (4A).
+// A DLC that fails stays as it was (the game is already done): it is only written in the log.
+// Gives what they saved.
+u64 CompressDlcs(const keys::Keys& k, const std::vector<u64>& dlcs, const std::atomic<bool>& stop,
+                 const std::function<void(int, u64, u64)>& progress) {
+    u64 total = 0;
+    for (const u64 id : dlcs) {
+        if (stop) break;
+        for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+            Storage s(sid);
+            GameContents g;
+            if (!s.ok || !FindAddOn(s, id, g)) continue;
+            log_write("[NXDock] compressing the DLC %016llX\n", (unsigned long long)id);
+            std::string error;
+            u64 saved = 0;
+            NcmContentId out{};
+            CompressNca(s, k, g, stop, progress, error, saved, out);
+            if (error.empty()) {
+                Mark(id, out, saved);
+                total += saved;
+            } else {
+                log_write("[NXDock] the DLC %016llX stays as it was\n", (unsigned long long)id);
+            }
+            break;
+        }
+    }
+    return total;
+}
+
 } // namespace
 
 Compressor::~Compressor() {
@@ -972,7 +1435,9 @@ std::vector<CompressedGame> Compressor::Marks() {
         for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
             Storage s(sid);
             GameContents g;
-            if (s.ok && FindGame(s, m.app_id, g) && Hex(&g.program, sizeof(g.program)) == m.program) still = true;
+            // a game, or a DLC of one (their IDs do not end in 000)
+            const bool found = s.ok && ((m.app_id & 0xFFF) ? FindAddOn(s, m.app_id, g) : FindGame(s, m.app_id, g));
+            if (found && Hex(&g.program, sizeof(g.program)) == m.program) still = true;
         }
         if (still) kept.push_back(m);
     }
@@ -1045,6 +1510,9 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                     // merged with its update (25D): measured from a sample of the two read together
                     e.state = GameEstimate::State::Possible;
                     e.why = GameEstimate::Why::Update;
+                    e.merge = true;
+                    e.patch = UpdateVersion(app);
+                    e.merged = IsMergedGame(app);
                     possible.push_back(app);
                 } else {
                     e.state = GameEstimate::State::Possible;
@@ -1101,40 +1569,38 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                     break;
                 }
                 if (r < 0) break;
-                nca::Header copy = h;
-                keys::KeyEntry key;
-                if (R_FAILED(nca::GetDecryptedTitleKey(copy, k, key))) {
-                    e.state = GameEstimate::State::Unsupported;
-                    e.why = GameEstimate::Why::Key;
-                    break;
+                {
+                    // the game alone; `bytes` stays what the program takes now
+                    const u64 bytes = e.bytes;
+                    EstimateNca(s, k, g, m_stop, work, e);
+                    e.bytes = bytes;
                 }
-                const auto& fh = h.fs_header[r];
-                const u64 base = h.fs_table[r].GetOffset() + DataLevel(fh).logical_offset;
-                const u64 size = DataLevel(fh).hash_data_size;
-                const lz4pack::ReadFn stored = [&](u64 o, u8* b, size_t n) {
-                    return !m_stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, base + o, b, n, work));
-                };
-                if (already) {
-                    // compressed by Nintendo: packed again when it used its fast level
-                    std::vector<lz4pack::Entry> old;
-                    u64 old_end = 0;
-                    if (!ReadOldTable(s.cs, g.program, key.key, fh, base, old, old_end, work)) {
-                        e.state = GameEstimate::State::Unsupported;
-                        e.why = GameEstimate::Why::Read;
-                        break;
-                    }
-                    if (lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
-                        e.state = GameEstimate::State::Already;
-                        e.why = GameEstimate::Why::None;
-                        break;
-                    }
-                    e.gain = lz4pack::EstimateRepack(old, old_end, kLevel, kSample, stored);
-                } else {
-                    e.gain = lz4pack::EstimateGain(size, kLevel, kSample, stored);
-                }
-                e.saved = u64(double(size) * e.gain);
-                e.state = e.gain >= kCompressWorth ? GameEstimate::State::Worth : GameEstimate::State::Low;
                 break;
+            }
+            // its DLC (4A): measured in the same way, and those worth it go with the game
+            if (e.state == GameEstimate::State::Worth) {
+                e.dlcs.clear();
+                e.dlc_saved = 0;
+                e.dlc_total = 0;
+                for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+                    Storage s(sid);
+                    if (!s.ok) continue;
+                    for (const u64 id : AddOnsOf(s, app)) {
+                        if (m_stop) break;
+                        e.dlc_total++;
+                        GameContents g;
+                        if (!FindAddOn(s, id, g)) continue;
+                        GameEstimate d;
+                        EstimateNca(s, k, g, m_stop, work, d);
+                        log_write("[NXDock] DLC %016llX: %llu MB, saves %.0f %%\n", (unsigned long long)id, (unsigned long long)(g.program_size >> 20),
+                                  d.gain * 100);
+                        if (d.state != GameEstimate::State::Worth) continue;
+                        e.dlcs.push_back(id);
+                        e.dlc_saved += d.saved;
+                        e.bytes += u64(g.program_size);
+                    }
+                }
+                e.saved += e.dlc_saved;
             }
             std::lock_guard lock(m_mutex);
             m_view.games[app] = e;
@@ -1205,9 +1671,16 @@ bool Compressor::StartCompress(unsigned long long app) {
         m_view.error.clear();
         m_view.saved = 0;
     }
+    // its DLC worth it, from the analysis: compressed after the game (4A)
+    std::vector<u64> dlcs;
+    {
+        std::lock_guard lock(m_mutex);
+        const auto it = m_view.games.find(app);
+        if (it != m_view.games.end()) dlcs.assign(it->second.dlcs.begin(), it->second.dlcs.end());
+    }
     Join();
     m_stop = false;
-    m_thread = std::thread([this, app] {
+    m_thread = std::thread([this, app, dlcs] {
         net::Boost awake; // the console stays awake while a game is written again
         // what it does goes to sdmc:/switch/NXDock/compress.log, for when something goes wrong
         nxdock_log_open("sdmc:/switch/NXDock/compress.log");
@@ -1237,313 +1710,14 @@ bool Compressor::StartCompress(unsigned long long app) {
                 // with its update installed: merged with it into one Application (25D)
                 if (HasUpdate(app)) {
                     error = MergeUpdate(app, m_stop, progress, saved);
-                    return;
+                } else {
+                    NcmContentId out{};
+                    CompressNca(s, k, g, m_stop, progress, error, saved, out);
+                    if (error.empty()) Mark(app, out, saved);
                 }
-                // 1. the program NCA and its RomFS
-                u8 raw[0xC00];
-                nca::Header h;
-                if (R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(rc = nca::DecryptHeader(raw, k, h))) {
-                    error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
-                    return;
-                }
-                bool already = false, sparse = false;
-                const int r = RomfsSection(h, already, sparse);
-                // with its update installed, the base game written again would break it
-                if (r < 0 || HasUpdate(app)) {
-                    error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
-                    return;
-                }
-                nca::Header copy = h;
-                keys::KeyEntry key;
-                if (R_FAILED(rc = nca::GetDecryptedTitleKey(copy, k, key))) {
-                    error = k.from_file ? Packed(m.cz_failed_t, m.cz_failed_d, rc) : Packed(m.cz_keys_t, m.cz_keys_d);
-                    return;
-                }
-                const nca::FsHeader fh = h.fs_header[r];
-                const u64 start = h.fs_table[r].GetOffset(), old_end = h.fs_table[r].GetOffsetEnd();
-                const u64 data_at = DataLevel(fh).logical_offset;
-                u64 virt = DataLevel(fh).hash_data_size;
-                std::vector<u8> work;
-                // the data level as it is stored now
-                const lz4pack::ReadFn raw_read = [&](u64 o, u8* b, size_t n) {
-                    return !m_stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, start + data_at + o, b, n, work));
-                };
-                // compressed by Nintendo (with its fast level): read decompressed through its table
-                std::vector<lz4pack::Entry> old;
-                u64 old_virt_end = 0;
-                if (already) {
-                    if (!ReadOldTable(s.cs, g.program, key.key, fh, start + data_at, old, old_virt_end, work) ||
-                        lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
-                        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
-                        return;
-                    }
-                    virt = old_virt_end;
-                }
-                const lz4pack::ReadFn read = already ? lz4pack::ReadFn([&](u64 o, u8* b, size_t n) {
-                    return lz4pack::Unpack(old, old_virt_end, raw_read, o, b, n);
-                }) : raw_read;
-                // 2. measured: what the compressed data level takes, and the hashes of it, from which
-                // the IVFC is made again (it hashes the data level as it is stored)
-                const u32 data_block = 1u << DataLevel(fh).block_size;
-                lz4pack::BlockHasher hasher(data_block, Sha256);
-                lz4pack::Packed sizes;
-                if (!lz4pack::Pack(virt, kLevel, kMinGain, read, [&](u64, const u8* d, size_t n) { hasher.Feed(d, n); return true; },
-                                   [&](u64 d) { progress(1, d, virt); return !m_stop; }, sizes, kThreads)) {
-                    error = m_stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d);
-                    return;
-                }
-                const auto table = lz4pack::BuildTable(sizes.entries, virt);
-                const u64 stored = sizes.table_offset + table.size();
-                hasher.Feed(table.data(), table.size());
-                const std::vector<u8> data_hashes = hasher.Finish();
-                std::vector<lz4pack::IvfcLevel> lv = IvfcLevels(fh);
-                lv.back().size = stored;
-                std::vector<std::vector<u8>> levels;
-                u8 master[32];
-                if (lv.back().offset != data_at || !lz4pack::BuildIvfc(data_hashes, lv, Sha256, levels, master)) {
-                    error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
-                    return;
-                }
-                const u64 new_end = start + ((data_at + stored + 0x3FFF) & ~u64(0x3FFF));
-                if (new_end >= old_end) {
-                    error = Packed(m.cz_low_t, m.cz_low_d);
-                    return;
-                }
-                const s64 shift = s64(new_end) - s64(old_end);
-                // 3. the new header: the sections after the RomFS move up, the RomFS says what it holds
-                nca::Header nh = h;
-                for (int i = 0; i < NCA_SECTION_TOTAL; i++) {
-                    if (!nh.fs_table[i].IsValid()) continue;
-                    if (i == r) {
-                        nh.fs_table[i].media_end_offset = u32(new_end / 0x200);
-                    } else if (nh.fs_table[i].GetOffset() >= old_end) {
-                        nh.fs_table[i].media_start_offset = u32((s64(nh.fs_table[i].GetOffset()) + shift) / 0x200);
-                        nh.fs_table[i].media_end_offset = u32((s64(nh.fs_table[i].GetOffsetEnd()) + shift) / 0x200);
-                    }
-                }
-                auto& nfh = nh.fs_header[r];
-                auto& ivfc = nfh.hash_data.integrity_meta_info;
-                for (size_t i = 0; i < lv.size(); i++) ivfc.info_level_hash.levels[i].hash_data_size = lv[i].size;
-                std::memcpy(ivfc.master_hash, master, sizeof(master));
-                nfh.compression_info.table_offset = sizes.table_offset;
-                nfh.compression_info.table_size = table.size();
-                nfh.compression_info.table_header.magic = 0x52544B42; // BKTR
-                nfh.compression_info.table_header.version = 1;
-                nfh.compression_info.table_header.count = u32(sizes.entries.size());
-                sha256CalculateHash(nh.fs_header_hash[r].sha256, &nfh, sizeof(nfh));
-                const u64 new_size = u64(s64(h.size) + shift);
-                nh.size = new_size;
-                u8 enc_header[0xC00];
-                sphaira::crypto::cryptoAes128Xts(&nh, enc_header, k.header_key, 0, 0x200, sizeof(nh), true);
-
-                // 4. written in order into a placeholder, encrypted and hashed
-                NcmPlaceHolderId ph{};
-                if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
-                    R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &g.program, &ph, s64(new_size)))) {
-                    error = Packed(m.cz_room_t, m.cz_room_d, rc);
-                    return;
-                }
-                bool keep_ph = false;
-                auto drop = [&] {
-                    if (!keep_ph) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
-                };
-                Writer w(s.cs, ph);
-                std::vector<u8> buf;
-                const auto fail = [&](Result why) {
-                    drop();
-                    error = m_stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d, why);
-                };
-                if (R_FAILED(rc = w.Write(enc_header, sizeof(enc_header)))) return fail(rc);
-                // the sections in the order they are in the NCA, with what lies between them
-                std::vector<int> order;
-                for (int i = 0; i < NCA_SECTION_TOTAL; i++) {
-                    if (h.fs_table[i].IsValid()) order.push_back(i);
-                }
-                std::sort(order.begin(), order.end(), [&](int a, int b) { return h.fs_table[a].GetOffset() < h.fs_table[b].GetOffset(); });
-                u64 old_at = sizeof(enc_header);
-                for (int i : order) {
-                    const u64 os = h.fs_table[i].GetOffset(), oe = h.fs_table[i].GetOffsetEnd();
-                    if (os > old_at) {
-                        // between sections: as it is, the same size
-                        if (R_FAILED(rc = CopyRaw(s.cs, g.program, w, old_at, os, buf))) return fail(rc);
-                    }
-                    if (i == r) {
-                        // the hash levels made again, then the data level compressed, then the
-                        // table, all encrypted for their places
-                        std::vector<u8> head(size_t(data_at), 0);
-                        for (size_t l = 0; l < levels.size(); l++) std::memcpy(head.data() + lv[l].offset, levels[l].data(), levels[l].size());
-                        w.Encrypt(&fh, key.key);
-                        if (R_FAILED(rc = w.Write(head.data(), head.size()))) return fail(rc);
-                        lz4pack::BlockHasher check(data_block, Sha256);
-                        lz4pack::Packed again;
-                        Result wrc = 0;
-                        const bool ok = lz4pack::Pack(virt, kLevel, kMinGain, read,
-                            [&](u64, const u8* d, size_t n) { check.Feed(d, n); wrc = w.Write(d, n); return R_SUCCEEDED(wrc); },
-                            [&](u64 d) { progress(2, d, virt); return !m_stop; }, again, kThreads);
-                        if (!ok || again.entries.size() != sizes.entries.size() || again.table_offset != sizes.table_offset) {
-                            return fail(R_FAILED(wrc) ? wrc : Result(0));
-                        }
-                        if (R_FAILED(rc = w.Write(table.data(), table.size())) || R_FAILED(rc = w.Zeros(new_end - (os + data_at + stored)))) return fail(rc);
-                        // what was written is what the hashes were made of (a read that went wrong
-                        // the second time would leave a game that does not open)
-                        check.Feed(table.data(), table.size());
-                        if (check.Finish() != data_hashes) return fail(Result(0));
-                    } else if (os >= old_end) {
-                        // after the RomFS: moved up, so encrypted again for its new place
-                        const nca::FsHeader& sfh = h.fs_header[i];
-                        if (sfh.encryption_type == nca::EncryptionType_None) {
-                            w.Encrypt(nullptr, nullptr);
-                            buf.resize(4 * 1024 * 1024);
-                            for (u64 o = os; o < oe;) {
-                                const size_t n = size_t(std::min<u64>(buf.size(), oe - o));
-                                if (R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, buf.data(), n, &g.program, s64(o))) ||
-                                    R_FAILED(rc = w.Write(buf.data(), n))) {
-                                    return fail(rc);
-                                }
-                                o += n;
-                            }
-                        } else if (sfh.encryption_type == nca::EncryptionType_AesCtr) {
-                            w.Encrypt(&sfh, key.key);
-                            std::vector<u8> plain(1024 * 1024);
-                            for (u64 o = os; o < oe;) {
-                                const size_t n = size_t(std::min<u64>(plain.size(), oe - o));
-                                if (R_FAILED(rc = ReadPlain(s.cs, g.program, key.key, sfh, o, plain.data(), n, work)) || R_FAILED(rc = w.Write(plain.data(), n))) {
-                                    return fail(rc);
-                                }
-                                o += n;
-                            }
-                        } else {
-                            return fail(Result(0));
-                        }
-                    } else {
-                        // before the RomFS: in the same place, as it is
-                        if (R_FAILED(rc = CopyRaw(s.cs, g.program, w, os, oe, buf))) return fail(rc);
-                    }
-                    old_at = oe;
-                }
-                if (R_FAILED(rc = w.Flush()) || w.At() != new_size) return fail(rc);
-                u8 program_hash[32];
-                w.Hash(program_hash);
-                NcmContentId new_program;
-                std::memcpy(&new_program, program_hash, sizeof(new_program));
-
-                // 5. the CNMT with the new program, made again (when the record lists it)
-                progress(3, 0, 1);
-                NcmContentId new_meta{};
-                NcmPlaceHolderId mph{};
-                s64 meta_size = 0;
-                if (g.has_meta) {
-                if (R_FAILED(rc = ncmContentStorageGetSizeFromContentId(&s.cs, &meta_size, &g.meta)) || meta_size <= 0xC00 || meta_size > 16 * 1024 * 1024) {
-                    return fail(rc);
-                }
-                std::vector<u8> mn(static_cast<size_t>(meta_size));
-                if (R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, mn.data(), mn.size(), &g.meta, 0))) return fail(rc);
-                nca::Header mh;
-                if (R_FAILED(rc = nca::DecryptHeader(mn.data(), k, mh))) return fail(rc);
-                nca::Header mcopy = mh;
-                keys::KeyEntry mkey;
-                if (R_FAILED(rc = nca::GetDecryptedTitleKey(mcopy, k, mkey))) return fail(rc);
-                auto& mfh = mh.fs_header[0];
-                const u64 ms = mh.fs_table[0].GetOffset(), me = mh.fs_table[0].GetOffsetEnd();
-                if (mfh.hash_type != 2 || mfh.encryption_type != nca::EncryptionType_AesCtr || me > mn.size()) return fail(Result(0));
-                std::vector<u8> section(mn.begin() + ms, mn.begin() + me);
-                {
-                    u8 ctr[16];
-                    CtrAt(mfh, ms, ctr);
-                    Aes128CtrContext ctx;
-                    aes128CtrContextCreate(&ctx, mkey.key, ctr);
-                    aes128CtrCrypt(&ctx, section.data(), section.data(), section.size());
-                }
-                const auto& hs = mfh.hash_data.hierarchical_sha256_data;
-                CnmtLayers layers;
-                layers.block_size = hs.block_size;
-                layers.hash_offset = hs.hash_layer.offset;
-                layers.hash_size = hs.hash_layer.size;
-                layers.pfs0_offset = hs.pfs0_layer.offset;
-                layers.pfs0_size = hs.pfs0_layer.size;
-                u8 master[32];
-                if (!PatchCnmt(section, layers, reinterpret_cast<const u8*>(&g.program), reinterpret_cast<const u8*>(&new_program), program_hash,
-                               new_size, [](const u8* d, size_t n, u8 out[32]) { sha256CalculateHash(out, d, n); }, master)) {
-                    return fail(Result(0));
-                }
-                std::memcpy(mfh.hash_data.hierarchical_sha256_data.master_hash, master, 32);
-                sha256CalculateHash(mh.fs_header_hash[0].sha256, &mfh, sizeof(mfh));
-                {
-                    u8 ctr[16];
-                    CtrAt(mfh, ms, ctr);
-                    Aes128CtrContext ctx;
-                    aes128CtrContextCreate(&ctx, mkey.key, ctr);
-                    aes128CtrCrypt(&ctx, section.data(), section.data(), section.size());
-                }
-                std::copy(section.begin(), section.end(), mn.begin() + ms);
-                sphaira::crypto::cryptoAes128Xts(&mh, mn.data(), k.header_key, 0, 0x200, sizeof(mh), true);
-                u8 meta_hash[32];
-                sha256CalculateHash(meta_hash, mn.data(), mn.size());
-                std::memcpy(&new_meta, meta_hash, sizeof(new_meta));
-                if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &mph)) ||
-                    R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &g.meta, &mph, meta_size)) ||
-                    R_FAILED(rc = ncmContentStorageWritePlaceHolder(&s.cs, &mph, 0, mn.data(), mn.size()))) {
-                    ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
-                    return fail(rc);
-                }
-                }
-
-                // 6. both registered, then the record of the game; only then the old ones go
-                if (R_FAILED(rc = RegisterAs(s.cs, new_program, ph))) {
-                    ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
-                    return fail(rc);
-                }
-                keep_ph = true;
-                const auto undo = [&] {
-                    sphaira::ncm::Delete(&s.cs, &new_program);
-                    if (g.has_meta) {
-                        sphaira::ncm::Delete(&s.cs, &new_meta);
-                        ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
-                    }
-                };
-                if (g.has_meta && R_FAILED(rc = RegisterAs(s.cs, new_meta, mph))) {
-                    undo();
-                    error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
-                    return;
-                }
-                std::vector<u8> rec(0x10000);
-                u64 rec_size = 0;
-                if (R_FAILED(rc = ncmContentMetaDatabaseGet(&s.db, &g.key, &rec_size, rec.data(), rec.size())) || rec_size < 8) {
-                    undo();
-                    error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
-                    return;
-                }
-                const u16 ext = u16(rec[0] | rec[1] << 8), count = u16(rec[2] | rec[3] << 8);
-                bool program_set = false;
-                for (u16 c = 0; c < count; c++) {
-                    const size_t at = 8 + ext + size_t(c) * sizeof(NcmContentInfo);
-                    if (at + sizeof(NcmContentInfo) > rec_size) break;
-                    NcmContentInfo ci;
-                    std::memcpy(&ci, rec.data() + at, sizeof(ci));
-                    if (!std::memcmp(&ci.content_id, &g.program, sizeof(ci.content_id))) {
-                        ci.content_id = new_program;
-                        ncmU64ToContentInfoSize(new_size, &ci);
-                        program_set = true;
-                    } else if (g.has_meta && !std::memcmp(&ci.content_id, &g.meta, sizeof(ci.content_id))) {
-                        ci.content_id = new_meta;
-                        ncmU64ToContentInfoSize(u64(meta_size), &ci);
-                    }
-                    std::memcpy(rec.data() + at, &ci, sizeof(ci));
-                }
-                if (!program_set || R_FAILED(rc = ncmContentMetaDatabaseSet(&s.db, &g.key, rec.data(), rec_size)) ||
-                    R_FAILED(rc = ncmContentMetaDatabaseCommit(&s.db))) {
-                    undo();
-                    error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
-                    return;
-                }
-                sphaira::ncm::Delete(&s.cs, &g.program);
-                if (g.has_meta) sphaira::ncm::Delete(&s.cs, &g.meta);
-                saved = u64(g.program_size) - new_size;
-                auto marks = LoadCompressed(kCompressedList);
-                std::erase_if(marks, [app](const CompressedGame& c) { return c.app_id == app; });
-                marks.push_back({app, Hex(&new_program, sizeof(new_program)), saved, (long long)time(nullptr)});
-                SaveCompressed(kCompressedList, marks);
-                log_write("[NXDock] compressed %016llX: %llu bytes saved\n", (unsigned long long)app, (unsigned long long)saved);
+                if (!error.empty()) return;
+                // its DLC, one after another (4A): a DLC that fails stays as it was
+                saved += CompressDlcs(k, dlcs, m_stop, progress);
                 return;
             }
             error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
