@@ -28,11 +28,17 @@
 namespace nxdock {
 namespace {
 
-constexpr int kWorkers = 2;
+// threads reading covers kept on the SD card (fast); the others are downloaded by threads of their own,
+// so a slow download never holds up the ones already on the card
+constexpr int kDiskWorkers = 2;
+// frames a cover may be off the screen before its download is dropped (scrolling past it)
+constexpr unsigned long kStaleFrames = 45;
+// downloads waiting at most: the newest first
+constexpr size_t kMaxNet = 24;
 constexpr int kUploadsPerFrame = 3;
-// covers kept on the GPU at once (288 x 288, ~330 KB each): a screen and a half. They are slots made once
+// covers kept on the GPU at once (288 x 288, ~330 KB each): several screens, so going back finds them. They are slots made once
 // and filled again: creating and freeing images while scrolling fast broke the memory pool of nanovg-deko3d
-constexpr size_t kMaxImages = 64;
+constexpr size_t kMaxImages = 128;
 // covers waiting to be fetched: scrolling fast through a large library keeps only the newest
 constexpr size_t kMaxWanted = 48;
 // every cover is cut to a square (it is drawn as one) and scaled to this side, whatever its size
@@ -85,20 +91,26 @@ void Covers::Start(const std::string& base_url, const std::string& key) {
     mkdir("sdmc:/switch", 0777);
     mkdir("sdmc:/switch/NXDock", 0777);
     mkdir(kCacheDir, 0777);
-    for (int i = 0; i < kWorkers; i++) {
-        m_threads.emplace_back(&Covers::Work, this);
-    }
+    StartWorkers();
+}
+
+void Covers::StartWorkers() {
+    for (int i = 0; i < kDiskWorkers; i++) m_threads.emplace_back(&Covers::Work, this, -1);
+    for (int i = 0; i < kNetWorkers; i++) m_threads.emplace_back(&Covers::Work, this, i);
 }
 
 void Covers::Stop() {
     m_stop = true;
+    for (auto& cancel : m_net_cancel) cancel = true;
     m_wake.notify_all();
+    m_net_wake.notify_all();
     for (auto& t : m_threads) {
         t.join();
     }
     m_threads.clear();
     std::lock_guard lock(m_mutex);
     m_wanted.clear();
+    m_net.clear();
     // what was asked and not ready is asked again by the next workers
     for (auto it = m_asked.begin(); it != m_asked.end();) {
         it = m_images.count(*it) ? std::next(it) : m_asked.erase(it);
@@ -110,6 +122,7 @@ int Covers::Get(const std::string& path) {
         return 0;
     }
     std::lock_guard lock(m_mutex);
+    m_seen[path] = m_frame;
     const auto it = m_images.find(path);
     if (it != m_images.end()) {
         if (it->second) m_used[path] = m_frame;
@@ -123,7 +136,7 @@ int Covers::Get(const std::string& path) {
     if (m_threads.empty() && path.rfind("ns:", 0) == 0) {
         // the icons of the console need no library: the workers start for them too
         m_stop = false;
-        for (int i = 0; i < kWorkers; i++) m_threads.emplace_back(&Covers::Work, this);
+        StartWorkers();
     }
     if (!m_asked.count(path) && !m_threads.empty()) {
         m_asked.insert(path);
@@ -143,6 +156,11 @@ void Covers::Upload(NVGcontext* vg) {
     {
         std::lock_guard lock(m_mutex);
         m_frame++;
+        // downloads of covers scrolled past are dropped
+        for (size_t i = 0; i < size_t(kNetWorkers); i++) {
+            const std::string& busy = m_net_path[i];
+            if (!busy.empty() && m_seen[busy] + kStaleFrames < m_frame) m_net_cancel[i] = true;
+        }
     }
     for (int i = 0; i < kUploadsPerFrame; i++) {
         Decoded d;
@@ -202,12 +220,13 @@ void Covers::Free(NVGcontext* vg) {
     m_asked.clear();
     m_used.clear();
     m_retry.clear();
+    m_seen.clear();
+    m_net.clear();
     m_decoded.clear(); // decoded for the library just left
     m_free = m_slots;
 }
 
-bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes, bool& retry) {
-    retry = false;
+bool Covers::ReadLocal(const std::string& path, std::vector<unsigned char>& bytes) {
     // the icon a game has on the console (In the console, of the Installed tab)
     if (path.rfind("ns:", 0) == 0) {
         const u64 app = std::strtoull(path.c_str() + 3, nullptr, 16);
@@ -226,42 +245,73 @@ bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes, b
         nsExit();
         return ok;
     }
-    const std::string cached = CachePath(path);
-    if (ReadFile(cached, bytes)) {
-        return true;
-    }
+    return ReadFile(CachePath(path), bytes);
+}
+
+bool Covers::Download(const std::string& path, std::vector<unsigned char>& bytes, bool& retry, const std::atomic<bool>* cancel) {
+    retry = false;
     // a path of the app: "/…", not "//host" nor "@host", which would take the key elsewhere
     if (path.empty() || path[0] != '/' || path.rfind("//", 0) == 0 || path.find('@') != std::string::npos || path.find('\\') != std::string::npos) {
         return false;
     }
-    const auto r = http::GetLarge(m_url + path, m_key, 10000, 4 * 1024 * 1024);
+    // the app may first fetch it from the internet and make it small: time enough for that
+    const auto r = http::GetLarge(m_url + path, m_key, 30000, 4 * 1024 * 1024, cancel);
     if (r.status != 200 || r.body.empty()) {
         // no answer, a busy or failing app: tried again later; a 404 is a game without a cover
         retry = r.status == 0 || r.status == 429 || r.status >= 500;
         return false;
     }
     bytes.assign(r.body.begin(), r.body.end());
-    WriteFile(cached, bytes);
+    WriteFile(CachePath(path), bytes);
     return true;
 }
 
-void Covers::Work() {
+void Covers::Work(int net) {
     while (true) {
         std::string path;
         {
             std::unique_lock lock(m_mutex);
-            m_wake.wait(lock, [this] { return m_stop || !m_wanted.empty(); });
-            if (m_stop) return;
-            path = m_wanted.front();
-            m_wanted.pop_front();
+            auto& line = net < 0 ? m_wanted : m_net;
+            auto& wake = net < 0 ? m_wake : m_net_wake;
+            while (true) {
+                wake.wait(lock, [&] { return m_stop || !line.empty(); });
+                if (m_stop) return;
+                path = line.front();
+                line.pop_front();
+                if (m_seen[path] + kStaleFrames >= m_frame) break;
+                m_asked.erase(path); // scrolled past before its turn: asked again if it comes back
+            }
+            if (net >= 0) {
+                m_net_path[size_t(net)] = path;
+                m_net_cancel[size_t(net)] = false;
+            }
         }
         std::vector<unsigned char> bytes;
         Decoded d;
         d.path = path;
         int w = 0, h = 0, comp = 0;
         // a small file may say it is a huge picture: those are left out before decoding
-        bool retry = false;
-        if (Fetch(path, bytes, retry) && stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &comp) && w > 0 && h > 0 && w <= 4096 &&
+        bool retry = false, dropped = false, found = false;
+        if (net < 0) {
+            found = ReadLocal(path, bytes);
+            if (!found && path.rfind("ns:", 0) != 0) {
+                // not on the card: to the downloads, newest first
+                std::lock_guard lock(m_mutex);
+                m_net.push_front(path);
+                while (m_net.size() > kMaxNet) {
+                    m_asked.erase(m_net.back());
+                    m_net.pop_back();
+                }
+                m_net_wake.notify_one();
+                continue;
+            }
+        } else {
+            found = Download(path, bytes, retry, &m_net_cancel[size_t(net)]);
+            std::lock_guard lock(m_mutex);
+            dropped = m_net_cancel[size_t(net)];
+            m_net_path[size_t(net)].clear();
+        }
+        if (found && stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &comp) && w > 0 && h > 0 && w <= 4096 &&
             h <= 4096) {
             int channels = 0;
             unsigned char* pixels = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &channels, 4);
@@ -294,7 +344,10 @@ void Covers::Work() {
             }
         }
         std::lock_guard lock(m_mutex);
-        if (d.rgba.empty() && retry) {
+        if (d.rgba.empty() && dropped) {
+            // left the screen while downloading: asked again at once if it comes back
+            m_asked.erase(path);
+        } else if (d.rgba.empty() && retry) {
             // the download failed (often while scrolling fast): asked again when it is on screen again
             m_asked.erase(path);
             m_retry[path] = std::chrono::steady_clock::now() + std::chrono::seconds(2);

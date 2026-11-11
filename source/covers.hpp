@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nanovg.h>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -36,13 +37,23 @@ private:
         int width = 0, height = 0;
         std::vector<unsigned char> rgba;
     };
-    void Work();
-    bool Fetch(const std::string& path, std::vector<unsigned char>& bytes, bool& retry);
+    static constexpr int kNetWorkers = 3;
+    void StartWorkers();
+    // net < 0: a thread reading the SD card; otherwise the number of a downloading thread
+    void Work(int net);
+    bool ReadLocal(const std::string& path, std::vector<unsigned char>& bytes);
+    bool Download(const std::string& path, std::vector<unsigned char>& bytes, bool& retry, const std::atomic<bool>* cancel);
 
     std::string m_url, m_key;
     std::vector<std::thread> m_threads;
     std::mutex m_mutex;
-    std::condition_variable m_wake;
+    std::condition_variable m_wake, m_net_wake;
+    // covers to download (not on the card), the one each downloading thread is on, and its stop
+    std::deque<std::string> m_net;
+    std::array<std::string, kNetWorkers> m_net_path;
+    std::array<std::atomic<bool>, kNetWorkers> m_net_cancel{};
+    // the frame each cover was last asked for (on screen): downloads of ones scrolled past are dropped
+    std::map<std::string, unsigned long> m_seen;
     std::deque<std::string> m_wanted;
     std::set<std::string> m_asked;
     std::deque<Decoded> m_decoded;
