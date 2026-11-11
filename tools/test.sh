@@ -46,7 +46,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   mkdir -p /tmp/inc && cp -r /opt/devkitpro/portlibs/switch/include/curl /opt/devkitpro/portlibs/switch/include/zstd.h /opt/devkitpro/portlibs/switch/include/zstd_errors.h /tmp/inc/
   gcc -std=c11 -Wall -Wextra -O2 -Iinclude -c -o /tmp/lz4nintendo.o source/lz4nintendo.c
   g++ -std=c++20 -Wall -Wextra -O2 -Iinclude -o /tmp/lz4nintendo_test tests/lz4nintendo_test.cpp /tmp/lz4nintendo.o
-  /tmp/lz4nintendo_test tests/fixtures/lz4nintendo_golden.txt LICENSE assets/icon.jpg
+  /tmp/lz4nintendo_test tests/fixtures/lz4nintendo_golden.txt LICENSE tests/fixtures/sample.jpg
   # the compressed storage of an NCA, written as Nintendo writes it (24A)
   g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/romfs_lz4_test tests/romfs_lz4_test.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libcrypto.so.3 -lpthread
   /tmp/romfs_lz4_test
