@@ -504,6 +504,12 @@ void App::Exit() {
     // the backlight on again before leaving
     ScreenOn();
     if (m_lbl) lblExit();
+    // a copy, a move or a delete of the file list stops first (what was done stays done)
+    if (m_fwork) {
+        m_fwork->cancel = true;
+        if (m_fwork_thread.joinable()) m_fwork_thread.join();
+        m_fwork.reset();
+    }
     // what arrives from the computer stops first, so a job reading it ends
     MtpStop();
     UsbLink().Cancel();
@@ -955,6 +961,8 @@ void App::ReadTouch(u64& down) {
         if (!m_touching) {
             m_touching = true;
             m_dragging = false;
+            m_touch_at = m_time;
+            m_long_fired = false;
             m_touch_x0 = x;
             m_touch_y0 = y;
             m_drag_scroll0 = m_scroll;
@@ -967,6 +975,12 @@ void App::ReadTouch(u64& down) {
         }
         m_touch_x = x;
         m_touch_y = y;
+        // held still for a moment: a long press (the menu of a file, as − does)
+        if (!m_long_fired && !m_dragging && m_time - m_touch_at > 0.55 && std::fabs(x - m_touch_x0) <= kDragSlop &&
+            std::fabs(y - m_touch_y0) <= kDragSlop && m_dialog.kind == DialogKind::None) {
+            m_long_fired = true;
+            LongPress(x, y);
+        }
         if (m_az_touch) {
             const int slot = std::clamp(int((y - kAzTop) / (g_az_height / 27)), 0, 26);
             JumpToLetter(slot, 0);
@@ -991,7 +1005,7 @@ void App::ReadTouch(u64& down) {
     } else if (m_touching) {
         m_touching = false;
         const bool moved = std::fabs(m_touch_x - m_touch_x0) > kDragSlop || std::fabs(m_touch_y - m_touch_y0) > kDragSlop;
-        if (!m_dragging && !moved) {
+        if (!m_dragging && !moved && !m_long_fired) {
             Tap(m_touch_x, m_touch_y, down);
         }
         m_dragging = false;
@@ -1176,6 +1190,18 @@ void App::Tap(float x, float y, u64& down) {
                 down |= HidNpadButton_Y;
                 break;
             case HitKind::MoreSide:
+                break;
+            case HitKind::FilesMenuRow:
+                // a row of the menu acts at once, as a button of a question does
+                m_files_menu_focus = it->index;
+                FilesDo(it->index);
+                break;
+            case HitKind::FilesMenuBack: m_files_menu = false; break;
+            case HitKind::FilesView:
+                if (m_files_all != (it->index == 1)) FilesDo(kFaView);
+                break;
+            case HitKind::FilesAfter:
+                m_files_after = !m_files_after;
                 break;
             case HitKind::ModRow: {
                 const int side = it->index >= 100 ? 1 : 0, row = it->index >= 100 ? it->index - 100 : 0;
@@ -1436,6 +1462,7 @@ bool App::Frame() {
     }
     FollowLink();
     FollowQueue();
+    FollowFilesWork();
     FollowFinish();
     FollowUsb();
     FollowPush();
@@ -5074,6 +5101,28 @@ void App::DrawDialog(NVGcontext* vg) {
             break;
         }
         case DialogKind::None: return;
+        default: {
+            ToolDialog d;
+            d.cancel = s.cancel;
+            if (!ToolDialogText(d)) {
+                m_dialog.kind = DialogKind::None;
+                return;
+            }
+            title = d.title;
+            body = d.body;
+            note = d.note;
+            primary = d.primary;
+            error = d.error;
+            cancel_label = d.cancel;
+            can = d.can;
+            m_dialog.single = d.single;
+            verify_bar = d.bar;
+            verify_running = d.running;
+            verify_frac = d.frac;
+            verify_text = d.bar_text;
+            for (const auto& l : d.lines) lines.push_back({l.text, "", l.right, l.warn ? t.warn : t.text, l.warn ? 2 : 0});
+            break;
+        }
     }
 
     // the layout, from the top
@@ -5299,6 +5348,7 @@ void App::DrawDialog(NVGcontext* vg) {
 }
 
 void App::UpdateDialog(u64 down, u64 held) {
+    if (ToolDialogInput(down, held)) return;
     const bool info = m_dialog.single;
     if (m_dialog.kind == DialogKind::Verify && (down & (HidNpadButton_B | HidNpadButton_A)) && m_queue->GetVerify().running) {
         // stops the check; the question closes
@@ -5676,7 +5726,7 @@ void App::ConfirmDialog() {
             m_history_version = ~0u;
             m_installed_focus = 0;
             break;
-        default: break;
+        default: ConfirmToolDialog(); break;
     }
 }
 

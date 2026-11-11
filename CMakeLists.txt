@@ -169,6 +169,9 @@ add_executable(nxdock
     source/system_info.cpp
     source/ui.cpp
     source/forwarder.cpp
+    source/fileops.cpp
+    source/i18n_tools.cpp
+    source/more_files.cpp
 )
 
 target_compile_definitions(nxdock PRIVATE

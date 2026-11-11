@@ -33,6 +33,8 @@ std::vector<UsbDisk> UsbDisks() {
         d.mount = std::string(devices[i].name) + "/";
         d.label = devices[i].product_name[0] ? devices[i].product_name : devices[i].manufacturer;
         d.capacity = devices[i].capacity;
+        d.fat32 = devices[i].fs_type == UsbHsFsDeviceFileSystemType_FAT12 || devices[i].fs_type == UsbHsFsDeviceFileSystemType_FAT16 ||
+                  devices[i].fs_type == UsbHsFsDeviceFileSystemType_FAT32;
         out.push_back(d);
     }
     return out;

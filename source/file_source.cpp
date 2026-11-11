@@ -3,6 +3,7 @@
 #include "file_source.hpp"
 
 #include "defines.hpp"
+#include "fileops.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -114,7 +115,7 @@ std::string GameFormat(const std::string& name) {
     return ext == "nsp" || ext == "nsz" || ext == "xci" || ext == "xcz" ? ext : std::string{};
 }
 
-std::vector<LocalEntry> ListFolder(const std::string& folder, bool root) {
+std::vector<LocalEntry> ListFolder(const std::string& folder, bool root, bool all) {
     std::vector<LocalEntry> dirs, files;
     DIR* d = opendir(folder.c_str());
     if (!d) return {};
@@ -122,6 +123,7 @@ std::vector<LocalEntry> ListFolder(const std::string& folder, bool root) {
     while (const dirent* e = readdir(d)) {
         const std::string name = e->d_name;
         if (name == "." || name == ".." || name.empty() || name[0] == '.') continue;
+        if (all && fileops::Junk(name)) continue;
         names.push_back(name);
     }
     closedir(d);
@@ -154,7 +156,11 @@ std::vector<LocalEntry> ListFolder(const std::string& folder, bool root) {
         const auto dot = name.find_last_of('.');
         if (dot != std::string::npos && PartNumber(name.substr(dot + 1)) >= 0) {
             const std::string whole = name.substr(0, dot);
-            if (GameFormat(whole).empty() || std::find(split_seen.begin(), split_seen.end(), whole) != split_seen.end()) continue;
+            if (GameFormat(whole).empty()) {
+                if (all) files.push_back({name, path, {}, false, size, {}}); // name.zip.01: a file of its own
+                continue;
+            }
+            if (std::find(split_seen.begin(), split_seen.end(), whole) != split_seen.end()) continue;
             split_seen.push_back(whole);
             LocalEntry f{whole, path, {}, false, 0, GameFormat(whole)};
             for (int n = 0;; n++) {
@@ -174,6 +180,8 @@ std::vector<LocalEntry> ListFolder(const std::string& folder, bool root) {
         const std::string fmt = GameFormat(name);
         if (!fmt.empty()) {
             files.push_back({name, path, {path}, false, size, fmt});
+        } else if (all) {
+            files.push_back({name, path, {}, false, size, {}});
         }
     }
     std::vector<LocalEntry> out;

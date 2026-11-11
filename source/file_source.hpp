@@ -43,9 +43,11 @@ struct LocalEntry {
     std::string format;             // nsp, nsz, xci, xcz
 };
 
-// The folders and game files of a folder, folders first and then by name; the rest is left out.
-// `root` is the place itself (sdmc:/, ums0:/…): ".." is not given there.
-std::vector<LocalEntry> ListFolder(const std::string& folder, bool root);
+// The folders and game files of a folder, folders first and then by name; the rest is left out,
+// unless `all`: then every file too (a file that is not a game has no format), save the hidden ones
+// and what computers leave (._*, Thumbs.db…). `root` is the place itself (sdmc:/, ums0:/…): ".." is
+// not given there.
+std::vector<LocalEntry> ListFolder(const std::string& folder, bool root, bool all = false);
 
 // The game format of a name (nsp, nsz, xci, xcz), or empty.
 std::string GameFormat(const std::string& name);

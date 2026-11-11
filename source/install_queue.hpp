@@ -61,6 +61,10 @@ struct InstallJob {
     bool merged = false;   // merged with the game
     u64 merge_saved = 0;   // what that saved
     std::string merge_error; // why it was not (the update stays installed, for Compress games)
+    // a file of the SD card or a USB disk: deleted once it is installed and checked (4A of the test of
+    // the new tools); a failed or cancelled install keeps it
+    bool delete_after = false;
+    bool source_deleted = false; // it was
 };
 
 // Reads what each file of the SD card or a USB disk needs (the firmware, and for a DLC the version
