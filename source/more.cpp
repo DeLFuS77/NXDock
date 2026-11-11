@@ -765,14 +765,19 @@ void App::DrawArrival(NVGcontext* vg) {
     }
 
     std::vector<ui::Hint> hints;
-    if (mtp && !mv.nand_allowed) hints.push_back({ui::glyph::X, m.allow_nand, HidNpadButton_X});
+    // the internal memory allowed can be turned off again: only the SD card
+    if (mtp) hints.push_back({ui::glyph::X, mv.nand_allowed ? m.mtp_sd_only : m.allow_nand, HidNpadButton_X});
     if (!mtp) hints.push_back({ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, m.stop_back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
 
 void App::UpdateArrival(u64 down, u64 /*held*/) {
-    if (m_more == MoreScreen::Mtp && (down & HidNpadButton_X) && !MtpSnapshot().nand_allowed) {
+    if (m_more == MoreScreen::Mtp && (down & HidNpadButton_X)) {
+        if (MtpSnapshot().nand_allowed) {
+            MtpAllowNand(false); // only the SD card again, at once
+            return;
+        }
         // the internal memory, only after its question (Cancel in focus)
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::MtpNand;

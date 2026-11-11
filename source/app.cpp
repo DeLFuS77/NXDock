@@ -601,9 +601,9 @@ void App::ActivateSetting(int row) {
             break;
         case kRowForget:
             if (current.Linked()) {
-                m_speed.Cancel();
-                m_link.Forget();
-                m_tab = Tab::Library;
+                // asked first: pairing again needs a new code
+                m_dialog = Dialog{};
+                m_dialog.kind = DialogKind::Forget;
             }
             break;
         case kRowAddress: {
@@ -668,10 +668,6 @@ void App::UpdatePairing(u64 down, u64 held, const Link::View& v) {
         } else {
             m_link.Search();
         }
-    }
-    if (down & HidNpadButton_Minus) {
-        AskScreenOff();
-        return;
     }
     if (down & HidNpadButton_Y) {
         m_link.SetRemember(!v.remember);
@@ -860,6 +856,11 @@ void App::Tap(float x, float y, u64& down) {
             case HitKind::Wifi: m_wifi_open = true; break;
             case HitKind::Chip:
                 m_filter = it->index;
+                RebuildView();
+                break;
+            case HitKind::SearchChip:
+                // the chip of the search: a tap clears it
+                m_search.clear();
                 RebuildView();
                 break;
             case HitKind::Cover:
@@ -1097,18 +1098,25 @@ void App::Update(u64 down, u64 held) {
     }
     // the WiFi card: the right stick opens and closes it, B or A closes it
     if (down & HidNpadButton_StickR) {
-        m_wifi_open = !m_wifi_open && m_wifi > -2;
-        return;
+        // on the grid the right stick jumps by letter: a click while it is pushed, or just after a
+        // jump, is part of that and does not open the WiFi
+        const u64 pushed = HidNpadButton_StickRUp | HidNpadButton_StickRDown | HidNpadButton_StickRLeft | HidNpadButton_StickRRight;
+        const bool jumping = GridTab() && !m_detail && !m_wifi_open && ((held & pushed) || m_time - m_rstick_at < 0.3 || m_time - m_jump_at < 0.3);
+        if (!jumping) {
+            m_wifi_open = !m_wifi_open && m_wifi > -2;
+            return;
+        }
+        down &= ~u64(HidNpadButton_StickR);
     }
     if (m_wifi_open) {
         if (down & (HidNpadButton_B | HidNpadButton_A)) m_wifi_open = false;
         return;
     }
     if (down & HidNpadButton_Plus) {
-        // leaving stops an install (nothing is left half done): the second + leaves
-        if (m_queue && m_queue->Busy() && m_time - m_quit_asked > 4) {
-            m_quit_asked = m_time;
-            Notice(Tr().leave_while_installing);
+        // leaving stops an install (nothing is left half done): asked first, Stay in focus
+        if (m_queue && m_queue->Busy()) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::Quit;
             return;
         }
         m_quit = true;
@@ -1121,6 +1129,10 @@ void App::Update(u64 down, u64 held) {
     if (m_detail && GridTab()) {
         if (m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
             m_detail = false;
+        } else if (down & (HidNpadButton_L | HidNpadButton_R)) {
+            // as everywhere, L and R change the tab; the page is there again when coming back
+            m_tab = Tab((int(m_tab) + ((down & HidNpadButton_R) ? 1 : kTabs - 1)) % kTabs);
+            return;
         } else {
             UpdateDetail(down, held);
             return;
@@ -1136,7 +1148,8 @@ void App::Update(u64 down, u64 held) {
     // L and R change the tab from anywhere, as on the HOME menu; a tool of More stays open, and is
     // there again when coming back
     const bool in_tool = (m_tab == Tab::More && m_more != MoreScreen::Tiles) || // B leaves the tool first
-                         (m_tab == Tab::Installed && m_installed_view == 0 && m_console_app != 0); // or the page of a game
+                         (m_tab == Tab::Installed && m_installed_view == 0 && m_console_app != 0) || // or the page of a game
+                         (m_tab == Tab::Shops && m_shop_active); // or the shop open: the list of shops again
     if (down & HidNpadButton_L) {
         m_tab = Tab((int(m_tab) + kTabs - 1) % kTabs);
     }
@@ -1776,6 +1789,7 @@ void App::UpdateLibrary(u64 down, u64 held) {
     if (count > 0) {
         const bool r_up = Repeat(down, held, HidNpadButton_StickRUp);
         const bool r_down = Repeat(down, held, HidNpadButton_StickRDown);
+        if (held & (HidNpadButton_StickRUp | HidNpadButton_StickRDown)) m_rstick_at = m_time;
         if (r_up || r_down) {
             if (m_ui.sort == 0) {
                 JumpToLetter(-1, r_down ? 1 : -1);
@@ -1799,9 +1813,9 @@ void App::UpdateLibrary(u64 down, u64 held) {
         OpenDetail(m_focus);
     }
     if (down & HidNpadButton_Minus) {
-        // Options (5A): the order and Update all
+        // Options (5A): the order and Update all; with updates to install, the focus is on it
         m_menu = true;
-        m_menu_focus = m_ui.sort;
+        m_menu_focus = PendingUpdates().empty() ? m_ui.sort : kSorts + 1;
     }
     if (down & HidNpadButton_Y) {
         std::string text;
@@ -1865,6 +1879,9 @@ void App::UpdateMenu(u64 down, u64 held) {
     m_menu_focus = std::clamp(m_menu_focus, 0, rows - 1);
     if (down & HidNpadButton_A) {
         ActivateMenu(m_menu_focus);
+    } else if ((down & HidNpadButton_Minus) && rows > kSorts + 1) {
+        // − as its row shows: Update all
+        ActivateMenu(kSorts + 1);
     } else if (down & (HidNpadButton_B | HidNpadButton_Minus)) {
         m_menu = false;
     }
@@ -2036,7 +2053,10 @@ void App::DrawMenu(NVGcontext* vg) {
         ry += rh;
     }
     std::vector<ui::HitRect> rects;
-    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.choose, HidNpadButton_A}, {ui::glyph::B, s.close, HidNpadButton_B}}, rects);
+    std::vector<ui::Hint> hints = {{ui::glyph::A, s.choose, HidNpadButton_A}};
+    if (updates) hints.push_back({ui::glyph::Minus, s.update_all, HidNpadButton_Minus});
+    hints.push_back({ui::glyph::B, s.close, HidNpadButton_B});
+    ui::HintBar(vg, t, nullptr, hints, rects);
     AddHints(rects);
 }
 
@@ -2046,7 +2066,8 @@ void App::OpenDetail(int view_index) {
     }
     m_detail = true;
     m_detail_game = m_view[view_index];
-    m_detail_focus = 0;
+    m_detail_from_console = false;
+    m_detail_first = 0;
     // where, as chosen in the wizard: the internal memory still asks every time (EnqueuePicked)
     m_to_nand = false; // the SD card, always; the internal memory only when chosen for this install
     m_dest_touched = false;
@@ -2063,6 +2084,10 @@ void App::OpenDetail(int view_index) {
             case CatalogFile::Kind::Dlc: m_detail_pick[i] = m_ui.pick == 0 && !g.installed.dlc.count(f.title_id); break;
         }
     }
+    // what is missing is already marked: the focus starts on Install, after the rows
+    int rows = 0;
+    for (const auto& f : g.files) rows += f.kind != CatalogFile::Kind::Update || &f == newest;
+    m_detail_focus = rows;
 }
 
 void App::UpdateDetail(u64 down, u64 held) {
@@ -2076,12 +2101,9 @@ void App::UpdateDetail(u64 down, u64 held) {
     const int count = int(rows.size()) + 1;
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_detail_focus > 0) m_detail_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_detail_focus < count - 1) m_detail_focus++;
-    if (down & (HidNpadButton_L | HidNpadButton_ZL)) {
-        m_to_nand = false;
-        m_dest_touched = true;
-    }
-    if (down & (HidNpadButton_R | HidNpadButton_ZR)) {
-        m_to_nand = true;
+    if (down & (HidNpadButton_ZL | HidNpadButton_ZR)) {
+        // the SD card or the internal memory, for this install only (it asks before going there)
+        m_to_nand = !m_to_nand;
         m_dest_touched = true;
     }
     if (down & HidNpadButton_A) {
@@ -2115,6 +2137,11 @@ void App::UpdateDetail(u64 down, u64 held) {
     }
     if (down & HidNpadButton_B) {
         m_detail = false;
+        if (m_detail_from_console) {
+            // opened from In the console: back there
+            m_detail_from_console = false;
+            m_tab = Tab::Installed;
+        }
     }
 }
 
@@ -2196,8 +2223,9 @@ void App::DrawLibrary(NVGcontext* vg) {
     }
     }
     if (!m_search.empty()) {
-        const std::string label = "“" + m_search + "”";
-        ui::Chip(vg, t, x + 10, 92, label.c_str(), true);
+        const std::string label = "“" + m_search + "”  ×";
+        const float w = ui::Chip(vg, t, x + 10, 92, label.c_str(), true);
+        AddHit(x + 6, 82, w + 8, 54, HitKind::SearchChip);
     }
     // checking what the console has: a small sign, the marks come when it ends
     if (m_queue && m_queue->ReadingInstalled()) {
@@ -2276,8 +2304,16 @@ void App::DrawLibrary(NVGcontext* vg) {
     // Queue strip, always in sight; tapping it opens the queue.
     DrawQueueStrip(vg, m_ui.library_size == 0 ? 556.f : 594.f); // below the rows of the size chosen
 
-    std::vector<ui::Hint> hints = {{ui::glyph::A, s.view, HidNpadButton_A}, {ui::glyph::ZR, s.filter, HidNpadButton_ZR},
-                                   {ui::glyph::Y, s.search, HidNpadButton_Y}};
+    static const std::string shop_glyphs = std::string(ui::glyph::ZL) + " " + ui::glyph::ZR;
+    std::vector<ui::Hint> hints = {{ui::glyph::A, s.view, HidNpadButton_A}};
+    if (m_shop_active) {
+        // in a shop: ZL and ZR go to the shop before or after, B to the list of shops
+        if (m_shops.size() > 1) hints.push_back({shop_glyphs.c_str(), TrM().sh_shop_hint, HidNpadButton_ZR});
+    } else {
+        hints.push_back({ui::glyph::ZR, s.filter, HidNpadButton_ZR});
+    }
+    hints.push_back({ui::glyph::Y, s.search, HidNpadButton_Y});
+    hints.push_back({ui::glyph::X, s.queue, HidNpadButton_X});
     // Options: the order, and Update all when there is something to update
     const size_t updates = PendingUpdates().size();
     m_update_hint = s.options;
@@ -2285,7 +2321,8 @@ void App::DrawLibrary(NVGcontext* vg) {
         m_update_hint += std::string(" · ") + s.update_all + " " + std::to_string(updates);
     }
     hints.push_back({ui::glyph::Minus, m_update_hint.c_str(), HidNpadButton_Minus});
-    hints.push_back({ui::glyph::Plus, s.exit, HidNpadButton_Plus});
+    if (m_shop_active) hints.push_back({ui::glyph::B, TrM().sh_shops_hint, HidNpadButton_B});
+    else hints.push_back({ui::glyph::Plus, s.exit, HidNpadButton_Plus});
     ui::HintBar(vg, t, where.c_str(), hints, m_hint_rects);
 }
 
@@ -2428,9 +2465,14 @@ void App::DrawDetail(NVGcontext* vg) {
     ui::StrokeRound(vg, rx + .5f, ly + .5f, rw - 1, list_h - 1, 12, t.line, 1);
     nvgSave(vg);
     nvgScissor(vg, rx, ly, rw, list_h);
-    // keep the row in focus in sight
-    const int visible = int((list_h - 12) / lh);
-    const int first = std::clamp(m_detail_focus - visible + 1, 0, std::max(0, int(rows.size()) - visible));
+    // keep the row in focus in sight; on Install the list stays where it was
+    const int visible = std::max(1, int((list_h - 12) / lh));
+    if (m_detail_focus < int(rows.size())) {
+        if (m_detail_focus < m_detail_first) m_detail_first = m_detail_focus;
+        if (m_detail_focus >= m_detail_first + visible) m_detail_first = m_detail_focus - visible + 1;
+    }
+    m_detail_first = std::clamp(m_detail_first, 0, std::max(0, int(rows.size()) - visible));
+    const int first = m_detail_first;
     for (int r = first; r < int(rows.size()); r++) {
         const CatalogFile& f = g.files[rows[r]];
         const float y = ly + 6 + (r - first) * lh;
@@ -2622,6 +2664,7 @@ void App::EnqueuePicked() {
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::Where;
         m_dialog.jobs = std::move(jobs);
+        m_dialog.focus = 1; // the SD card, the default
         return;
     }
     if (m_to_nand) {
@@ -3175,8 +3218,20 @@ void App::UpdateQueue(u64 down, u64 held) {
         return;
     }
     const InstallJob& j = rows[m_queue_focus];
+    if (down & HidNpadButton_Minus) {
+        AskScreenOff(); // the screen off while it installs (11A)
+        return;
+    }
     if (down & HidNpadButton_X) {
-        m_queue->Remove(j.id); // a waiting one goes; the one installing is cancelled
+        if (j.state == InstallJob::State::Running) {
+            // the one installing is cancelled only after a question, Keep installing in focus
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::QueueCancel;
+            m_dialog.entry = j.id;
+            m_dialog.text = j.game + (j.label.empty() ? "" : " · " + j.label);
+            return;
+        }
+        m_queue->Remove(j.id); // a waiting or finished one goes at once
     }
     if ((down & HidNpadButton_A) && (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled)) {
         m_queue->Retry(j.id);
@@ -3759,6 +3814,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     ui::HintBar(vg, t, nullptr,
                 {{ui::glyph::A, s.choose, HidNpadButton_A},
                  {ui::glyph::X, code_shown ? s.new_code : s.search_again, HidNpadButton_X},
+                 {ui::glyph::Y, TrM().pr_remember, HidNpadButton_Y},
                  {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
                 m_hint_rects);
 }
@@ -4239,7 +4295,7 @@ void App::DrawDialog(NVGcontext* vg) {
     switch (m_dialog.kind) {
         case DialogKind::Nand: {
             title = s.nand_title;
-            body = std::string(s.nand_body) + "\n" + TrM().nand_sd_hint;
+            body = s.nand_body;
             for (const auto& j : m_dialog.jobs) {
                 size += j.size;
                 lines.push_back({j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
@@ -4412,7 +4468,6 @@ void App::DrawDialog(NVGcontext* vg) {
             title = m.dn_title;
             body = m.dn_body;
             primary = m.dn_go;
-            cancel_label = m.dn_skip;
             break;
         }
         case DialogKind::Reinstall: {
@@ -4428,7 +4483,6 @@ void App::DrawDialog(NVGcontext* vg) {
             title = text;
             body = m.ri_body;
             primary = m.ri_go;
-            cancel_label = m.ri_skip;
             break;
         }
         case DialogKind::ConsoleRemove: {
@@ -4560,6 +4614,29 @@ void App::DrawDialog(NVGcontext* vg) {
             cancel_label = m.rs_discard;
             break;
         }
+        case DialogKind::QueueCancel: {
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.qc_title, m_dialog.text.c_str());
+            title = text;
+            body = m.qc_body;
+            primary = m.qw_cancel_go;
+            cancel_label = m.qw_keep;
+            break;
+        }
+        case DialogKind::Quit:
+            title = TrM().quit_title;
+            body = TrM().quit_body;
+            primary = TrM().quit_go;
+            cancel_label = TrM().quit_stay;
+            break;
+        case DialogKind::Forget:
+            title = TrM().fg_title;
+            body = TrM().fg_body;
+            primary = TrM().fg_go;
+            break;
+        case DialogKind::ResumeDiscard:
+            break;
         case DialogKind::WebCancel: {
             const More& m = TrM();
             char text[300];
@@ -4815,14 +4892,23 @@ void App::DrawDialog(NVGcontext* vg) {
     if ((!can || info) && m_dialog.focus == 1) m_dialog.focus = 0;
     const float bh = 52, by = y + h - pad - bh + 8;
     float bx = x + w - pad;
-    struct Button { const char* glyph; std::string label; bool primary; int index; };
+    struct Button { const char* glyph; std::string label; bool primary; int index; u64 mask; };
     std::vector<Button> buttons;
-    buttons.push_back({ui::glyph::B, info ? s.close : cancel_label, false, 0});
-    if (m_dialog.kind == DialogKind::Where) {
-        // the internal memory, which asks again with its own question
-        buttons.push_back({ui::glyph::X, s.internal, false, 2});
+    buttons.push_back({ui::glyph::B, info ? s.close : cancel_label, false, 0, HidNpadButton_B});
+    u64 extra_mask = 0;
+    const int extra = info ? -1 : DialogExtra(extra_mask);
+    if (extra >= 0) {
+        // a third choice, between the two: the internal memory (Where), the SD card instead (Nand),
+        // leaving some out (DlcNeeds, Reinstall), discarding (Resume)
+        const More& m = TrM();
+        const char* label = m_dialog.kind == DialogKind::Where       ? s.internal
+                            : m_dialog.kind == DialogKind::Nand      ? m.nand_sd_button
+                            : m_dialog.kind == DialogKind::DlcNeeds  ? m.dn_skip
+                            : m_dialog.kind == DialogKind::Reinstall ? m.ri_skip
+                                                                     : m.rs_discard;
+        buttons.push_back({extra_mask == HidNpadButton_Y ? ui::glyph::Y : ui::glyph::X, label, false, extra, extra_mask});
     }
-    if (!info) buttons.push_back({ui::glyph::A, primary, true, 1});
+    if (!info) buttons.push_back({ui::glyph::A, primary, true, 1, HidNpadButton_A});
     for (auto it = buttons.rbegin(); it != buttons.rend(); ++it) {
         const float bw = ui::TextWidth(vg, 18, it->label.c_str()) + 78;
         bx -= bw;
@@ -4838,7 +4924,7 @@ void App::DrawDialog(NVGcontext* vg) {
             ui::StrokeRound(vg, bx + 1, by + 1, bw - 2, bh - 2, 12, t.line, 2);
         }
         const NVGcolor fg = it->primary ? t.on_work : t.text;
-        ui::Symbol(vg, t, bx + 34, by + bh / 2, 24, it->glyph, fg, it->primary ? HidNpadButton_A : HidNpadButton_B);
+        ui::Symbol(vg, t, bx + 34, by + bh / 2, 24, it->glyph, fg, it->mask);
         ui::Text(vg, bx + 56, by + bh / 2, 18, fg, it->label.c_str());
         nvgGlobalAlpha(vg, 1.f);
         if (enabled) {
@@ -4875,19 +4961,17 @@ void App::UpdateDialog(u64 down, u64 held) {
             m_dialog.focus = 1;
         }
     }
-    if (m_dialog.kind == DialogKind::Where) {
-        // Cancel, Internal memory, SD card, from left to right
-        static constexpr int kOrder[] = {0, 2, 1};
-        int pos = m_dialog.focus == 2 ? 1 : m_dialog.focus == 1 ? 2 : 0;
+    u64 extra_mask = 0;
+    const int extra = info ? -1 : DialogExtra(extra_mask);
+    if (extra >= 0) {
+        // Cancel, the third choice, the action, from left to right
+        const int order[] = {0, extra, 1};
+        int pos = m_dialog.focus == extra ? 1 : m_dialog.focus == 1 ? 2 : 0;
         if (Repeat(down, held, HidNpadButton_AnyLeft) && pos > 0) pos--;
         if (Repeat(down, held, HidNpadButton_AnyRight) && pos < 2) pos++;
-        m_dialog.focus = kOrder[pos];
-        if ((down & HidNpadButton_X) || ((down & HidNpadButton_A) && m_dialog.focus == 2)) {
-            auto jobs = std::move(m_dialog.jobs);
-            for (auto& j : jobs) j.nand = true;
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::Nand; // never to the internal memory without its question
-            m_dialog.jobs = std::move(jobs);
+        m_dialog.focus = order[pos];
+        if ((down & extra_mask) || ((down & HidNpadButton_A) && m_dialog.focus == extra)) {
+            DialogExtraChosen();
             return;
         }
     } else if (!info) {
@@ -4900,7 +4984,66 @@ void App::UpdateDialog(u64 down, u64 held) {
         m_dialog = Dialog{};
         return;
     }
-    if (m_dialog.kind == DialogKind::DlcNeeds && ((down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0))) {
+    const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
+    if (declined) {
+        if (m_dialog.kind == DialogKind::Resume) {
+            // decided later: the journal stays, and it is asked again the next time NXDock opens
+            m_resume.reset();
+        } else if (m_dialog.kind == DialogKind::ResumeDiscard) {
+            // back to the question of going on
+            m_dialog.kind = DialogKind::Resume;
+            m_dialog.focus = 1;
+            return;
+        } else if (m_dialog.kind == DialogKind::SaveCopyAsk || m_dialog.kind == DialogKind::ModsAsk) {
+            m_queue->Answer(false);
+        } else if (m_dialog.kind == DialogKind::Push) {
+            for (const auto& id : m_dialog.push) m_push->Answer(id, false);
+        } else if (m_dialog.kind == DialogKind::Share) {
+            m_prefs.share_installed = 0;
+            m_prefs.Save();
+        }
+        m_dialog.kind = DialogKind::None;
+        return;
+    }
+    if (down & HidNpadButton_A) {
+        const DialogKind before = m_dialog.kind;
+        if (m_dialog.focus == 1 && !info) {
+            ConfirmDialog();
+        }
+        if (m_dialog.kind == before) {
+            m_dialog.kind = DialogKind::None; // unless the choice led to another question
+        }
+    }
+}
+
+int App::DialogExtra(u64& mask) const {
+    switch (m_dialog.kind) {
+        case DialogKind::Where: mask = HidNpadButton_X; return 2;
+        case DialogKind::Nand: mask = HidNpadButton_Y; return 3;
+        case DialogKind::DlcNeeds:
+        case DialogKind::Reinstall: mask = HidNpadButton_X; return 2;
+        default: mask = 0; return -1;
+    }
+}
+
+void App::DialogExtraChosen() {
+    if (m_dialog.kind == DialogKind::Where) {
+        auto jobs = std::move(m_dialog.jobs);
+        for (auto& j : jobs) j.nand = true;
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Nand; // never to the internal memory without its question
+        m_dialog.jobs = std::move(jobs);
+        return;
+    }
+    if (m_dialog.kind == DialogKind::Nand) {
+        // to the SD card instead, the default
+        auto jobs = std::move(m_dialog.jobs);
+        for (auto& j : jobs) j.nand = false;
+        m_dialog = Dialog{};
+        AddJobs(std::move(jobs));
+        return;
+    }
+    if (m_dialog.kind == DialogKind::DlcNeeds) {
         // those DLC stay out; the rest goes on
         std::vector<InstallJob> rest;
         const auto installed = m_queue ? m_queue->Installed() : std::map<u64, InstalledState>{};
@@ -4931,7 +5074,7 @@ void App::UpdateDialog(u64 down, u64 held) {
         if (!rest.empty()) AddJobs(std::move(rest));
         return;
     }
-    if (m_dialog.kind == DialogKind::Reinstall && ((down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0))) {
+    if (m_dialog.kind == DialogKind::Reinstall) {
         // skipped: those installed stay out, the rest goes on
         std::vector<InstallJob> rest;
         for (auto& j : m_dialog.jobs) {
@@ -4940,41 +5083,6 @@ void App::UpdateDialog(u64 down, u64 held) {
         m_dialog = Dialog{};
         if (!rest.empty()) AddJobs(std::move(rest));
         return;
-    }
-    if (m_dialog.kind == DialogKind::Nand && (down & HidNpadButton_Y)) {
-        // to the SD card instead, the default
-        auto jobs = std::move(m_dialog.jobs);
-        for (auto& j : jobs) j.nand = false;
-        m_dialog = Dialog{};
-        AddJobs(std::move(jobs));
-        return;
-    }
-    const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
-    if (declined) {
-        if (m_dialog.kind == DialogKind::Resume) {
-            // discarded: every placeholder of the journal goes, and the journal
-            if (m_resume) DiscardResume(*m_resume);
-            m_resume.reset();
-            Notice(TrM().rs_discarded);
-        } else if (m_dialog.kind == DialogKind::SaveCopyAsk || m_dialog.kind == DialogKind::ModsAsk) {
-            m_queue->Answer(false);
-        } else if (m_dialog.kind == DialogKind::Push) {
-            for (const auto& id : m_dialog.push) m_push->Answer(id, false);
-        } else if (m_dialog.kind == DialogKind::Share) {
-            m_prefs.share_installed = 0;
-            m_prefs.Save();
-        }
-        m_dialog.kind = DialogKind::None;
-        return;
-    }
-    if (down & HidNpadButton_A) {
-        const DialogKind before = m_dialog.kind;
-        if (m_dialog.focus == 1 && !info) {
-            ConfirmDialog();
-        }
-        if (m_dialog.kind == before) {
-            m_dialog.kind = DialogKind::None; // unless the choice led to another question
-        }
     }
 }
 
@@ -5021,7 +5129,16 @@ void App::ConfirmDialog() {
             AddJobs(std::move(m_dialog.jobs));
             break;
         case DialogKind::WebCancel:
+        case DialogKind::QueueCancel:
             m_queue->Remove(m_dialog.entry); // a waiting one goes; the one installing is cancelled
+            break;
+        case DialogKind::Quit:
+            m_quit = true;
+            break;
+        case DialogKind::Forget:
+            m_speed.Cancel();
+            m_link.Forget();
+            m_tab = Tab::Library;
             break;
         case DialogKind::CompressIntro:
         case DialogKind::CompressGo:

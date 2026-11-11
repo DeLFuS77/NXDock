@@ -229,7 +229,6 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
 // Medium (six in a row) or large covers (four in a row, with the version and the size).
 void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
     const Theme& t = m_theme;
-    const auto& s = Tr();
     const More& m = TrM();
     const bool big = m_ui.console_size == 2;
     const int cols = big ? 4 : 6;
@@ -389,12 +388,13 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     std::snprintf(text, sizeof(text), m.ic_marked_fmt, marked, draw::Size(freed).c_str());
     ui::Text(vg, x0, fy + (base_marked ? 24 : 0), 15, marked ? t.text : t.muted, text);
 
+    // as everywhere: Y marks, − deletes what is marked
     std::vector<ui::Hint> hints;
     if (!items.empty()) {
-        hints.push_back({ui::glyph::A, m.ic_mark, HidNpadButton_A});
-        if (marked) hints.push_back({ui::glyph::X, m.ic_remove_marked, HidNpadButton_X});
+        hints.push_back({ui::glyph::Y, m.ic_mark, HidNpadButton_Y});
+        if (marked) hints.push_back({ui::glyph::Minus, m.ic_remove_marked, HidNpadButton_Minus});
     }
-    if (g) hints.push_back({ui::glyph::Y, m.ic_from_library, HidNpadButton_Y});
+    if (g) hints.push_back({ui::glyph::X, m.ic_from_library, HidNpadButton_X});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, v.task == Space::Task::Remove ? m.ic_removing : nullptr, hints, m_hint_rects);
 }
@@ -422,14 +422,15 @@ std::vector<ui::Hint> App::ConsoleHints() {
     const auto& s = Tr();
     const More& m = TrM();
     static std::string many;
-    std::vector<ui::Hint> hints = {{ui::glyph::A, m.ic_open, HidNpadButton_A}, {ui::glyph::X, m.ic_mark, HidNpadButton_X}};
+    // as everywhere: A opens, Y marks, − deletes what is marked
+    std::vector<ui::Hint> hints = {{ui::glyph::A, m.ic_open, HidNpadButton_A}, {ui::glyph::Y, m.ic_mark, HidNpadButton_Y}};
     if (!m_console_picked.empty()) {
         char text[120];
         std::snprintf(text, sizeof(text), m.ic_rm_picked_fmt, int(m_console_picked.size()));
         many = text;
         hints.push_back({ui::glyph::Minus, many.c_str(), HidNpadButton_Minus});
     }
-    hints.push_back({ui::glyph::Y, m.ic_size, HidNpadButton_Y});
+    hints.push_back({ui::glyph::X, m.ic_size, HidNpadButton_X});
     hints.push_back({Glyphs(), s.view_switch, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     return hints;
@@ -456,7 +457,7 @@ void App::UpdateConsole(u64 down, u64 held) {
     if (!m_space) return;
     const auto v = m_space->Snapshot();
     if (!m_console_app) {
-        if (down & HidNpadButton_Y) {
+        if (down & HidNpadButton_X) {
             // the size: list, medium covers, large covers; kept for the next time
             m_ui.console_size = (m_ui.console_size + 1) % 3;
             m_ui.Save();
@@ -465,7 +466,7 @@ void App::UpdateConsole(u64 down, u64 held) {
         if (v.apps.empty()) return;
         const int n = int(v.apps.size());
         m_console_focus = std::clamp(m_console_focus, 0, n - 1);
-        if (down & HidNpadButton_X) {
+        if (down & HidNpadButton_Y) {
             // marked to take off together; an archived game has nothing to take
             const auto& a = v.apps[size_t(m_console_focus)];
             if (!a.archived) {
@@ -518,17 +519,19 @@ void App::UpdateConsole(u64 down, u64 held) {
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_item > 0) m_console_item--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_item < int(items.size()) - 1) m_console_item++;
     m_console_item = std::clamp(m_console_item, 0, std::max(0, int(items.size()) - 1));
-    if ((down & HidNpadButton_A) && !items.empty()) {
+    if ((down & (HidNpadButton_A | HidNpadButton_Y)) && !items.empty()) {
+        // a line has nothing to open: A marks it too
         m_console_marks[size_t(m_console_item)] = !m_console_marks[size_t(m_console_item)];
     }
-    if (down & HidNpadButton_Y) {
-        // the game in the library, to install what it lacks
+    if (down & HidNpadButton_X) {
+        // the game in the library, to install what it lacks; B comes back here
         if (LibraryGame(m_console_app)) {
             for (int i = 0; i < int(m_view.size()); i++) {
                 if (m_games[size_t(m_view[size_t(i)])].title_id == m_console_app) {
                     m_tab = Tab::Library;
                     m_focus = i;
                     OpenDetail(i);
+                    m_detail_from_console = true;
                     return;
                 }
             }
@@ -536,7 +539,7 @@ void App::UpdateConsole(u64 down, u64 held) {
         }
         return;
     }
-    if (down & HidNpadButton_X) {
+    if (down & HidNpadButton_Minus) {
         bool base = false;
         for (size_t i = 0; i < items.size(); i++) {
             if (m_console_marks[i] && items[i].type == NcmContentMetaType_Application) base = true;

@@ -479,7 +479,8 @@ void App::DrawWizard(NVGcontext* vg) {
                     {{ui::glyph::A, s.choose, HidNpadButton_A},
                      {ui::glyph::X, code_shown ? s.new_code : s.search_again, HidNpadButton_X},
                      {ui::glyph::L, s.back, HidNpadButton_L},
-                     {ui::glyph::R, s.wiz_skip, HidNpadButton_R}},
+                     {ui::glyph::R, s.wiz_skip, HidNpadButton_R},
+                     {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
                     m_hint_rects);
         return;
     }
@@ -677,6 +678,7 @@ void App::DrawWizard(NVGcontext* vg) {
     if (m_wiz_step > 0) hints.push_back({ui::glyph::L, s.back, HidNpadButton_L});
     hints.push_back({ui::glyph::R, m_wiz_step == kSteps - 1 ? s.wiz_start : s.wiz_next, HidNpadButton_R});
     hints.push_back({ui::glyph::Minus, s.wiz_music, HidNpadButton_Minus});
+    hints.push_back({ui::glyph::Plus, s.exit, HidNpadButton_Plus});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
 

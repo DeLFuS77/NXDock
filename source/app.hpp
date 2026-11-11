@@ -57,7 +57,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -245,6 +245,7 @@ private:
     unsigned m_mods_version = 0;
     int m_mods_game = -1, m_mods_pick = 0, m_mods_side = 0, m_mods_focus = 0;
     bool m_mods_from_detail = false; // opened from the page of a game: B goes back there
+    bool m_detail_from_console = false; // the page of a game opened from In the console: B goes back there
     // saver mode: dark after a minute without input while installing
     void DrawSaver(NVGcontext* vg);
     double m_last_input = 0;
@@ -279,6 +280,7 @@ private:
     bool m_az_touch = false;
     int m_jump_letter = -1;
     double m_jump_at = -100;
+    double m_rstick_at = -100;    // the right stick last moved the library: its click is not the WiFi then
     std::string m_keep_key;      // the game to keep in focus when the view is rebuilt
     bool m_focus_restored = false;
     void FollowLink();
@@ -329,6 +331,9 @@ private:
     void DrawDialog(NVGcontext* vg);
     void UpdateDialog(u64 down, u64 held);
     void ConfirmDialog();
+    // A third button some questions have between Cancel and the action (-1 none), and its use.
+    int DialogExtra(u64& mask) const;
+    void DialogExtraChosen();
     // Applies what a finished job installed, and the speed test to the downloads.
     void FollowQueue();
     void DrawSettings(NVGcontext* vg);
@@ -366,6 +371,7 @@ private:
     bool m_detail = false;
     int m_detail_game = -1;
     int m_detail_focus = 0;
+    int m_detail_first = 0;          // the first row of its list in sight
     std::vector<char> m_detail_pick;
     bool m_to_nand = false;
     std::string m_sd_free;
@@ -453,7 +459,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
