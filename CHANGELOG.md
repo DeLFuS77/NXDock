@@ -180,3 +180,23 @@
   "Turn the screen off for long queues" next to the saver mode, tells those
   without the library app that More installs without it, and its walk ends
   on More.
+- Only what is missing is installed: parts the console already has are kept,
+  or copied from the other storage.
+- Check the SD card (More › Space and dumps): fake cards, parts that fail
+  and the real speed, quick or full.
+- The save goes to the library before an update, a repair, a removal or
+  another version; a copy that fails asks first.
+- Before an update, the cheats and mods that stop working with the new
+  build are named.
+- Another version from the page of a game: an older update in place of the
+  installed one, all or nothing.
+- The queue seen live in the library app, paused or cancelled from there
+  (the console asks first), and a message to the phone when it ends.
+- An install cut by the console going off goes on where it stopped, or is
+  discarded leaving nothing behind.
+- Clean leftovers also takes unfinished installs of other tools, and updates
+  and DLC whose game is gone.
+- Compress games (experimental, More › Space and dumps): installed games
+  compressed with the LZ4 layer of the NCA; a game with its update merged
+  with it into one and compressed; its DLC in the same step; newer updates
+  merged by themselves; Undo from the library. See docs/compress-games.md.

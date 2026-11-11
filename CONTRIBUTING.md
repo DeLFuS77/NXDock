@@ -24,7 +24,10 @@ contributions are accepted under the same license.
    The interface is in `source/` (`app.cpp`, `ui.cpp` and the screens of More in `more_*.cpp`), drawn with deko3d and
    nanovg. The install core is yati from Sphaira, in `source/yati` and `include/yati`, changed for NXDock where it is
    marked `NXDock:`; `compat/` is the layer that takes the place of the rest of Sphaira. The texts of the interface
-   are in `source/i18n.cpp` and `source/i18n_more.cpp`.
+   are in `source/i18n.cpp` and `source/i18n_more.cpp`. Compress games is in `compress_nx.cpp` (on the console) and
+   in plain C++ tested on the computer: `romfs_lz4` and `lz4nintendo` (the LZ4 layer), `patch_view` (a game read
+   with its update), `merge_pack`, `merge_nca`, `merge_game` and `merge_meta` (the merged game) and `merge_recipe`
+   (newer updates).
 
 3. Open a pull request against `main`, saying what it changes and why. The build, the tests and CodeQL must pass
    before it is merged.

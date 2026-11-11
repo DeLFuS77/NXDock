@@ -54,9 +54,13 @@ queue that shows every stage of an install. It works with the buttons and with t
   XCZ travel compressed and their blocks are decompressed on three threads while the next ones download. A dropped
   connection goes on from where it stopped.
 - **Safe installs.** All or nothing: the free space and the firmware are checked first, every part is checked against
-  its SHA-256 before anything is registered, and a failed or cancelled install leaves nothing behind. The SD card is
-  the default; the internal memory is used only after a question. NXDock never reads your `prod.keys` and never
-  installs firmware or sigpatches.
+  its SHA-256 before anything is registered, and a failed or cancelled install leaves nothing behind. Parts the
+  console already has are kept, so only what is missing comes. An install cut because the console went off goes on
+  where it stopped. The SD card is the default; the internal memory is used only after a question. Installing never
+  reads your `prod.keys`, and NXDock never installs firmware or sigpatches.
+- **Your saves first.** Before an update, a repair, a removal or going back to another version, the save of the game
+  is copied to your library. Before an update, NXDock also says which of your cheats and mods stop working with the
+  new build.
 - **The extra compression of NXPress.** NSZ and XCZ made with the extra compression of
   [NXPress](https://github.com/DeLFuS77/NXPress) (NCZSECT2 and NCZSECT3) install as they are.
 - **A queue you can watch.** The game being installed, large, with its four stages: network, decompress, write and
@@ -66,7 +70,9 @@ queue that shows every stage of an install. It works with the buttons and with t
   reads an installed game and compares every part with its SHA-256, and "Repair" downloads only the damaged parts.
   "Undo" removes what was installed in this session, and the history keeps every install with its time and speed.
 - **Send to the console from the web.** A game sent from the library app shows on the console with who sent it, and
-  nothing is installed until you accept.
+  nothing is installed until you accept. The queue can be followed live in the library app, paused or cancelled from
+  there (the console asks first), and a message can reach your phone when it ends.
+- **Another version.** The page of a game can put an older update in place of the installed one, all or nothing.
 - **Clear errors.** A failed install says what happened and what to do, with a code to look up.
 
 | The page of a game | More: the tools |
@@ -83,8 +89,12 @@ queue that shows every stage of an install. It works with the buttons and with t
 - **Shops** of the kind of Tinfoil and Ownfoil open as another library.
 - **Saves:** copy the save of a game to your library and restore it later, always after a question; the save it
   replaces is kept first.
-- **Space and dumps:** clean leftovers, archive games (the icon stays on the HOME menu), move a game between the SD
-  card and the internal memory, and dump the game card or an installed game to your library.
+- **Space and dumps:** clean leftovers (also unfinished installs of other tools, and updates and DLC whose game is
+  gone), archive games (the icon stays on the HOME menu), move a game between the SD card and the internal memory,
+  and dump the game card or an installed game to your library.
+- **Check the SD card** (in Space and dumps): finds fake cards, parts of the card that fail, and its real speed,
+  with a quick or a full check.
+- **Compress games (experimental):** installed games take less room on the console. See below.
 - **Cheats and mods:** the cheats your library has for the version on the console, and `.zip` mod packages, each with
   a switch. Removing a mod takes away only what it wrote.
 
@@ -94,6 +104,23 @@ language, the theme, where to install and the notices, and ends with a short wal
 
 <p align="center"><img src="docs/screenshots/wizard-dark.png" alt="The first-run wizard: where to install by default and what a game's page ticks" width="80%"></p>
 
+## Compress games (experimental)
+
+Off until you turn it on, in More › Space and dumps. NXDock measures each installed game from a sample of its data and
+offers the ones that save 10 % or more:
+
+- **A game on its own** is compressed in place with the LZ4 layer that Nintendo uses in some of its games.
+- **A game with its update** is merged with it into one game and compressed: what the update no longer reads is left
+  out, and what it reads more than once is kept once. A game and its update can take far less room this way.
+- **Its DLC** are compressed in the same step.
+- **A newer update** installed with NXDock over a merged game is merged by itself when it ends.
+- **Undo** installs the original game, its update and its DLC again from your library.
+
+A compressed game is no longer signed by Nintendo: it starts only with sigpatches, and official updates must not be
+installed over a merged game. Read [Compress games](docs/compress-games.md) before turning it on.
+
+![An illustration of Compress games: the list, the question, the work, an update from the eShop and Undo](docs/compress-games.gif)
+
 ## Requirements
 
 - A Nintendo Switch that runs homebrew, with [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere). An emuMMC is
@@ -101,6 +128,8 @@ language, the theme, where to install and the notices, and ends with a short wal
   Nintendo's servers.
 - To install from your library: [Switch Library Manager Web](https://github.com/DeLFuS77/switch-library-manager-web)
   on a computer, a NAS or Docker in the same network, with **Install over the network** turned on in its Settings.
+- For Compress games: firmware 12 or newer, sigpatches, and your `prod.keys` at `sdmc:/switch/prod.keys` (read only
+  to compress, kept in memory, never shown or saved).
 - Open NXDock with the full memory of a game (hold R while opening a game, then choose NXDock), not from the album:
   it gets larger network buffers and installs faster. It also works from the album, more slowly, and says so.
 
@@ -159,7 +188,10 @@ tools/test.sh    # the tests that need no console
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is laid out. Tested with DBI as a reference.
 
-The screenshots show made-up games.
+The screenshots show made-up games. The animation of Compress games is an illustration drawn for this page, also
+with made-up games.
+
+More: [the documentation](docs/README.md).
 
 ## Credits
 
