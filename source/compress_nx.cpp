@@ -94,6 +94,37 @@ struct Storage {
     }
 };
 
+// The game a title belongs to: its update is the game's ID with 0x800, its DLC the next 0x1000 block.
+u64 GameOf(u64 id, u8 type) {
+    if (type == NcmContentMetaType_Patch) return id & ~u64(0x800);
+    if (type == NcmContentMetaType_AddOnContent) return (id - 0x1000) & ~u64(0xFFF);
+    return id;
+}
+
+// The keys of one type in a database whose ID is in [lo, hi], and of the game `app` (0: any). The
+// filter by game is done here: ncm does not filter updates and DLC by their game on every firmware,
+// and then every game seemed to have the update or the DLC of another.
+std::vector<NcmContentMetaKey> KeysOf(NcmContentMetaDatabase* db, u8 type, u64 app, u64 lo, u64 hi) {
+    std::vector<NcmContentMetaKey> keys(64), out;
+    s32 total = 0, written = 0;
+    if (R_FAILED(ncmContentMetaDatabaseList(db, &total, &written, keys.data(), s32(keys.size()), NcmContentMetaType(type), 0, lo, hi,
+                                            NcmContentInstallType_Full))) {
+        return out;
+    }
+    if (total > written) {
+        keys.resize(size_t(total));
+        if (R_FAILED(ncmContentMetaDatabaseList(db, &total, &written, keys.data(), s32(keys.size()), NcmContentMetaType(type), 0, lo, hi,
+                                                NcmContentInstallType_Full))) {
+            return out;
+        }
+    }
+    for (s32 i = 0; i < written && size_t(i) < keys.size(); i++) {
+        const auto& k = keys[size_t(i)];
+        if (k.type == type && k.id >= lo && k.id <= hi && (app == 0 || GameOf(k.id, k.type) == app)) out.push_back(k);
+    }
+    return out;
+}
+
 // The game in a storage: its key, its program and its CNMT.
 struct GameContents {
     NcmContentMetaKey key{};
@@ -103,14 +134,9 @@ struct GameContents {
 };
 
 bool FindGame(Storage& s, u64 app, GameContents& g) {
-    NcmContentMetaKey keys_found[4];
-    s32 total = 0, written = 0;
-    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 4, NcmContentMetaType_Application, app, app, app,
-                                            NcmContentInstallType_Full)) ||
-        written < 1) {
-        return false;
-    }
-    g.key = keys_found[0];
+    const auto found = KeysOf(&s.db, NcmContentMetaType_Application, app, app, app);
+    if (found.empty()) return false;
+    g.key = found[0];
     NcmContentInfo infos[16];
     s32 n = 0;
     if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, infos, 16, &g.key, 0))) return false;
@@ -161,11 +187,7 @@ bool HasUpdate(u64 app) {
     for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
         NcmContentMetaDatabase db{};
         if (R_FAILED(ncmOpenContentMetaDatabase(&db, sid))) continue;
-        NcmContentMetaKey key{};
-        s32 total = 0, written = 0;
-        const bool found = R_SUCCEEDED(ncmContentMetaDatabaseList(&db, &total, &written, &key, 1, NcmContentMetaType_Patch, app, 0, UINT64_MAX,
-                                                                  NcmContentInstallType_Full)) &&
-                           written > 0;
+        const bool found = !KeysOf(&db, NcmContentMetaType_Patch, app, app | 0x800, app | 0x800).empty();
         ncmContentMetaDatabaseClose(&db);
         if (found) return true;
     }
@@ -178,11 +200,7 @@ unsigned UpdateVersion(u64 app) {
     for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
         NcmContentMetaDatabase db{};
         if (R_FAILED(ncmOpenContentMetaDatabase(&db, sid))) continue;
-        NcmContentMetaKey key{};
-        s32 total = 0, written = 0;
-        if (R_SUCCEEDED(ncmContentMetaDatabaseList(&db, &total, &written, &key, 1, NcmContentMetaType_Patch, app, 0, UINT64_MAX,
-                                                   NcmContentInstallType_Full)) &&
-            written > 0) {
+        for (const auto& key : KeysOf(&db, NcmContentMetaType_Patch, app, app | 0x800, app | 0x800)) {
             version = std::max(version, unsigned(key.version));
         }
         ncmContentMetaDatabaseClose(&db);
@@ -363,25 +381,21 @@ struct Pair {
 };
 
 bool FindPair(Storage& s, u64 app, Pair& p) {
-    NcmContentMetaKey keys_found[8];
-    s32 total = 0, written = 0;
-    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Application, app, app, app,
-                                            NcmContentInstallType_Full)) ||
-        written < 1) {
+    const auto bases = KeysOf(&s.db, NcmContentMetaType_Application, app, app, app);
+    if (bases.empty()) {
         log_write("[NXDock] %016llX: no game in this storage\n", (unsigned long long)app);
         return false;
     }
-    p.base = keys_found[0];
+    p.base = bases[0];
     const u64 patch_id = app | 0x800;
-    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Patch, app, patch_id, patch_id,
-                                            NcmContentInstallType_Full)) ||
-        written < 1) {
+    const auto patches = KeysOf(&s.db, NcmContentMetaType_Patch, app, patch_id, patch_id);
+    if (patches.empty()) {
         log_write("[NXDock] %016llX: no update in this storage\n", (unsigned long long)app);
         return false;
     }
-    p.patch = keys_found[0];
-    for (s32 i = 1; i < written; i++) {
-        if (keys_found[i].version > p.patch.version) p.patch = keys_found[i];
+    p.patch = patches[0];
+    for (const auto& k : patches) {
+        if (k.version > p.patch.version) p.patch = k;
     }
     if (!Contents(s, p.base, p.base_infos) || !Contents(s, p.patch, p.patch_infos)) return false;
     // a game of several programs is not merged: only the first is, and the others (patches that
@@ -1423,14 +1437,9 @@ void EstimateNca(Storage& s, const keys::Keys& k, const GameContents& g, const s
 
 // A DLC in a storage: its key and its data content (found by its own ID).
 bool FindAddOn(Storage& s, u64 id, GameContents& g) {
-    NcmContentMetaKey key{};
-    s32 total = 0, written = 0;
-    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, &key, 1, NcmContentMetaType_AddOnContent, (id & ~u64(0xFFF)) ^ 0x1000, id, id,
-                                            NcmContentInstallType_Full)) ||
-        written < 1) {
-        return false;
-    }
-    g.key = key;
+    const auto found = KeysOf(&s.db, NcmContentMetaType_AddOnContent, 0, id, id);
+    if (found.empty()) return false;
+    g.key = found[0];
     NcmContentInfo infos[16];
     s32 n = 0;
     if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, infos, 16, &g.key, 0))) return false;
@@ -1452,21 +1461,9 @@ bool FindAddOn(Storage& s, u64 id, GameContents& g) {
 
 // The DLC of a game in a storage, by their IDs.
 std::vector<u64> AddOnsOf(Storage& s, u64 app) {
-    std::vector<NcmContentMetaKey> found(64);
-    s32 total = 0, written = 0;
+    // the DLC of a game are in the block after it: (game + 0x1000) to (game + 0x1FFF)
     std::vector<u64> ids;
-    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, found.data(), s32(found.size()), NcmContentMetaType_AddOnContent, app, 0,
-                                            UINT64_MAX, NcmContentInstallType_Full))) {
-        return ids;
-    }
-    if (total > written) {
-        found.resize(size_t(total));
-        if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, found.data(), s32(found.size()), NcmContentMetaType_AddOnContent, app, 0,
-                                                UINT64_MAX, NcmContentInstallType_Full))) {
-            return ids;
-        }
-    }
-    for (s32 i = 0; i < written; i++) ids.push_back(found[size_t(i)].id);
+    for (const auto& k : KeysOf(&s.db, NcmContentMetaType_AddOnContent, app, app + 0x1000, app + 0x1FFF)) ids.push_back(k.id);
     return ids;
 }
 
