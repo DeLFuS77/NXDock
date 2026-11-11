@@ -134,6 +134,7 @@ void App::DrawMods(NVGcontext* vg) {
             ui::FillRound(vg, 40, fy, kWidth - 80, 46, 10, t.panel2);
             ui::Focus(vg, t, 40, fy, kWidth - 80, 46, 10, m_time);
         }
+        ListArea(40, 130, kWidth - 80, 9 * 52.f, 52);
         for (int r = 0; r < 9 && first + r < int(rows.size()); r++) {
             const auto& a = v.apps[size_t(rows[size_t(first + r)])];
             const float y = 130 + r * 52;

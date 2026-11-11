@@ -808,6 +808,9 @@ void App::ReadTouch(u64& down) {
             m_touch_x0 = x;
             m_touch_y0 = y;
             m_drag_scroll0 = m_scroll;
+            // a list drawn last frame under the finger: dragged, it moves its focus row by row
+            m_list_drag = m_list_pitch > 0 && m_dialog.kind == DialogKind::None && !m_menu && !m_wifi_open && m_list_area.Contains(x, y);
+            m_drag_steps = 0;
             // the A-Z bar on the right edge: tapped or dragged along, it jumps to the letter
             m_az_touch = AzBarShown() && m_dialog.kind == DialogKind::None && !m_menu && x >= kAzTouchX &&
                          y >= kAzTop - 8 && y < kAzTop + g_az_height + 8;
@@ -819,12 +822,18 @@ void App::ReadTouch(u64& down) {
             JumpToLetter(slot, 0);
             return;
         }
-        const bool in_grid = GridTab() && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + g_view_h;
-        if (!m_dragging && std::fabs(y - m_touch_y0) > kDragSlop && in_grid) {
+        const bool in_grid = GridTab() && !m_detail && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + g_view_h;
+        if (!m_dragging && std::fabs(y - m_touch_y0) > kDragSlop && (in_grid || m_list_drag)) {
             m_dragging = true;
+            if (m_list_drag) ListDragStarts();
         }
-        if (m_dragging) {
-            // The list follows the finger.
+        if (m_dragging && m_list_drag) {
+            // a row dragged up shows the next one: the focus goes down by one, as with the pad
+            const int steps = int((m_touch_y0 - y) / m_list_pitch);
+            m_drag_pending += steps - m_drag_steps;
+            m_drag_steps = steps;
+        } else if (m_dragging) {
+            // The grid follows the finger.
             m_scroll = m_scroll_target = std::clamp(m_drag_scroll0 - (y - m_touch_y0), 0.f, MaxScroll());
         }
     } else if (m_touching && m_az_touch) {
@@ -836,7 +845,15 @@ void App::ReadTouch(u64& down) {
             Tap(m_touch_x, m_touch_y, down);
         }
         m_dragging = false;
+        m_list_drag = false;
     }
+}
+
+void App::ListDragStarts() {
+    // the screens with a side list too: the one dragged takes the focus
+    if (m_tab != Tab::More) return;
+    if (m_more == MoreScreen::Files) m_files_side = false;
+    if (m_more == MoreScreen::Saves) m_vault_side = 0;
 }
 
 void App::Tap(float x, float y, u64& down) {
@@ -889,8 +906,12 @@ void App::Tap(float x, float y, u64& down) {
                 }
                 break;
             case HitKind::Remember: down |= HidNpadButton_Y; break;
-            case HitKind::DetailRow:
             case HitKind::Install:
+                // the button acts at once, as a button of a question does
+                m_detail_focus = it->index;
+                down |= HidNpadButton_A;
+                break;
+            case HitKind::DetailRow:
                 if (m_detail_focus == it->index) {
                     down |= HidNpadButton_A;
                 } else {
@@ -1232,6 +1253,15 @@ bool App::Frame() {
     }
     const u64 focus_before = FocusSignature();
     ReadTouch(down);
+    // a list being dragged: one row a frame, as a press of the pad
+    if (m_drag_pending > 0 && !(down & HidNpadButton_AnyDown)) {
+        down |= HidNpadButton_Down;
+        m_drag_pending--;
+    } else if (m_drag_pending < 0 && !(down & HidNpadButton_AnyUp)) {
+        down |= HidNpadButton_Up;
+        m_drag_pending++;
+    }
+    if (m_dialog.kind != DialogKind::None || m_menu) m_drag_pending = 0;
     GridSize(m_ui.library_size);
     Update(down, held);
     FollowPreflight();
@@ -1333,6 +1363,7 @@ void App::AddHints(const std::vector<ui::HitRect>& rects) {
 void App::Draw(NVGcontext* vg) {
     m_hits.clear();
     m_hint_rects.clear();
+    m_list_pitch = 0; // set again by the list drawn, if any
     Background(vg, m_theme);
     // the slow lights behind, paused while installing on little battery
     if (!(m_queue && m_queue->Busy() && m_battery >= 0 && m_battery < 20 && !m_charging)) ui::Aurora(vg, m_theme);
@@ -2463,6 +2494,7 @@ void App::DrawDetail(NVGcontext* vg) {
     const float list_h = std::min({float(rows.size()) * lh + 12, 250.f, std::max(2 * lh + 12, 664 - 14 - 52 - 18 - 64 - 16 - ly)});
     ui::FillRound(vg, rx, ly, rw, list_h, 12, Hex(0, t.dark ? 0.22f : 0.03f));
     ui::StrokeRound(vg, rx + .5f, ly + .5f, rw - 1, list_h - 1, 12, t.line, 1);
+    ListArea(rx, ly, rw, list_h, lh);
     nvgSave(vg);
     nvgScissor(vg, rx, ly, rw, list_h);
     // keep the row in focus in sight; on Install the list stays where it was
@@ -3480,6 +3512,7 @@ void App::DrawQueue(NVGcontext* vg) {
         ErrorCard(vg, t, 48, 650 - card_h, kWidth - 96, card_text, true);
     }
     const float pitch = 54;
+    ListArea(48, 98, kWidth - 96, list_bottom - 98, pitch);
     const int visible = std::max(1, int((list_bottom - list_top - 34) / pitch));
     const int focus_in_list = std::max(0, m_queue_focus - first_row);
     const int skip = std::max(0, focus_in_list - visible + 1);
@@ -4030,6 +4063,7 @@ void App::DrawSession(NVGcontext* vg) {
     m_installed_focus = std::clamp(m_installed_focus, 0, int(items.size()) - 1);
     const float top = 148, pitch = 72;
     const int visible = 5;
+    ListArea(48, top, kWidth - 96, visible * pitch, pitch);
     const int first = std::clamp(m_installed_focus - visible + 1, 0, std::max(0, int(items.size()) - visible));
     for (int r = first; r < int(items.size()) && r < first + visible; r++) {
         const SessionItem& i = items[r];
@@ -4170,6 +4204,7 @@ void App::DrawHistory(NVGcontext* vg) {
     m_installed_focus = std::clamp(m_installed_focus, 0, int(m_history.size()) - 1);
     const float list_top = 196, pitch = 64;
     const int visible = 7;
+    ListArea(48, list_top, kWidth - 96, visible * pitch, pitch);
     const int first = std::clamp(m_installed_focus - visible + 1, 0, std::max(0, int(m_history.size()) - visible));
     for (int r = first; r < int(m_history.size()) && r < first + visible; r++) {
         const HistoryEntry& e = m_history[r];
@@ -4739,10 +4774,12 @@ void App::DrawDialog(NVGcontext* vg) {
     const float w = 740, pad = 32, iw = w - 2 * pad;
     const int shown = std::min<int>(int(lines.size()), m_dialog.kind == DialogKind::HistoryInfo ? 8 : 5);
     const bool more = int(lines.size()) > shown;
+    // rows a finger chooses are 48 px high; the others 40
+    const float lp = std::any_of(lines.begin(), lines.end(), [](const Line& l) { return l.hit >= 0; }) ? 48.f : 40.f;
     float h = pad + 40;
     const float body_h = body.empty() ? 0 : TextBoxHeight(vg, iw, 17, body.c_str()) + 16;
     const float note_h = note.empty() ? 0 : TextBoxHeight(vg, iw, 15, note.c_str()) + 14;
-    const float list_h = lines.empty() ? 0 : shown * 40 + (more ? 30 : 0) + 12 + 16;
+    const float list_h = lines.empty() ? 0 : shown * lp + (more ? 30 : 0) + 12 + 16;
     const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
     h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + 60 + pad - 8;
     const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
@@ -4772,20 +4809,20 @@ void App::DrawDialog(NVGcontext* vg) {
         cy += body_h;
     }
     if (!lines.empty()) {
-        const float lh = shown * 40 + (more ? 30 : 0) + 12;
+        const float lh = shown * lp + (more ? 30 : 0) + 12;
         ui::FillRound(vg, x + pad, cy, iw, lh, 12, t.panel2);
         ui::StrokeRound(vg, x + pad + .5f, cy + .5f, iw - 1, lh - 1, 12, t.line, 1);
         for (int i = 0; i < shown; i++) {
             const Line& l = lines[i];
-            const float ly = cy + 6 + i * 40 + 20;
+            const float ly = cy + 6 + i * lp + lp / 2;
             if (l.focus) {
-                ui::FillRound(vg, x + pad + 4, ly - 18, iw - 8, 36, 8, t.panel);
-                ui::StrokeRound(vg, x + pad + 4, ly - 18, iw - 8, 36, 8, t.work, 2.5f);
+                ui::FillRound(vg, x + pad + 4, ly - lp / 2 + 2, iw - 8, lp - 4, 8, t.panel);
+                ui::StrokeRound(vg, x + pad + 4, ly - lp / 2 + 2, iw - 8, lp - 4, 8, t.work, 2.5f);
             }
-            if (l.hit >= 0) AddHit(x + pad, ly - 20, iw, 40, HitKind::DialogLine, l.hit);
+            if (l.hit >= 0) AddHit(x + pad, ly - lp / 2, iw, lp, HitKind::DialogLine, l.hit);
             if (i > 0) {
                 nvgBeginPath(vg);
-                nvgRect(vg, x + pad + 14, ly - 20, iw - 28, 1);
+                nvgRect(vg, x + pad + 14, ly - lp / 2, iw - 28, 1);
                 nvgFillColor(vg, t.line);
                 nvgFill(vg);
             }
@@ -4813,7 +4850,7 @@ void App::DrawDialog(NVGcontext* vg) {
                 tx += 30;
             }
             nvgSave(vg);
-            nvgScissor(vg, tx, ly - 20, iw - 32 - rw - 140, 40);
+            nvgScissor(vg, tx, ly - lp / 2, iw - 32 - rw - 140, lp);
             tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, l.text.c_str());
             const bool colored = m_dialog.kind == DialogKind::HistoryInfo || m_dialog.kind == DialogKind::Verify ||
                                  m_dialog.kind == DialogKind::PreCheck;
@@ -4830,7 +4867,7 @@ void App::DrawDialog(NVGcontext* vg) {
         if (more) {
             char text[48];
             std::snprintf(text, sizeof(text), s.more_count, int(lines.size()) - shown);
-            ui::Text(vg, x + pad + 16, cy + 6 + shown * 40 + 14, 15, t.muted, text);
+            ui::Text(vg, x + pad + 16, cy + 6 + shown * lp + 14, 15, t.muted, text);
         }
         cy += lh + 16;
     }

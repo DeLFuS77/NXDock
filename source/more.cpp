@@ -459,7 +459,7 @@ void App::DrawFiles(NVGcontext* vg) {
     for (int i = 0; i < int(m_place_roots.size()); i++) {
         const float y = 118 + i * 50;
         const bool on = i == m_place;
-        AddHit(14, y, kSideW - 28, 42, HitKind::MorePlace, i);
+        AddHit(14, y - 3, kSideW - 28, 48, HitKind::MorePlace, i); // 48 px for a finger
         nvgSave(vg);
         nvgScissor(vg, 24, y, kSideW - 48, 42);
         ui::Text(vg, 28, y + 21, 16, on ? t.text : t.muted, m_place_names[i].c_str());
@@ -487,6 +487,7 @@ void App::DrawFiles(NVGcontext* vg) {
         ui::FillRound(vg, lx, fy, lw, 44, 10, t.panel2);
         if (!m_files_side) ui::Focus(vg, t, lx, fy, lw, 44, 10, m_time);
     }
+    ListArea(lx, kRowTop, lw, kVisibleRows * kRowPitch, kRowPitch);
     for (int r = 0; r < kVisibleRows && m_file_first + r < int(m_entries.size()); r++) {
         const int i = m_file_first + r;
         const auto& e = m_entries[i];
@@ -496,10 +497,10 @@ void App::DrawFiles(NVGcontext* vg) {
         nvgSave(vg);
         nvgTranslate(vg, -(1 - in) * 24, 0);
         nvgGlobalAlpha(vg, in);
-        AddHit(lx + 50, y, lw - 50, 44, HitKind::MoreRow, i);
+        AddHit(lx + 50, y - 2, lw - 50, 48, HitKind::MoreRow, i);
         if (!e.dir) {
             draw::TickBox(vg, t, lx + 14, cy, m_marked[i], "file:" + e.path);
-            AddHit(lx, y, 50, 44, HitKind::MoreMark, i);
+            AddHit(lx, y - 2, 50, 48, HitKind::MoreMark, i);
         }
         if (e.dir) draw::FolderIcon(vg, t, lx + 54, cy);
         else draw::FileIcon(vg, t, lx + 54, cy);

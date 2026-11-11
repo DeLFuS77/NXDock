@@ -347,6 +347,18 @@ private:
     void KeepFocusVisible();
     float MaxScroll() const;
 
+    // The list on screen that a finger drags (set while drawing): each row dragged moves its focus
+    // by one, as the pad does; taps keep working.
+    void ListArea(float x, float y, float w, float h, float pitch) {
+        m_list_area = {x, y, w, h, 0};
+        m_list_pitch = pitch;
+    }
+    void ListDragStarts();
+    ui::HitRect m_list_area{};
+    float m_list_pitch = 0;
+    bool m_list_drag = false;
+    int m_drag_steps = 0, m_drag_pending = 0;
+
     void AddHit(float x, float y, float w, float h, HitKind kind, int index = 0) {
         m_hits.push_back({{x, y, w, h, 0}, kind, index});
     }

@@ -161,7 +161,7 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
             if (on) ui::FillRound(vg, x, 80, w, 24, 12, t.work);
             else ui::StrokeRound(vg, x, 80, w, 24, 12, t.line, 1.f);
             ui::Text(vg, x + w / 2, 92, 13, on ? t.on_work : t.muted, names[i], NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            AddHit(x - 2, 72, w + 4, 40, HitKind::ConsoleSize, i);
+            AddHit(x - 2, 72, w + 4, 48, HitKind::ConsoleSize, i); // 48 px for a finger
             x -= 6;
         }
     }
@@ -171,6 +171,7 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
     }
     const float top = 148, pitch = 72;
     const int visible = 7;
+    ListArea(48, top, kWidth - 96, visible * pitch, pitch);
     const int first = std::clamp(m_console_focus - visible / 2, 0, std::max(0, int(v.apps.size()) - visible));
     for (int r = first; r < int(v.apps.size()) && r < first + visible; r++) {
         const InstalledApp& a = v.apps[size_t(r)];
@@ -239,6 +240,7 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
     const int row = m_console_focus / cols;
     // the row in focus whole in sight
     const int fit = std::max(1, int((bottom - top) / pitch));
+    ListArea(0, top, kWidth, bottom - top, pitch);
     const int first = std::clamp(row - fit + 1, 0, std::max(0, rows - fit));
     nvgSave(vg);
     nvgScissor(vg, 0, top - 8, kWidth, bottom - top + 8);
@@ -348,6 +350,7 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
 
     const float top = 178, pitch = 56;
     const int visible = 7;
+    ListArea(x0, top, w, visible * pitch, pitch);
     const int first = std::clamp(m_console_item - visible + 1, 0, std::max(0, int(items.size()) - visible));
     unsigned long long freed = 0;
     int marked = 0;

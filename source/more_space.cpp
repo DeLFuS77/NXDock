@@ -364,6 +364,7 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
         ui::FillRound(vg, 40, fy, kWidth - 80, 46, 10, t.panel2);
         ui::Focus(vg, t, 40, fy, kWidth - 80, 46, 10, m_time);
     }
+    ListArea(40, top, kWidth - 80, rows * pitch, pitch);
     for (int r = 0; r < rows && m_pick_first + r < int(m_pick_rows.size()); r++) {
         const int i = m_pick_first + r;
         const auto& a = v.apps[size_t(m_pick_rows[size_t(i)].first)];

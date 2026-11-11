@@ -115,6 +115,7 @@ void App::DrawVault(NVGcontext* vg) {
         ui::FillRound(vg, 14, fy, kLeftW - 28, 58, 10, t.panel2);
         if (m_vault_side == 0) ui::Focus(vg, t, 14, fy, kLeftW - 28, 58, 10, m_time);
     }
+    ListArea(14, 118, kLeftW - 28, rows * 64.f, 64);
     for (int r = 0; r < rows && first + r < int(m_vault_saves.size()); r++) {
         const int i = first + r;
         const auto& sv = m_vault_saves[i];
