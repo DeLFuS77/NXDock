@@ -689,7 +689,9 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
     GameEstimate::Why why{};
     if (!OpenMerger(s, k, p, o, merger, why)) {
         // a newer update over a merged game that needs its base game, which the library has not
-        error = why == GameEstimate::Why::Update ? Packed(m.cz_base_t, m.cz_base_d) : Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+        error = why == GameEstimate::Why::Update                  ? Packed(m.cz_base_t, m.cz_base_d)
+                : why == GameEstimate::Why::Key && !k.from_file ? Packed(m.cz_keys_t, m.cz_keys_d)
+                                                                  : Packed(m.cz_unsupported_t, m.cz_unsupported_d);
         return;
     }
     std::string what;
@@ -1001,7 +1003,7 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
         };
         const auto marks = Marks();
         keys::Keys k;
-        const bool ready = R_SUCCEEDED(splCryptoInitialize()) && R_SUCCEEDED(keys::parse_keys(k, false)) && R_SUCCEEDED(ncmInitialize());
+        const bool ready = R_SUCCEEDED(splCryptoInitialize()) && R_SUCCEEDED(keys::parse_keys(k, true)) && R_SUCCEEDED(ncmInitialize());
         if (!ready) log_write("[NXDock] the keys or ncm could not be opened: nothing can be checked\n");
         std::vector<u8> work;
         // 1. every game, from the header of its program alone: fast, even with hundreds
@@ -1162,7 +1164,7 @@ std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, c
     keys::Keys k;
     Result rc = splCryptoInitialize();
     if (R_FAILED(rc)) return Packed(m.cz_failed_t, m.cz_failed_d, rc);
-    rc = keys::parse_keys(k, false);
+    rc = keys::parse_keys(k, true);
     if (R_SUCCEEDED(rc)) rc = ncmInitialize();
     if (R_FAILED(rc)) {
         splCryptoExit();
@@ -1221,7 +1223,7 @@ bool Compressor::StartCompress(unsigned long long app) {
         [&] {
             keys::Keys k;
             Result rc = splCryptoInitialize();
-            if (R_SUCCEEDED(rc)) rc = keys::parse_keys(k, false);
+            if (R_SUCCEEDED(rc)) rc = keys::parse_keys(k, true);
             if (R_SUCCEEDED(rc)) rc = ncmInitialize();
             if (R_FAILED(rc)) {
                 error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
@@ -1254,7 +1256,7 @@ bool Compressor::StartCompress(unsigned long long app) {
                 nca::Header copy = h;
                 keys::KeyEntry key;
                 if (R_FAILED(rc = nca::GetDecryptedTitleKey(copy, k, key))) {
-                    error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
+                    error = k.from_file ? Packed(m.cz_failed_t, m.cz_failed_d, rc) : Packed(m.cz_keys_t, m.cz_keys_d);
                     return;
                 }
                 const nca::FsHeader fh = h.fs_header[r];

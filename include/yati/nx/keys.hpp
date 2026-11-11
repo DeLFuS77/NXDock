@@ -25,6 +25,7 @@ struct Keys {
     KeySection master_key{};
     KeyEntry eticket_rsa_kek{};
     SetCalRsa2048DeviceKey eticket_device_key{};
+    bool from_file = false; // NXDock: prod.keys was found and read (Compress games only)
 
     static auto FixKey(u8 key) -> u8 {
         if (key) {

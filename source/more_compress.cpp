@@ -30,6 +30,13 @@ void App::OpenCompress() {
     }
     if (!m_compress) m_compress = std::make_unique<Compressor>();
     m_sigpatches = FindSigpatches("sdmc:");
+    m_prodkeys = false;
+    for (const char* path : {"sdmc:/switch/prod.keys", "sdmc:/prod.keys"}) {
+        if (FILE* f = std::fopen(path, "r")) {
+            std::fclose(f);
+            m_prodkeys = true;
+        }
+    }
     m_compress_opened = m_time;
     m_compress_focus = 0;
     m_space_mode = 3;
@@ -125,6 +132,8 @@ void App::DrawCompress(NVGcontext* vg) {
     } else {
         line(false, m.cz_sig_missing);
     }
+    // the keys of the tickets come from the user's prod.keys, read only here
+    line(m_prodkeys, m_prodkeys ? m.cz_keys_ok : m.cz_keys_missing);
     nvgRestore(vg);
 
     // ---- the right: the games, checked as soon as the console is read

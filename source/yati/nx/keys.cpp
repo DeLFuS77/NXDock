@@ -7,6 +7,9 @@
 #include <memory>
 #include <bit>
 #include <cstring>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
 
 namespace sphaira::keys {
 namespace {
@@ -40,9 +43,46 @@ Result parse_keys(Keys& out, bool read_from_file) {
     R_TRY(splCryptoGenerateAesKey(header_kek, HEADER_KEY_SRC, out.header_key));
     R_TRY(splCryptoGenerateAesKey(header_kek, HEADER_KEY_SRC + 0x10, out.header_key + 0x10));
 
-    // NXDock: the user's prod.keys is never read, so read_from_file is not used: only the
-    // header key comes from the console (spl). Common tickets need nothing more.
-    (void)read_from_file;
+    // NXDock: installing never reads the user's prod.keys (only the header key, from the console).
+    // Compress games does (read_from_file): the title keks and key area keys open the title key of
+    // a game's ticket. They stay in memory, are never shown, logged or written anywhere.
+    out.from_file = false;
+    if (read_from_file) {
+        for (const char* path : {"sdmc:/switch/prod.keys", "sdmc:/prod.keys"}) {
+            FILE* f = std::fopen(path, "r");
+            if (!f) continue;
+            char line[512];
+            while (std::fgets(line, sizeof(line), f)) {
+                char* eq = std::strchr(line, '=');
+                if (!eq) continue;
+                // the name, trimmed
+                char* end = eq;
+                while (end > line && (end[-1] == ' ' || end[-1] == '\t')) end--;
+                *end = 0;
+                char* hex = eq + 1;
+                while (*hex == ' ' || *hex == '\t') hex++;
+                size_t n = 0;
+                while (std::isxdigit((unsigned char)hex[n])) n++;
+                if (n != 32) continue;
+                const auto indexed = [&](const char* prefix, KeySection& section) {
+                    const size_t pl = std::strlen(prefix);
+                    if (std::strncmp(line, prefix, pl) != 0 || std::strlen(line) != pl + 2) return false;
+                    const unsigned long i = std::strtoul(line + pl, nullptr, 16);
+                    if (i >= section.size()) return false;
+                    parse_hex_key(&section[i], hex);
+                    return true;
+                };
+                if (indexed("titlekek_", out.titlekek) || indexed("master_key_", out.master_key) ||
+                    indexed("key_area_key_application_", out.key_area_key[0]) || indexed("key_area_key_ocean_", out.key_area_key[1]) ||
+                    indexed("key_area_key_system_", out.key_area_key[2])) {
+                    out.from_file = true;
+                }
+            }
+            std::fclose(f);
+            if (out.from_file) break;
+        }
+        log_write("[NXDock] prod.keys: %s\n", out.from_file ? "read (for Compress games)" : "not found in sdmc:/switch/");
+    }
 
     R_SUCCEED();
 }

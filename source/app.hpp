@@ -171,6 +171,7 @@ private:
     void ConfirmCompressDialog();
     std::unique_ptr<Compressor> m_compress;
     Sigpatches m_sigpatches;
+    bool m_prodkeys = false; // prod.keys on the SD card, for Compress games
     double m_compress_opened = 0;
     int m_compress_focus = 0, m_compress_finished = 0;
     unsigned long long m_compress_app = 0; // the game in focus: kept when the order changes

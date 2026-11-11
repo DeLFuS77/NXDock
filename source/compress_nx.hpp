@@ -21,6 +21,8 @@
 //  - The firmware the game needs is not raised (a merged game asks at least 12.0.0, the one of the
 //    LZ4 layer, as its CNMT is made again).
 //  - The NCA header is no longer signed by Nintendo: the game needs sigpatches (compress_meta).
+//  - The key of a game's ticket is opened with the user's prod.keys (sdmc:/switch/prod.keys), read only
+//    here, kept in memory, never shown or saved; without it the screen and the error say so.
 // An analysis first, from a sample of the RomFS of each game, says what it would save.
 #include "compress_meta.hpp"
 
