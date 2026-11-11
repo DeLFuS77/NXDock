@@ -246,9 +246,8 @@ std::vector<App::WizGroup> App::WizardGroups() {
             }
             break;
         case 2:
-            groups.push_back({"", {{s.sd_card, s.wiz_recommended, m_ui.dest == 0, WizKind::Choice},
-                                   {s.internal, s.wiz_asks_first, m_ui.dest == 1, WizKind::Choice},
-                                   {s.wiz_ask_each, "", m_ui.dest == 2, WizKind::Choice}}, 3});
+            groups.push_back({"", {{s.sd_card, s.wiz_recommended, m_ui.dest != 2, WizKind::Choice},
+                                   {s.wiz_ask_each, "", m_ui.dest == 2, WizKind::Choice}}, 2});
             groups.push_back({s.wiz_pick_label, {{s.wiz_pick_missing, s.wiz_pick_missing_sub, m_ui.pick == 0, WizKind::Choice},
                                                  {s.wiz_pick_base, "", m_ui.pick == 1, WizKind::Choice},
                                                  {s.wiz_pick_base_update, "", m_ui.pick == 2, WizKind::Choice}}, 3});
@@ -330,7 +329,7 @@ void App::ActivateWizard(int group, int item) {
             m_inventory_sent = ~0u;
             break;
         case 2:
-            if (group == 0) m_ui.dest = item;
+            if (group == 0) m_ui.dest = item == 1 ? 2 : 0;
             else m_ui.pick = item;
             m_ui.Save();
             break;

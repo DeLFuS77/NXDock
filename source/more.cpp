@@ -26,7 +26,7 @@ namespace {
 constexpr int kTiles = 8;
 constexpr float kTileGap = 18, kTileW = (kWidth - 96 - 3 * kTileGap) / 4, kTileH = 170;
 constexpr float kSideW = 250;
-constexpr float kRowTop = 134, kRowPitch = 50, kRowsBottom = 584;
+constexpr float kRowTop = 134, kRowPitch = 50, kRowsBottom = 576;
 constexpr int kVisibleRows = int((kRowsBottom - kRowTop) / kRowPitch);
 
 std::string BaseName(const std::string& path) {
@@ -543,25 +543,20 @@ void App::DrawFiles(NVGcontext* vg) {
             bytes += m_entries[i].size;
         }
     }
-    const float sy = 596, sh = 52;
-    draw::Panel(vg, t, lx, sy, lw, sh, 12);
-    AddHit(lx, sy, lw, sh, HitKind::Button);
-    m_hits.back().rect.button = HidNpadButton_ZR; // a tap on the strip changes where it goes
+    // what is marked, and where it goes in large: the SD card unless chosen for this install
+    const float sy = 586, sh = 64;
     char text[200];
-    std::snprintf(text, sizeof(text), m.marked_fmt, count, draw::Size(bytes).c_str(), m_files_nand ? s.internal : s.sd_card);
-    ui::CheckMark(vg, lx + 24, sy + sh / 2, 12, t.work, 2.4f);
-    ui::Text(vg, lx + 44, sy + sh / 2, 16, t.text, text);
-    const s64 free_bytes = m_files_nand ? m_nand_free_bytes : m_sd_free_bytes;
-    if (free_bytes >= 0) {
-        const unsigned long long left = u64(free_bytes) > bytes ? u64(free_bytes) - bytes : 0;
-        std::snprintf(text, sizeof(text), m.left_after_fmt, draw::Size(left).c_str());
-        ui::Text(vg, lx + lw - 18, sy + sh / 2, 15, u64(free_bytes) < bytes ? t.err : t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    }
+    std::snprintf(text, sizeof(text), m.marked_short_fmt, count, draw::Size(bytes).c_str());
+    const float mw = std::max(150.f, ui::TextWidth(vg, 16, text) + 40);
+    draw::Panel(vg, t, lx, sy, mw, sh, 12);
+    ui::CheckMark(vg, lx + 22, sy + sh / 2, 12, t.work, 2.4f);
+    ui::Text(vg, lx + 40, sy + sh / 2, 16, t.text, text);
+    DestCards(vg, lx + mw + 12, sy, lw - mw - 12, sh, m_files_nand, bytes, HitKind::FilesDest);
 
     std::vector<ui::Hint> hints = {{ui::glyph::Y, m.mark, HidNpadButton_Y},
                                    {ui::glyph::A, s.select, HidNpadButton_A},
                                    {ui::glyph::X, m.install_marked, HidNpadButton_X},
-                                   {ui::glyph::ZR, m.sd_or_internal, HidNpadButton_ZR},
+                                   {ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR},
                                    {ui::glyph::B, s.back, HidNpadButton_B}};
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
@@ -681,9 +676,11 @@ void App::DrawArrival(NVGcontext* vg) {
         }
     } else {
         draw::Box(vg, px + 26, y, pw - 52, 17, t.muted, m.usb_steps);
+        // where what arrives goes, in large: the SD card unless chosen
+        DestCards(vg, px + 20, py + ph - 84, pw - 40, 64, m_files_nand, 0, HitKind::FilesDest);
     }
     if (!m_more_error.empty()) {
-        draw::Box(vg, px + 26, py + ph - 70, pw - 52, 15, t.err, m_more_error.c_str());
+        draw::Box(vg, px + 26, py + ph - (mtp ? 70 : 150), pw - 52, 15, t.err, m_more_error.c_str());
     }
 
     // what is arriving
@@ -769,7 +766,7 @@ void App::DrawArrival(NVGcontext* vg) {
 
     std::vector<ui::Hint> hints;
     if (mtp && !mv.nand_allowed) hints.push_back({ui::glyph::X, m.allow_nand, HidNpadButton_X});
-    if (!mtp) hints.push_back({ui::glyph::ZR, m_files_nand ? s.internal : s.sd_card, HidNpadButton_ZR});
+    if (!mtp) hints.push_back({ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, m.stop_back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }

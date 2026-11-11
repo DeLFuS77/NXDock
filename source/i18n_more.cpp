@@ -522,6 +522,13 @@ constexpr More kEnglish{
     .lb_size_big = "Large",
     .lb_size_small = "Small",
     .lb_checking = "Checking what is installed…",
+    .dc_free_fmt = "%s free",
+    .dc_left_fmt = "%s free · %s left after",
+    .dc_install_sd_fmt = "Install to the SD card · %s",
+    .dc_install_nand_fmt = "Install to the internal memory · %s",
+    .dc_switch = "SD card or internal memory",
+    .dc_once = "For this install only. The next one goes to the SD card again.",
+    .marked_short_fmt = "%d marked · %s",
 };
 
 constexpr More kSpanish{
@@ -1037,6 +1044,13 @@ constexpr More kSpanish{
     .lb_size_big = "Grande",
     .lb_size_small = "Pequeña",
     .lb_checking = "Comprobando lo instalado…",
+    .dc_free_fmt = "%s libres",
+    .dc_left_fmt = "%s libres · quedan %s",
+    .dc_install_sd_fmt = "Instalar en la tarjeta SD · %s",
+    .dc_install_nand_fmt = "Instalar en la memoria interna · %s",
+    .dc_switch = "Tarjeta SD o memoria interna",
+    .dc_once = "Solo para esta instalación. La siguiente vuelve a la tarjeta SD.",
+    .marked_short_fmt = "%d marcados · %s",
 };
 
 constexpr More kFrench{
@@ -1552,6 +1566,13 @@ constexpr More kFrench{
     .lb_size_big = "Grande",
     .lb_size_small = "Petite",
     .lb_checking = "Vérification de l'installé…",
+    .dc_free_fmt = "%s libres",
+    .dc_left_fmt = "%s libres · reste %s",
+    .dc_install_sd_fmt = "Installer sur la carte SD · %s",
+    .dc_install_nand_fmt = "Installer dans la mémoire interne · %s",
+    .dc_switch = "Carte SD ou mémoire interne",
+    .dc_once = "Pour cette installation seulement. La suivante revient sur la carte SD.",
+    .marked_short_fmt = "%d cochés · %s",
 };
 
 constexpr More kGerman{
@@ -2067,6 +2088,13 @@ constexpr More kGerman{
     .lb_size_big = "Groß",
     .lb_size_small = "Klein",
     .lb_checking = "Installiertes wird geprüft…",
+    .dc_free_fmt = "%s frei",
+    .dc_left_fmt = "%s frei · danach %s",
+    .dc_install_sd_fmt = "Auf die SD-Karte installieren · %s",
+    .dc_install_nand_fmt = "In den internen Speicher installieren · %s",
+    .dc_switch = "SD-Karte oder interner Speicher",
+    .dc_once = "Nur für diese Installation. Die nächste geht wieder auf die SD-Karte.",
+    .marked_short_fmt = "%d markiert · %s",
 };
 
 constexpr More kItalian{
@@ -2582,6 +2610,13 @@ constexpr More kItalian{
     .lb_size_big = "Grande",
     .lb_size_small = "Piccola",
     .lb_checking = "Controllo dell'installato…",
+    .dc_free_fmt = "%s liberi",
+    .dc_left_fmt = "%s liberi · restano %s",
+    .dc_install_sd_fmt = "Installa sulla scheda SD · %s",
+    .dc_install_nand_fmt = "Installa nella memoria interna · %s",
+    .dc_switch = "Scheda SD o memoria interna",
+    .dc_once = "Solo per questa installazione. La prossima torna sulla scheda SD.",
+    .marked_short_fmt = "%d segnati · %s",
 };
 
 constexpr More kPortuguese{
@@ -3097,6 +3132,13 @@ constexpr More kPortuguese{
     .lb_size_big = "Grande",
     .lb_size_small = "Pequena",
     .lb_checking = "A verificar o instalado…",
+    .dc_free_fmt = "%s livres",
+    .dc_left_fmt = "%s livres · ficam %s",
+    .dc_install_sd_fmt = "Instalar no cartão SD · %s",
+    .dc_install_nand_fmt = "Instalar na memória interna · %s",
+    .dc_switch = "Cartão SD ou memória interna",
+    .dc_once = "Só para esta instalação. A seguinte volta ao cartão SD.",
+    .marked_short_fmt = "%d marcados · %s",
 };
 
 constexpr More kDutch{
@@ -3612,6 +3654,13 @@ constexpr More kDutch{
     .lb_size_big = "Groot",
     .lb_size_small = "Klein",
     .lb_checking = "Geïnstalleerde wordt gecontroleerd…",
+    .dc_free_fmt = "%s vrij",
+    .dc_left_fmt = "%s vrij · daarna %s",
+    .dc_install_sd_fmt = "Installeren op de SD-kaart · %s",
+    .dc_install_nand_fmt = "Installeren in het interne geheugen · %s",
+    .dc_switch = "SD-kaart of intern geheugen",
+    .dc_once = "Alleen voor deze installatie. De volgende gaat weer naar de SD-kaart.",
+    .marked_short_fmt = "%d gemarkeerd · %s",
 };
 
 constexpr More kRussian{
@@ -4127,6 +4176,13 @@ constexpr More kRussian{
     .lb_size_big = "Крупные",
     .lb_size_small = "Мелкие",
     .lb_checking = "Проверка установленного…",
+    .dc_free_fmt = "свободно %s",
+    .dc_left_fmt = "свободно %s · останется %s",
+    .dc_install_sd_fmt = "Установить на SD-карту · %s",
+    .dc_install_nand_fmt = "Установить во внутреннюю память · %s",
+    .dc_switch = "SD-карта или внутренняя память",
+    .dc_once = "Только для этой установки. Следующая снова пойдёт на SD-карту.",
+    .marked_short_fmt = "Отмечено: %d · %s",
 };
 
 constexpr More kJapanese{
@@ -4642,6 +4698,13 @@ constexpr More kJapanese{
     .lb_size_big = "大",
     .lb_size_small = "小",
     .lb_checking = "インストール済みを確認中…",
+    .dc_free_fmt = "空き %s",
+    .dc_left_fmt = "空き %s · 残り %s",
+    .dc_install_sd_fmt = "SDカードにインストール · %s",
+    .dc_install_nand_fmt = "本体保存メモリーにインストール · %s",
+    .dc_switch = "SDカードか本体保存メモリー",
+    .dc_once = "今回のインストールだけです。次はSDカードに戻ります。",
+    .marked_short_fmt = "%d 件選択 · %s",
 };
 
 constexpr More kKorean{
@@ -5157,6 +5220,13 @@ constexpr More kKorean{
     .lb_size_big = "크게",
     .lb_size_small = "작게",
     .lb_checking = "설치된 항목 확인 중…",
+    .dc_free_fmt = "여유 %s",
+    .dc_left_fmt = "여유 %s · 남음 %s",
+    .dc_install_sd_fmt = "SD 카드에 설치 · %s",
+    .dc_install_nand_fmt = "본체 저장 메모리에 설치 · %s",
+    .dc_switch = "SD 카드 또는 본체 저장 메모리",
+    .dc_once = "이번 설치만 해당합니다. 다음은 다시 SD 카드로 갑니다.",
+    .marked_short_fmt = "%d개 선택 · %s",
 };
 
 constexpr More kChinese{
@@ -5672,6 +5742,13 @@ constexpr More kChinese{
     .lb_size_big = "大",
     .lb_size_small = "小",
     .lb_checking = "正在检查已安装内容…",
+    .dc_free_fmt = "可用 %s",
+    .dc_left_fmt = "可用 %s · 剩余 %s",
+    .dc_install_sd_fmt = "安装到 SD 卡 · %s",
+    .dc_install_nand_fmt = "安装到主机内存 · %s",
+    .dc_switch = "SD 卡或主机内存",
+    .dc_once = "仅本次安装。下一次仍安装到 SD 卡。",
+    .marked_short_fmt = "已选 %d 个 · %s",
 };
 
 // In the order of LanguageName in i18n.cpp.

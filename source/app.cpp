@@ -621,6 +621,57 @@ void App::InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float 
     }
 }
 
+void App::DestCards(NVGcontext* vg, float x, float y, float w, float h, bool nand, unsigned long long need, HitKind kind) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    const More& m = TrM();
+    const float gap = 12, cw = (w - gap) / 2;
+    for (int d = 0; d < 2; d++) {
+        const float cx = x + d * (cw + gap);
+        const bool on = (d == 1) == nand;
+        NVGcolor bg = t.work;
+        bg.a = on ? 0.14f : 0.f;
+        ui::FillRound(vg, cx, y, cw, h, 14, t.panel);
+        if (on) ui::FillRound(vg, cx, y, cw, h, 14, bg);
+        ui::StrokeRound(vg, cx + 1, y + 1, cw - 2, h - 2, 13, on ? t.work : t.line, on ? 2.5f : 1.f);
+        AddHit(cx, y - 4, cw, h + 8, kind, d);
+        // the sign: SD, or the chip of the internal memory
+        const float ix = cx + 14, iy = y + (h - 40) / 2;
+        ui::FillRound(vg, ix, iy, 40, 40, 9, on ? t.work : t.panel2);
+        if (d == 0) {
+            ui::Text(vg, ix + 20, iy + 21, 15, on ? t.on_work : t.muted, "SD", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        } else {
+            ui::StrokeRound(vg, ix + 11, iy + 11, 18, 18, 3, on ? t.on_work : t.muted, 2.f);
+            ui::FillRound(vg, ix + 16, iy + 16, 8, 8, 1, on ? t.on_work : t.muted);
+        }
+        const float tx = ix + 54;
+        ui::Text(vg, tx, y + h / 2 - 10, 18, on ? t.text : t.muted, d == 0 ? s.sd_card : s.internal);
+        const s64 free_b = d == 0 ? m_sd_free_bytes : m_nand_free_bytes;
+        char line[160] = "";
+        NVGcolor col = t.muted;
+        if (free_b >= 0) {
+            if (on && need > 0) {
+                const u64 left = u64(free_b) > need ? u64(free_b) - need : 0;
+                std::snprintf(line, sizeof(line), m.dc_left_fmt, SizeText(u64(free_b)).c_str(), SizeText(left).c_str());
+                if (u64(free_b) < need) col = t.err;
+            } else {
+                std::snprintf(line, sizeof(line), m.dc_free_fmt, SizeText(u64(free_b)).c_str());
+            }
+        }
+        nvgSave(vg);
+        nvgIntersectScissor(vg, tx, y, cw - (tx - cx) - 44, h);
+        ui::Text(vg, tx, y + h / 2 + 13, 13, col, line);
+        nvgRestore(vg);
+        // the round mark of the one chosen
+        const float rx = cx + cw - 26, ry = y + h / 2;
+        nvgBeginPath(vg);
+        nvgCircle(vg, rx, ry, on ? 7.5f : 10);
+        nvgStrokeColor(vg, on ? t.work : t.muted);
+        nvgStrokeWidth(vg, on ? 6.f : 2.f);
+        nvgStroke(vg);
+    }
+}
+
 void App::KeepFocusVisible() {
     const float row_top = (m_focus / g_columns) * g_row_pitch;
     if (row_top < m_scroll_target) {
@@ -728,6 +779,9 @@ void App::Tap(float x, float y, u64& down) {
             case HitKind::Dest:
                 m_to_nand = it->index == 1;
                 m_dest_touched = true;
+                break;
+            case HitKind::FilesDest:
+                m_files_nand = it->index == 1;
                 break;
             case HitKind::QueueRow:
                 if (m_queue_focus == it->index) {
@@ -1858,7 +1912,7 @@ void App::OpenDetail(int view_index) {
     m_detail_game = m_view[view_index];
     m_detail_focus = 0;
     // where, as chosen in the wizard: the internal memory still asks every time (EnqueuePicked)
-    m_to_nand = m_ui.dest == 1;
+    m_to_nand = false; // the SD card, always; the internal memory only when chosen for this install
     m_dest_touched = false;
     // what is missing is marked: the game if not installed, a newer update, the DLC not installed;
     // or, as chosen in the wizard, only the game, or the game and its update
@@ -2196,7 +2250,8 @@ void App::DrawDetail(NVGcontext* vg) {
     }
     float ly = fy + 76;
     const float lh = 46;
-    const float list_h = std::min(float(rows.size()) * lh + 12, 250.f);
+    // room below for where it goes (two large cards) and Install
+    const float list_h = std::min({float(rows.size()) * lh + 12, 250.f, std::max(2 * lh + 12, 664 - 14 - 52 - 18 - 64 - 16 - ly)});
     ui::FillRound(vg, rx, ly, rw, list_h, 12, Hex(0, t.dark ? 0.22f : 0.03f));
     ui::StrokeRound(vg, rx + .5f, ly + .5f, rw - 1, list_h - 1, 12, t.line, 1);
     nvgSave(vg);
@@ -2249,24 +2304,13 @@ void App::DrawDetail(NVGcontext* vg) {
     }
     nvgRestore(vg);
 
-    // where, and Install
-    const float dy = ly + list_h + 22;
-    ui::Text(vg, rx, dy + 22, 16, t.muted, s.install_to);
-    const float segx = rx + ui::TextWidth(vg, 16, s.install_to) + 16;
-    const char* dests[] = {s.sd_card, s.internal};
-    float sx = segx;
-    const float segw0 = ui::TextWidth(vg, 16, dests[0]) + 36, segw1 = ui::TextWidth(vg, 16, dests[1]) + 36;
-    ui::FillRound(vg, sx, dy, segw0 + segw1 + 8, 44, 10, t.panel2);
-    for (int d = 0; d < 2; d++) {
-        const float w = d == 0 ? segw0 : segw1;
-        const bool on = (d == 1) == m_to_nand;
-        if (on) ui::FillRound(vg, sx + 4, dy + 4, w, 36, 8, t.work);
-        ui::Text(vg, sx + 4 + w / 2, dy + 22, 16, on ? t.on_work : t.muted, dests[d], NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        AddHit(sx, dy - 6, w + 8, 56, HitKind::Dest, d);
-        sx += w + 4;
-    }
-    char install[64];
-    std::snprintf(install, sizeof(install), s.install_size, SizeText(picked_size).c_str());
+    // where, in large (the SD card unless chosen otherwise), and Install saying where
+    const float cards_y = ly + list_h + 16;
+    DestCards(vg, rx, cards_y, rw, 64, m_to_nand, picked_size, HitKind::Dest);
+    const float dy = cards_y + 64 + 18;
+    if (m_to_nand) ui::Text(vg, rx, dy + 22, 14, t.orange, TrM().dc_once);
+    char install[160];
+    std::snprintf(install, sizeof(install), m_to_nand ? TrM().dc_install_nand_fmt : TrM().dc_install_sd_fmt, SizeText(picked_size).c_str());
     const float bw = ui::TextWidth(vg, 20, install) + 64, bx = kWidth - 48 - bw;
     const bool can = picked_size > 0;
     if (m_detail_focus == int(rows.size())) {
@@ -2277,16 +2321,8 @@ void App::DrawDetail(NVGcontext* vg) {
     ui::Text(vg, bx + bw / 2, dy + 22, 20, t.on_work, install, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     nvgGlobalAlpha(vg, 1.f);
     AddHit(bx, dy - 4, bw, 52, HitKind::Install, int(rows.size()));
-    const s64 free_here = m_to_nand ? m_nand_free_bytes : m_sd_free_bytes;
-    if (free_here >= 0) {
-        char line[160];
-        const u64 left = u64(free_here) > picked_size ? u64(free_here) - picked_size : 0;
-        std::snprintf(line, sizeof(line), m_to_nand ? s.space_line_nand : s.space_line, SizeText(u64(free_here)).c_str(), SizeText(left).c_str());
-        ui::Text(vg, rx, dy + 72, 15, u64(free_here) < picked_size ? t.err : t.muted, line);
-    }
-
-    std::vector<ui::Hint> hints = {{ui::glyph::A, s.select, HidNpadButton_A}, {ui::glyph::L, s.sd_card, HidNpadButton_L},
-                                   {ui::glyph::R, s.internal, HidNpadButton_R}};
+    static const std::string where_glyphs = std::string(ui::glyph::ZL) + " " + ui::glyph::ZR;
+    std::vector<ui::Hint> hints = {{ui::glyph::A, s.select, HidNpadButton_A}, {where_glyphs.c_str(), TrM().dc_switch, HidNpadButton_ZR}};
     if (g.installed.base || !g.installed.dlc.empty()) {
         hints.push_back({ui::glyph::Y, s.verify, HidNpadButton_Y});
     }
@@ -2423,9 +2459,11 @@ void App::EnqueuePicked() {
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::Nand;
         m_dialog.jobs = std::move(jobs);
+        m_to_nand = false; // the next one goes to the SD card again
         return;
     }
     AddJobs(std::move(jobs));
+    m_to_nand = false;
 }
 
 InstallJob App::JobFor(const Game& g, const CatalogFile& f) {

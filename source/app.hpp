@@ -55,7 +55,7 @@ public:
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
-                         InstalledView, InstalledRow, ConsoleSize, ShopChip, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
+                         InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow };
     struct Hit {
         ui::HitRect rect;
@@ -309,6 +309,9 @@ private:
     void DrawConsolePage(NVGcontext* vg, const Space::View& v);
     void DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library);
     void InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s);
+    // Where it installs, in large: the SD card and the internal memory side by side, each with its
+    // free space; `kind` is the touch that chooses one (Dest for a game, FilesDest for the files).
+    void DestCards(NVGcontext* vg, float x, float y, float w, float h, bool nand, unsigned long long need, HitKind kind);
     double m_installed_read_at = -100; // when the Library last read what is installed
     Tab m_tab_seen = Tab::Library; // the tab of the last frame: the Library reads what is installed again
     void UpdateConsole(u64 down, u64 held);

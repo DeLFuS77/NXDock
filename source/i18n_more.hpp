@@ -107,6 +107,8 @@ struct More {
     // the Library: what is installed, and the size of its covers
     const char *lb_installed, *lb_installed_tag, *lb_needs_update, *lb_needs_dlc, *lb_size, *lb_size_big, *lb_size_small;
     const char *lb_checking;
+    // where it installs, in large
+    const char *dc_free_fmt, *dc_left_fmt, *dc_install_sd_fmt, *dc_install_nand_fmt, *dc_switch, *dc_once, *marked_short_fmt;
 };
 
 const More& TrM();
