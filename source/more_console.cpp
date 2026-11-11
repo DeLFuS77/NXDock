@@ -150,6 +150,25 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
     }
     const bool library = m_catalog.GetState() == Catalog::State::Ready;
     m_console_focus = std::clamp(m_console_focus, 0, int(v.apps.size()) - 1);
+    // the size, at the right of the views: a tap chooses it
+    {
+        const char* names[] = {m.ic_size_list, m.ic_size_mid, m.ic_size_big};
+        float x = kWidth - 48;
+        for (int i = 2; i >= 0; i--) {
+            const float w = ui::TextWidth(vg, 13, names[i]) + 22;
+            x -= w;
+            const bool on = m_ui.console_size == i;
+            if (on) ui::FillRound(vg, x, 80, w, 24, 12, t.work);
+            else ui::StrokeRound(vg, x, 80, w, 24, 12, t.line, 1.f);
+            ui::Text(vg, x + w / 2, 92, 13, on ? t.on_work : t.muted, names[i], NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            AddHit(x - 2, 72, w + 4, 40, HitKind::ConsoleSize, i);
+            x -= 6;
+        }
+    }
+    if (m_ui.console_size != 0) {
+        DrawConsoleGrid(vg, v, library);
+        return;
+    }
     const float top = 148, pitch = 72;
     const int visible = 7;
     const int first = std::clamp(m_console_focus - visible / 2, 0, std::max(0, int(v.apps.size()) - visible));
@@ -201,6 +220,87 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
     DrawListLetter(vg, kWidth / 2, 360);
     ui::HintBar(vg, t, left[0] ? left : nullptr,
                 {{ui::glyph::A, m.ic_open, HidNpadButton_A},
+                 {ui::glyph::Y, m.ic_size, HidNpadButton_Y},
+                 {Glyphs(), s.view_switch, HidNpadButton_ZR},
+                 {ui::glyph::B, s.back, HidNpadButton_B}},
+                m_hint_rects);
+}
+
+// Medium (six in a row) or large covers (four in a row, with the version and the size).
+void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    const More& m = TrM();
+    const bool big = m_ui.console_size == 2;
+    const int cols = big ? 4 : 6;
+    const float cover = big ? 236 : 170, gap = big ? 34 : 32, below = big ? 58 : 36;
+    const float x0 = (kWidth - (cols * cover + (cols - 1) * gap)) / 2, top = 132, bottom = 652;
+    const float pitch = cover + below + 14;
+    const int rows = (int(v.apps.size()) + cols - 1) / cols;
+    const int row = m_console_focus / cols;
+    // the row in focus whole in sight
+    const int fit = std::max(1, int((bottom - top) / pitch));
+    const int first = std::clamp(row - fit + 1, 0, std::max(0, rows - fit));
+    nvgSave(vg);
+    nvgScissor(vg, 0, top - 8, kWidth, bottom - top + 8);
+    for (int i = first * cols; i < int(v.apps.size()); i++) {
+        const int r = i / cols, c = i % cols;
+        const float x = x0 + c * (cover + gap), y = top + (r - first) * pitch;
+        if (y > bottom) break;
+        const InstalledApp& a = v.apps[size_t(i)];
+        AddHit(x, y, cover, cover + below, HitKind::InstalledRow, i);
+        const Game* g = LibraryGame(a.app_id);
+        int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
+        if (!image) image = m_covers.Get(IconPath(a.app_id));
+        nvgGlobalAlpha(vg, a.archived ? 0.55f : 1.f);
+        ui::Cover(vg, t, x, y, cover, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, big ? 14 : 11, image);
+        if (i == m_console_focus) ui::Focus(vg, t, x - 4, y - 4, cover + 8, cover + 8, big ? 17 : 14, m_time);
+        // what to know at a glance, over the cover
+        bool newer = false;
+        for (const auto& ct : a.contents) newer = newer || NeedsNewer(a, ct);
+        float by = y + 10;
+        const auto badge = [&](const char* text, NVGcolor color) {
+            const float w = std::min(cover - 16, ui::TextWidth(vg, 11, text) + 14);
+            ui::FillRound(vg, x + 8, by, w, 18, 9, nvgRGBAf(0, 0, 0, 0.7f));
+            ui::StrokeRound(vg, x + 8, by, w, 18, 9, color, 1.f);
+            nvgSave(vg);
+            nvgIntersectScissor(vg, x + 8, by, w, 18);
+            ui::Text(vg, x + 8 + w / 2, by + 9, 11, color, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgRestore(vg);
+            by += 22;
+        };
+        if (library && !g) badge(m.ic_not_lib, t.orange);
+        if (newer) badge(m.ic_dlc_needs_tag, t.orange);
+        if (a.archived) badge(m.archived_tag, t.muted);
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x, y + cover, cover, below + 4);
+        if (i == m_console_focus) {
+            ui::Marquee(vg, x, y + cover + 18, cover, big ? 16 : 14, t.text, a.name.c_str(), m_time);
+        } else {
+            ui::Text(vg, x, y + cover + 18, big ? 16 : 14, t.text, a.name.c_str());
+        }
+        if (big && !a.archived) {
+            int dlc = 0;
+            for (const auto& ct : a.contents) dlc += ct.type == NcmContentMetaType_AddOnContent;
+            char text[160];
+            std::snprintf(text, sizeof(text), "v%u", GameVersion(a));
+            std::string sub = text;
+            if (dlc) {
+                std::snprintf(text, sizeof(text), m.ic_dlc_fmt, dlc);
+                sub += std::string(" · ") + text;
+            }
+            sub += std::string(" · ") + draw::Size(a.Bytes());
+            ui::Text(vg, x, y + cover + 42, 13, t.muted, sub.c_str());
+        }
+        nvgRestore(vg);
+        nvgGlobalAlpha(vg, 1.f);
+    }
+    nvgRestore(vg);
+    char left[96] = "";
+    if (v.names_total > 0) std::snprintf(left, sizeof(left), m.ic_names_fmt, v.names_done, v.names_total);
+    ui::HintBar(vg, t, left[0] ? left : nullptr,
+                {{ui::glyph::A, m.ic_open, HidNpadButton_A},
+                 {ui::glyph::Y, m.ic_size, HidNpadButton_Y},
                  {Glyphs(), s.view_switch, HidNpadButton_ZR},
                  {ui::glyph::B, s.back, HidNpadButton_B}},
                 m_hint_rects);
@@ -303,11 +403,29 @@ void App::UpdateConsole(u64 down, u64 held) {
     if (!m_space) return;
     const auto v = m_space->Snapshot();
     if (!m_console_app) {
+        if (down & HidNpadButton_Y) {
+            // the size: list, medium covers, large covers; kept for the next time
+            m_ui.console_size = (m_ui.console_size + 1) % 3;
+            m_ui.Save();
+            return;
+        }
         if (v.apps.empty()) return;
-        if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_focus > 0) m_console_focus--;
-        if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_focus < int(v.apps.size()) - 1) m_console_focus++;
+        const int n = int(v.apps.size());
+        if (m_ui.console_size != 0) {
+            const int cols = m_ui.console_size == 2 ? 4 : 6;
+            if (Repeat(down, held, HidNpadButton_AnyLeft) && m_console_focus > 0) m_console_focus--;
+            if (Repeat(down, held, HidNpadButton_AnyRight) && m_console_focus < n - 1) m_console_focus++;
+            if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_focus >= cols) m_console_focus -= cols;
+            if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_focus / cols < (n - 1) / cols) {
+                m_console_focus = std::min(n - 1, m_console_focus + cols);
+            }
+        } else {
+            if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_focus > 0) m_console_focus--;
+            if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_focus < n - 1) m_console_focus++;
+        }
         // by first letter, for long lists
-        const bool left = Repeat(down, held, HidNpadButton_AnyLeft), right = Repeat(down, held, HidNpadButton_AnyRight);
+        const bool left = m_ui.console_size == 0 && Repeat(down, held, HidNpadButton_AnyLeft),
+                   right = m_ui.console_size == 0 && Repeat(down, held, HidNpadButton_AnyRight);
         if (left || right) {
             std::vector<std::string> names;
             for (const auto& a : v.apps) names.push_back(a.name);

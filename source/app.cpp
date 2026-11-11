@@ -700,6 +700,12 @@ void App::Tap(float x, float y, u64& down) {
                     m_console_app = 0;
                 }
                 break;
+            case HitKind::ConsoleSize:
+                if (m_ui.console_size != it->index) {
+                    m_ui.console_size = it->index;
+                    m_ui.Save();
+                }
+                break;
             case HitKind::InstalledRow:
                 if (m_installed_view == 0) {
                     // In the console: a game of the list, or a line of its page
@@ -1022,6 +1028,7 @@ u64 App::FocusSignature() const {
     mix(int(m_console_app & 0xFFFFFFF));
     mix(m_console_focus);
     mix(m_console_item);
+    mix(m_ui.console_size);
     mix(int(std::count(m_console_marks.begin(), m_console_marks.end(), 1)));
     mix(int(m_dialog.kind));
     mix(m_dialog.focus);

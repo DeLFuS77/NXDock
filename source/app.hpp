@@ -54,7 +54,7 @@ public:
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
-                         InstalledView, InstalledRow, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
+                         InstalledView, InstalledRow, ConsoleSize, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow };
     struct Hit {
         ui::HitRect rect;
@@ -297,6 +297,7 @@ private:
     void DrawSession(NVGcontext* vg);
     void DrawConsole(NVGcontext* vg, const Space::View& v);
     void DrawConsolePage(NVGcontext* vg, const Space::View& v);
+    void DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library);
     void UpdateConsole(u64 down, u64 held);
     void ReadConsole();
     const Game* LibraryGame(unsigned long long app) const;

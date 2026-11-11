@@ -503,6 +503,10 @@ constexpr More kEnglish{
     .ri_body = "The console has this same version. Installing it over changes nothing; to check it, use Verify on the page of the game.",
     .ri_go = "Install over",
     .ri_skip = "Skip",
+    .ic_size = "Size",
+    .ic_size_list = "List",
+    .ic_size_mid = "Medium",
+    .ic_size_big = "Large",
 };
 
 constexpr More kSpanish{
@@ -999,6 +1003,10 @@ constexpr More kSpanish{
     .ri_body = "La consola ya tiene esta misma versión. Instalarla encima no cambia nada; para revisarla, usa Comprobar en la página del juego.",
     .ri_go = "Instalar encima",
     .ri_skip = "Saltar",
+    .ic_size = "Tamaño",
+    .ic_size_list = "Lista",
+    .ic_size_mid = "Mediana",
+    .ic_size_big = "Grande",
 };
 
 constexpr More kFrench{
@@ -1495,6 +1503,10 @@ constexpr More kFrench{
     .ri_body = "La console a déjà cette version. L'installer par-dessus ne change rien ; pour la contrôler, utilisez Vérifier sur la page du jeu.",
     .ri_go = "Installer par-dessus",
     .ri_skip = "Passer",
+    .ic_size = "Taille",
+    .ic_size_list = "Liste",
+    .ic_size_mid = "Moyenne",
+    .ic_size_big = "Grande",
 };
 
 constexpr More kGerman{
@@ -1991,6 +2003,10 @@ constexpr More kGerman{
     .ri_body = "Die Konsole hat genau diese Version. Darüber installieren ändert nichts; zum Prüfen nutze Prüfen auf der Seite des Spiels.",
     .ri_go = "Darüber installieren",
     .ri_skip = "Überspringen",
+    .ic_size = "Größe",
+    .ic_size_list = "Liste",
+    .ic_size_mid = "Mittel",
+    .ic_size_big = "Groß",
 };
 
 constexpr More kItalian{
@@ -2487,6 +2503,10 @@ constexpr More kItalian{
     .ri_body = "La console ha già questa versione. Installarla sopra non cambia nulla; per controllarla usa Verifica nella pagina del gioco.",
     .ri_go = "Installa sopra",
     .ri_skip = "Salta",
+    .ic_size = "Dimensione",
+    .ic_size_list = "Elenco",
+    .ic_size_mid = "Media",
+    .ic_size_big = "Grande",
 };
 
 constexpr More kPortuguese{
@@ -2983,6 +3003,10 @@ constexpr More kPortuguese{
     .ri_body = "A consola já tem esta versão. Instalá-la por cima não muda nada; para a verificar, usa Verificar na página do jogo.",
     .ri_go = "Instalar por cima",
     .ri_skip = "Saltar",
+    .ic_size = "Tamanho",
+    .ic_size_list = "Lista",
+    .ic_size_mid = "Média",
+    .ic_size_big = "Grande",
 };
 
 constexpr More kDutch{
@@ -3479,6 +3503,10 @@ constexpr More kDutch{
     .ri_body = "De console heeft deze versie al. Eroverheen installeren verandert niets; controleer het met Controleren op de pagina van het spel.",
     .ri_go = "Eroverheen installeren",
     .ri_skip = "Overslaan",
+    .ic_size = "Grootte",
+    .ic_size_list = "Lijst",
+    .ic_size_mid = "Middel",
+    .ic_size_big = "Groot",
 };
 
 constexpr More kRussian{
@@ -3975,6 +4003,10 @@ constexpr More kRussian{
     .ri_body = "На консоли уже эта версия. Установка поверх ничего не изменит; для проверки используйте «Проверить» на странице игры.",
     .ri_go = "Установить поверх",
     .ri_skip = "Пропустить",
+    .ic_size = "Размер",
+    .ic_size_list = "Список",
+    .ic_size_mid = "Средние",
+    .ic_size_big = "Крупные",
 };
 
 constexpr More kJapanese{
@@ -4471,6 +4503,10 @@ constexpr More kJapanese{
     .ri_body = "本体には同じバージョンがあります。上書きしても何も変わりません。確認するにはゲームのページの「チェック」を使ってください。",
     .ri_go = "上書きインストール",
     .ri_skip = "スキップ",
+    .ic_size = "サイズ",
+    .ic_size_list = "リスト",
+    .ic_size_mid = "中",
+    .ic_size_big = "大",
 };
 
 constexpr More kKorean{
@@ -4967,6 +5003,10 @@ constexpr More kKorean{
     .ri_body = "본체에 같은 버전이 있습니다. 덮어 설치해도 바뀌지 않습니다. 확인하려면 게임 페이지의 검사를 사용하세요.",
     .ri_go = "덮어 설치",
     .ri_skip = "건너뛰기",
+    .ic_size = "크기",
+    .ic_size_list = "목록",
+    .ic_size_mid = "중간",
+    .ic_size_big = "크게",
 };
 
 constexpr More kChinese{
@@ -5463,6 +5503,10 @@ constexpr More kChinese{
     .ri_body = "主机上已有相同版本。覆盖安装不会有任何改变；如需检查，请在游戏页面使用“校验”。",
     .ri_go = "覆盖安装",
     .ri_skip = "跳过",
+    .ic_size = "大小",
+    .ic_size_list = "列表",
+    .ic_size_mid = "中",
+    .ic_size_big = "大",
 };
 
 // In the order of LanguageName in i18n.cpp.
