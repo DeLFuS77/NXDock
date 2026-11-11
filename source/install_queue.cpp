@@ -2,6 +2,8 @@
 // Copyright (C) 2026 DeLFuS77
 #include "install_queue.hpp"
 
+#include "compress_nx.hpp"
+
 #include "errors.hpp"
 #include "history.hpp"
 #include "file_source.hpp"
@@ -199,7 +201,10 @@ void InstallQueue::Remove(int id) {
             continue;
         }
         if (it->state == InstallJob::State::Running) {
-            if (m_box) {
+            if (m_merging) {
+                // installed already: only the merge stops, the update stays installed
+                m_merge_stop = true;
+            } else if (m_box) {
                 m_box->RequestCancel();
             }
         } else {
@@ -559,6 +564,13 @@ InstallQueue::Live InstallQueue::GetLive() {
     l.copying_save = m_copying;
     l.copy_done = m_copy_done;
     l.copy_total = m_copy_total;
+    l.merging = m_merging;
+    l.merge_phase = m_merge_phase;
+    l.merge_done = m_merge_done;
+    l.merge_total = m_merge_total;
+    l.merge_rate = m_merge_rate;
+    l.installed_bytes = m_installed_bytes;
+    l.installed_seconds = m_installed_seconds;
     l.threads = m_box->Threads();
     l.connections = m_connections;
     const double now = Now();
@@ -627,6 +639,9 @@ void InstallQueue::Run() {
                 j.seconds = job.seconds;
                 j.written = job.written;
                 j.saved = job.saved;
+                j.merged = job.merged;
+                j.merge_saved = job.merge_saved;
+                j.merge_error = job.merge_error;
             }
         }
         m_version++;
@@ -794,6 +809,9 @@ void InstallQueue::RunJob(InstallJob& job) {
         const s64 free_bytes = StorageFreeSpace(job.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
         job.error = InstallErrorText(rc, box.NeededBytes(), box.NeededFirmware(), free_bytes, job.nand);
     }
+    if (job.state == InstallJob::State::Done && !test) {
+        MergeAfter(job, box.Registered());
+    }
     if (job.origin == InstallJob::Origin::Mtp) {
         MtpJobEnded(job.state == InstallJob::State::Done, job.error);
     }
@@ -835,6 +853,60 @@ void InstallQueue::RunJob(InstallJob& job) {
     m_box = nullptr;
     m_running = 0;
     m_installed = std::move(installed);
+}
+
+// An update installed over a game NXDock merged (it keeps its recipe): merged with it now, in the
+// same job, so the game never stays with an update it cannot read (25G). A failure leaves the update
+// installed, the game as it was, and the reason on the job; Compress games offers it again.
+void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaKey>& keys) {
+    u64 app = 0;
+    for (const auto& k : keys) {
+        if (k.type == NcmContentMetaType_Patch && IsMergedGame(k.id & ~u64(0xFFF))) {
+            app = k.id & ~u64(0xFFF);
+        }
+    }
+    if (!app) {
+        return;
+    }
+    {
+        std::lock_guard lock(m_mutex);
+        m_merging = true;
+        m_merge_phase = 1;
+        m_merge_done = m_merge_total = m_merge_sample = 0;
+        m_merge_t = Now();
+        m_merge_rate = 0;
+        m_installed_bytes = job.written;
+        m_installed_seconds = job.seconds;
+        m_merge_stop = false;
+    }
+    log_write("[NXDock] the update of a merged game: merging %016llX\n", (unsigned long long)app);
+    u64 saved = 0;
+    const std::string error = MergeUpdate(app, m_merge_stop, [this](int phase, uint64_t done, uint64_t total) {
+        std::lock_guard lock(m_mutex);
+        if (phase != m_merge_phase) {
+            m_merge_sample = 0;
+            m_merge_t = Now();
+            m_merge_rate = 0;
+        }
+        m_merge_phase = phase;
+        m_merge_done = done;
+        m_merge_total = total;
+        const double now = Now();
+        if (now - m_merge_t >= 0.5) {
+            const double rate = double(done - std::min(done, m_merge_sample)) / (now - m_merge_t) / (1024.0 * 1024.0);
+            m_merge_rate = m_merge_rate == 0 ? rate : m_merge_rate * 0.6 + rate * 0.4;
+            m_merge_t = now;
+            m_merge_sample = done;
+        }
+    }, saved);
+    std::lock_guard lock(m_mutex);
+    m_merging = false;
+    if (error.empty()) {
+        job.merged = true;
+        job.merge_saved = saved;
+    } else {
+        job.merge_error = error;
+    }
 }
 
 void InstallQueue::RunUndo() {

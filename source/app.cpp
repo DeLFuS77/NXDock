@@ -2204,7 +2204,14 @@ std::vector<InstallJob> QueueOrder(std::vector<InstallJob> jobs) {
 }
 
 // Of what the install writes: how far, from the live counters.
+// The merge after an install (25G): measuring, then compressing and writing, then the check.
+float MergeFraction(const InstallQueue::Live& l) {
+    const float part = l.merge_total ? std::clamp(float(double(l.merge_done) / double(l.merge_total)), 0.f, 1.f) : 0.f;
+    return l.merge_phase <= 1 ? 0.45f * part : l.merge_phase == 2 ? 0.45f + 0.45f * part : 0.9f + 0.1f * part;
+}
+
 float JobFraction(const InstallQueue::Live& l) {
+    if (l.merging) return MergeFraction(l);
     if (l.phase >= 3) return 1.f;
     if (l.total == 0) return 0.f;
     return std::clamp(float(double(l.written) / double(l.total)), 0.f, 1.f);
@@ -2720,7 +2727,9 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     // the four stages, as figures: network, decompress, write, check
     char figures[200];
     const float frac = JobFraction(live);
-    if (live.copying_save) {
+    if (live.merging) {
+        std::snprintf(figures, sizeof(figures), "%s… %d %%", TrM().qm_merging, int(frac * 100));
+    } else if (live.copying_save) {
         std::snprintf(figures, sizeof(figures), "%s…", TrM().sc_copying);
     } else if (live.phase >= 3) {
         std::snprintf(figures, sizeof(figures), "%s…", s.registering);
@@ -2735,7 +2744,7 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     const float fw = ui::TextWidth(vg, 15, figures);
     const float bar_x = 494, bar_end = 1196 - fw - 18;
     if (bar_end - bar_x > 40) {
-        ui::Progress(vg, t, bar_x, qy + 23, bar_end - bar_x, 8, frac, t.work, m_time);
+        ui::Progress(vg, t, bar_x, qy + 23, bar_end - bar_x, 8, frac, live.merging ? t.violet : t.work, m_time);
     }
     ui::Text(vg, 1196, qy + 27, 15, t.muted, figures, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -2771,7 +2780,8 @@ void App::DrawQueue(NVGcontext* vg) {
         nvgSave(vg);
         nvgScissor(vg, cx, py + 16, pw - 168 - 140, 48);
         const float nw = ui::Text(vg, cx, py + 40, 24, t.text, j.game.c_str()) - cx;
-        const std::string sub = j.label + " · " + Upper(j.format) + " · " + (j.nand ? s.internal : "SD");
+        const std::string sub = j.label + " · " + Upper(j.format) + " · " + (j.nand ? s.internal : "SD") +
+                                (live.merging ? std::string(" · ") + TrM().qm_tag : std::string());
         ui::Text(vg, cx + nw + 14, py + 41, 16, t.muted, sub.c_str());
         nvgRestore(vg);
 
@@ -2779,8 +2789,15 @@ void App::DrawQueue(NVGcontext* vg) {
         char pct[16];
         std::snprintf(pct, sizeof(pct), "%d %%", int(frac * 100));
         ui::Text(vg, px + pw - 24, py + 40, 26, t.text, pct, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        char eta[160];
-        if (live.copying_save) {
+        char eta[200];
+        if (live.merging) {
+            // installed, now merged with the game (25G, as chosen: A)
+            const u64 left_bytes = live.merge_total > live.merge_done ? live.merge_total - live.merge_done : 0;
+            const double left = live.merge_rate > 0.1 && live.merge_phase < 3 ? double(left_bytes) / (live.merge_rate * 1024 * 1024) : -1;
+            std::snprintf(eta, sizeof(eta), "%s… %s / %s%s%s · %s", TrM().qm_merging, SizeText(live.merge_done).c_str(),
+                          SizeText(live.merge_total).c_str(), left >= 0 ? (std::string(" · ") + s.left + " ").c_str() : "",
+                          left >= 0 ? Duration(left).c_str() : "", TrM().qm_playable);
+        } else if (live.copying_save) {
             std::snprintf(eta, sizeof(eta), "%s… %s", TrM().sc_copying, live.copy_total ? (SizeText(live.copy_done) + " / " + SizeText(live.copy_total)).c_str() : "");
         } else if (live.phase >= 3) {
             std::snprintf(eta, sizeof(eta), "%s…", s.registering);
@@ -2792,7 +2809,7 @@ void App::DrawQueue(NVGcontext* vg) {
                           left >= 0 ? (std::string(" · ") + s.left + " ").c_str() : "", left >= 0 ? Duration(left).c_str() : "");
         }
         const float ew = ui::Text(vg, cx, py + 70, 16, t.muted, eta) - cx;
-        if (live.saved > 0) {
+        if (live.saved > 0 && !live.merging) {
             // what the console had already, in the green of what went well (16A)
             char saved[64];
             std::snprintf(saved, sizeof(saved), TrM().saved_fmt, SizeText(live.saved).c_str());
@@ -2803,11 +2820,25 @@ void App::DrawQueue(NVGcontext* vg) {
             nvgFill(vg);
             ui::Text(vg, sx + 14, py + 70, 16, t.ok, saved);
         }
-        ui::Progress(vg, t, cx, py + 88, pw - 168 - 24, 12, frac, t.work, m_time);
+        ui::Progress(vg, t, cx, py + 88, pw - 168 - 24, 12, frac, live.merging ? t.violet : t.work, m_time);
 
         struct Lane { std::string title; NVGcolor color; std::string value; std::string unit; float meter; int segments; };
         char v[32];
         std::vector<Lane> lanes;
+        if (live.merging) {
+            // the three steps of the merge: read and measure, compress and write, check
+            const float part = live.merge_total ? std::clamp(float(double(live.merge_done) / double(live.merge_total)), 0.f, 1.f) : 0.f;
+            const auto step = [&](int phase) { return live.merge_phase > phase ? 1.f : live.merge_phase == phase ? part : 0.f; };
+            const auto rate = [&](int phase) {
+                if (live.merge_phase != phase) return std::string(live.merge_phase > phase ? "100" : "\u2014");
+                std::snprintf(v, sizeof(v), "%.0f", live.merge_rate);
+                return std::string(v);
+            };
+            const auto unit = [&](int phase) { return std::string(live.merge_phase == phase ? "MB/s" : live.merge_phase > phase ? "%" : ""); };
+            lanes.push_back({TrM().qm_read, t.work, rate(1), unit(1), step(1), -1});
+            lanes.push_back({std::string(TrM().qm_pack) + " \u00b7 3 " + s.threads, t.violet, rate(2), unit(2), step(2), -1});
+            lanes.push_back({TrM().qm_check, t.ok, live.merge_phase >= 3 ? rate(3) : "\u2014", live.merge_phase >= 3 ? "MB/s" : TrM().qm_at_end, step(3), -1});
+        } else {
         std::snprintf(v, sizeof(v), "%.0f", live.net_rate);
         lanes.push_back({s.network, t.work, v, "MB/s", live.source_size ? float(double(live.net) / double(live.source_size)) : 0.f, -1});
         if (live.threads == 0) {
@@ -2825,8 +2856,10 @@ void App::DrawQueue(NVGcontext* vg) {
         std::snprintf(v, sizeof(v), "%u", live.checked);
         lanes.push_back({s.check_sha, t.ok, v, std::string(s.parts_of) + " " + std::to_string(live.ncas),
                          live.ncas ? float(live.checked) / float(live.ncas) : 0.f, -1});
-        const float lw = (pw - 168 - 24 - 3 * 14) / 4;
-        for (int i = 0; i < 4; i++) {
+        }
+        const int nl = int(lanes.size());
+        const float lw = (pw - 168 - 24 - (nl - 1) * 14) / nl;
+        for (int i = 0; i < nl; i++) {
             const Lane& lane = lanes[i];
             const float lx = cx + i * (lw + 14), ly = py + 118;
             ui::FillRound(vg, lx, ly, lw, 92, 12, t.panel2);
@@ -2857,17 +2890,32 @@ void App::DrawQueue(NVGcontext* vg) {
             }
         }
         y = py + ph + 26;
+        if (live.merging) {
+            // what the job did already: the update, installed
+            ui::Text(vg, 62, y, 13, t.muted, TrM().qm_installed);
+            const std::string what = SizeText(live.installed_bytes) + " \u00b7 " + Duration(live.installed_seconds);
+            const float mx = 62 + ui::TextWidth(vg, 13, TrM().qm_installed) + 20;
+            nvgBeginPath(vg);
+            nvgCircle(vg, mx, y, 7);
+            nvgFillColor(vg, t.ok);
+            nvgFill(vg);
+            ui::CheckMark(vg, mx, y, 8, t.panel, 2.f);
+            ui::Text(vg, mx + 14, y, 13, t.ok, what.c_str());
+            y += 26;
+        }
     }
 
     // Waiting, then done; the list scrolls to keep the row in focus in sight.
     const int first_row = running ? 1 : 0;
     // a failed row in focus shows what happened and what to do under the list (1A)
     const InstallJob& focused = rows[m_queue_focus];
-    const bool card = focused.state == InstallJob::State::Failed && !focused.error.empty();
-    const float card_h = card ? ErrorCard(vg, t, 48, 0, kWidth - 96, focused.error, false) : 0;
+    // or, installed but not merged with its game, why (25G)
+    const std::string& card_text = focused.state == InstallJob::State::Done ? focused.merge_error : focused.error;
+    const bool card = (focused.state == InstallJob::State::Failed || focused.state == InstallJob::State::Done) && !card_text.empty();
+    const float card_h = card ? ErrorCard(vg, t, 48, 0, kWidth - 96, card_text, false) : 0;
     const float list_top = y, list_bottom = card ? std::max(y + 100, 650 - card_h - 12) : 640;
     if (card) {
-        ErrorCard(vg, t, 48, 650 - card_h, kWidth - 96, focused.error, true);
+        ErrorCard(vg, t, 48, 650 - card_h, kWidth - 96, card_text, true);
     }
     const float pitch = 54;
     const int visible = std::max(1, int((list_bottom - list_top - 34) / pitch));
@@ -2914,7 +2962,18 @@ void App::DrawQueue(NVGcontext* vg) {
             std::snprintf(saved, sizeof(saved), TrM().saved_fmt, SizeText(j.saved).c_str());
             info += std::string(" · ") + saved;
         }
-        if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
+        if (j.state == InstallJob::State::Done && j.merged) {
+            char merged[96];
+            std::snprintf(merged, sizeof(merged), TrM().qm_merged_fmt, SizeText(j.merge_saved).c_str());
+            info += std::string(" \u00b7 ") + merged;
+        }
+        if (j.state == InstallJob::State::Done && !j.merge_error.empty()) {
+            // installed, not merged: why, in place of the figures (the game waits in Compress games)
+            nvgSave(vg);
+            nvgScissor(vg, 730, y, 340, 44);
+            ui::Text(vg, 1070, y + 22, 14, t.orange, ErrorTitle(j.merge_error).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            nvgRestore(vg);
+        } else if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
             // why, in place of the figures
             nvgSave(vg);
             nvgScissor(vg, 730, y, 340, 44);
@@ -2962,7 +3021,7 @@ void App::DrawQueue(NVGcontext* vg) {
     const bool paused = m_queue->Paused();
     if (paused || m_queue->Waiting() > 0) hints.push_back({ui::glyph::ZR, paused ? TrM().qw_go_on : TrM().qw_pause, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
-    ui::HintBar(vg, t, paused ? TrM().qw_paused : m_prefs.download_test ? s.download_test : (running ? s.no_sleep : s.queue_done_hint), hints,
+    ui::HintBar(vg, t, paused ? TrM().qw_paused : m_prefs.download_test ? s.download_test : live.merging ? TrM().qm_note : (running ? s.no_sleep : s.queue_done_hint), hints,
                 m_hint_rects);
 }
 

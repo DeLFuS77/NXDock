@@ -1127,6 +1127,50 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
     return true;
 }
 
+bool IsMergedGame(unsigned long long app) {
+    FILE* f = std::fopen(RecipePath(app).c_str(), "rb");
+    if (!f) return false;
+    std::fclose(f);
+    return true;
+}
+
+std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, const std::function<void(int, uint64_t, uint64_t)>& progress,
+                        uint64_t& saved) {
+    const More& m = TrM();
+    saved = 0;
+    keys::Keys k;
+    Result rc = splCryptoInitialize();
+    if (R_FAILED(rc)) return Packed(m.cz_failed_t, m.cz_failed_d, rc);
+    rc = keys::parse_keys(k, false);
+    if (R_SUCCEEDED(rc)) rc = ncmInitialize();
+    if (R_FAILED(rc)) {
+        splCryptoExit();
+        return Packed(m.cz_failed_t, m.cz_failed_d, rc);
+    }
+    std::string error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+    for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+        Storage s(sid);
+        Pair pair;
+        if (!s.ok || !FindPair(s, app, pair)) continue;
+        log_write("[NXDock] merging %016llX with its update v%u\n", (unsigned long long)app, pair.patch.version);
+        error.clear();
+        u64 kept = 0;
+        NcmContentId merged{};
+        MergeOne(s, app, k, pair, stop, progress, error, kept, merged);
+        if (error.empty()) {
+            saved = kept;
+            auto marks = LoadCompressed(kCompressedList);
+            std::erase_if(marks, [app](const CompressedGame& c) { return c.app_id == app; });
+            marks.push_back({app, Hex(&merged, sizeof(merged)), kept, (long long)time(nullptr)});
+            SaveCompressed(kCompressedList, marks);
+        }
+        break;
+    }
+    ncmExit();
+    splCryptoExit();
+    return error;
+}
+
 bool Compressor::StartCompress(unsigned long long app) {
     {
         std::lock_guard lock(m_mutex);
@@ -1167,19 +1211,7 @@ bool Compressor::StartCompress(unsigned long long app) {
                 log_write("[NXDock] compressing %016llX\n", (unsigned long long)app);
                 // with its update installed: merged with it into one Application (25D)
                 if (HasUpdate(app)) {
-                    Pair pair;
-                    if (!FindPair(s, app, pair)) {
-                        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
-                        return;
-                    }
-                    NcmContentId merged{};
-                    MergeOne(s, app, k, pair, m_stop, progress, error, saved, merged);
-                    if (error.empty()) {
-                        auto marks = LoadCompressed(kCompressedList);
-                        std::erase_if(marks, [app](const CompressedGame& c) { return c.app_id == app; });
-                        marks.push_back({app, Hex(&merged, sizeof(merged)), saved, (long long)time(nullptr)});
-                        SaveCompressed(kCompressedList, marks);
-                    }
+                    error = MergeUpdate(app, m_stop, progress, saved);
                     return;
                 }
                 // 1. the program NCA and its RomFS

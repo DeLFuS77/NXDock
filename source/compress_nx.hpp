@@ -25,6 +25,8 @@
 #include "compress_meta.hpp"
 
 #include <atomic>
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -47,6 +49,15 @@ struct GameEstimate {
     enum class Why { None, NotFound, Sparse, Key, Read, Update };
     Why why = Why::None;           // Unsupported: why
 };
+
+// A game NXDock merged with its update (it keeps its recipe): a newer update installed over it is
+// merged in the same way, right after it is installed (25G).
+bool IsMergedGame(unsigned long long app);
+// Merges the update installed over a game with it (25D, 25E), on the calling thread: progress gets
+// the phase (1 measuring, 2 writing, 3 registering and checking), what is done and of how much.
+// Gives the error to show (errors.hpp), empty when it went well; `saved` what it saved.
+std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, const std::function<void(int, uint64_t, uint64_t)>& progress,
+                        uint64_t& saved);
 
 class Compressor {
 public:

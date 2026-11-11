@@ -53,6 +53,10 @@ struct InstallJob {
     double seconds = 0; // how long it took
     u64 written = 0;    // bytes installed
     u64 saved = 0;      // bytes not downloaded: the console had them already (16A)
+    // an update of a game NXDock merged: merged with it right after it is installed (25G)
+    bool merged = false;   // merged with the game
+    u64 merge_saved = 0;   // what that saved
+    std::string merge_error; // why it was not (the update stays installed, for Compress games)
 };
 
 // What NXDock installed since it was opened, for "Undo what was installed in this session".
@@ -88,6 +92,14 @@ public:
         u64 saved = 0;         // bytes the console had already (16A)
         bool copying_save = false; // the saves go to the library first (18A)
         u64 copy_done = 0, copy_total = 0;
+        // installed, now merged with the game (25G): the phase (1 read and measure, 2 compress and
+        // write, 3 check), how far, how fast; and what the install itself took
+        bool merging = false;
+        int merge_phase = 0;
+        u64 merge_done = 0, merge_total = 0;
+        double merge_rate = 0;
+        u64 installed_bytes = 0;
+        double installed_seconds = 0;
         int threads = -1;      // decompression threads: 3 for NCZBLOCK, 1 solid, 0 none, -1 unknown
         int connections = 0;
         double net_rate = 0, ready_rate = 0, write_rate = 0; // MB/s
@@ -191,6 +203,15 @@ private:
     Ask m_ask;
     bool m_answered = false, m_go_on = false;
     std::atomic<bool> m_copying{false};
+    // the merge after an install (25G)
+    void MergeAfter(InstallJob& job, const std::vector<NcmContentMetaKey>& keys);
+    std::atomic<bool> m_merge_stop{false};
+    bool m_merging = false;
+    int m_merge_phase = 0;
+    u64 m_merge_done = 0, m_merge_total = 0, m_merge_sample = 0;
+    double m_merge_t = 0, m_merge_rate = 0;
+    u64 m_installed_bytes = 0;
+    double m_installed_seconds = 0;
     std::atomic<u64> m_copy_done{0}, m_copy_total{0};
 
     // the running job
