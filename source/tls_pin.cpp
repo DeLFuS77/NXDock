@@ -5,6 +5,7 @@
 
 #include <curl/curl.h>
 #include <cstring>
+#include <map>
 #include <mutex>
 
 namespace nxdock::tls {
@@ -104,6 +105,15 @@ size_t Discard(char*, size_t size, size_t n, void*) {
 } // namespace
 
 std::string g_pin_origin;
+std::map<std::string, std::string> g_sites; // origin → pin of a shop
+
+void SetSitePin(const std::string& url, const std::string& pin) {
+    const std::string origin = http::Origin(url);
+    if (origin.empty()) return;
+    std::lock_guard lock(g_mutex);
+    if (pin.empty()) g_sites.erase(origin);
+    else g_sites[origin] = pin;
+}
 
 void SetPin(const std::string& pin, const std::string& url) {
     std::lock_guard lock(g_mutex);
@@ -124,20 +134,29 @@ void Apply(void* handle, const std::string& url) {
     // no authority can vouch for the app's own certificate: the pin does
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    std::string pin, origin;
+    std::string pin;
     {
         std::lock_guard lock(g_mutex);
-        pin = g_pin;
-        origin = g_pin_origin;
+        const std::string here = http::Origin(url);
+        if (!g_pin.empty() && (g_pin_origin.empty() || g_pin_origin == here)) {
+            pin = g_pin;
+        } else {
+            const auto it = g_sites.find(here);
+            if (it != g_sites.end()) pin = it->second;
+        }
     }
-    if (!pin.empty() && (origin.empty() || origin == http::Origin(url))) {
+    if (!pin.empty()) {
         curl_easy_setopt(curl, CURLOPT_PINNEDPUBLICKEY, pin.c_str()); // copied by curl
     }
 }
 
 std::string ReadPin(const std::string& url, std::string& error) {
+    return ReadPinAt(url + "/install/hello", error);
+}
+
+std::string ReadPinAt(const std::string& target, std::string& error) {
     error.clear();
-    if (!IsHttps(url)) {
+    if (!IsHttps(target)) {
         return "";
     }
     CURL* curl = curl_easy_init();
@@ -145,7 +164,6 @@ std::string ReadPin(const std::string& url, std::string& error) {
         error = "curl";
         return "";
     }
-    const std::string target = url + "/install/hello";
     curl_easy_setopt(curl, CURLOPT_URL, target.c_str());
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);

@@ -24,8 +24,14 @@ std::string Pin();
 // first contact takes any key, to read it); nothing for http.
 void Apply(void* curl, const std::string& url);
 
+// The pin of another https site, a shop (trust on first use, as the library): every request to
+// that origin then needs that key. An empty pin forgets it.
+void SetSitePin(const std::string& url, const std::string& pin);
+
 // Reads the public key of the app at an https address and gives its pin; empty on failure.
 std::string ReadPin(const std::string& url, std::string& error);
+// The same for any https address (`target` is asked as it is).
+std::string ReadPinAt(const std::string& target, std::string& error);
 
 // --- the pieces, tested on the computer
 std::vector<uint8_t> Base64Decode(const std::string& text);

@@ -464,6 +464,9 @@ constexpr More kEnglish{
     .cz_redo_t = "This update cannot be merged",
     .cz_redo_d = "The game was merged when Nintendo had already compressed it, and a newer update cannot be merged over it. The update is installed, but the game may not open with it. In Compress games, Undo installs the original game and the newest update from the library; then merge them again.",
     .cz_undo_redo_body = "This game was merged when Nintendo had already compressed it, so the newer update installed over it cannot be merged. The original game, the newest update and its DLC are installed again from the library; then you can merge them again. The save is not touched.",
+    .e_shop_key_t = "The shop's certificate changed",
+    .e_shop_key_w = "The shop answered with another key than the one kept the first time it opened. Someone may be in between.",
+    .e_shop_key_d = "If the shop changed its certificate, edit it (Y) and save it again: its new key is kept. If not, do not open it on this network.",
 };
 
 constexpr More kSpanish{
@@ -921,6 +924,9 @@ constexpr More kSpanish{
     .cz_redo_t = "Esta actualización no se puede juntar",
     .cz_redo_d = "El juego se juntó cuando Nintendo ya lo había comprimido, y una actualización nueva no se puede juntar encima. La actualización se ha instalado, pero puede que el juego no abra con ella. En Comprimir juegos, «Deshacer» reinstala desde la biblioteca el juego original y la actualización más nueva; después, vuelve a juntarlos.",
     .cz_undo_redo_body = "Este juego se juntó cuando Nintendo ya lo había comprimido, así que la actualización nueva que tiene encima no se puede juntar. Se vuelven a instalar desde la biblioteca el juego original, la actualización más nueva y sus DLC; después puedes juntarlos otra vez. La partida guardada no se toca.",
+    .e_shop_key_t = "El certificado de la tienda ha cambiado",
+    .e_shop_key_w = "La tienda ha respondido con otra clave distinta de la que se guardó la primera vez que se abrió. Puede que haya alguien en medio.",
+    .e_shop_key_d = "Si la tienda ha cambiado de certificado, edítala (Y) y guárdala de nuevo: se guarda su clave nueva. Si no, no la abras en esta red.",
 };
 
 constexpr More kFrench{
@@ -1378,6 +1384,9 @@ constexpr More kFrench{
     .cz_redo_t = "Cette mise à jour ne peut pas être fusionnée",
     .cz_redo_d = "Le jeu a été fusionné alors que Nintendo l’avait déjà compressé, et une nouvelle mise à jour ne peut pas être fusionnée par-dessus. La mise à jour est installée, mais le jeu risque de ne pas s’ouvrir avec. Dans Compresser des jeux, « Annuler » réinstalle depuis la bibliothèque le jeu d’origine et la mise à jour la plus récente ; fusionnez-les ensuite à nouveau.",
     .cz_undo_redo_body = "Ce jeu a été fusionné alors que Nintendo l’avait déjà compressé : la nouvelle mise à jour installée par-dessus ne peut pas être fusionnée. Le jeu d’origine, la mise à jour la plus récente et ses DLC sont réinstallés depuis la bibliothèque ; vous pourrez ensuite les fusionner à nouveau. La sauvegarde n’est pas touchée.",
+    .e_shop_key_t = "Le certificat de la boutique a changé",
+    .e_shop_key_w = "La boutique a répondu avec une autre clé que celle gardée la première fois qu’elle a été ouverte. Quelqu’un est peut-être entre les deux.",
+    .e_shop_key_d = "Si la boutique a changé de certificat, modifiez-la (Y) et enregistrez-la à nouveau : sa nouvelle clé est gardée. Sinon, ne l’ouvrez pas sur ce réseau.",
 };
 
 constexpr More kGerman{
@@ -1835,6 +1844,9 @@ constexpr More kGerman{
     .cz_redo_t = "Dieses Update kann nicht zusammengeführt werden",
     .cz_redo_d = "Das Spiel wurde zusammengeführt, als Nintendo es bereits komprimiert hatte, und ein neueres Update kann nicht darüber zusammengeführt werden. Das Update ist installiert, aber das Spiel startet damit vielleicht nicht. In „Spiele komprimieren“ installiert „Rückgängig“ das originale Spiel und das neueste Update aus der Bibliothek neu; danach erneut zusammenführen.",
     .cz_undo_redo_body = "Dieses Spiel wurde zusammengeführt, als Nintendo es bereits komprimiert hatte, daher kann das neuere Update darüber nicht zusammengeführt werden. Das originale Spiel, das neueste Update und seine DLC werden aus der Bibliothek neu installiert; danach kannst du sie erneut zusammenführen. Der Spielstand bleibt unberührt.",
+    .e_shop_key_t = "Das Zertifikat des Shops hat sich geändert",
+    .e_shop_key_w = "Der Shop hat mit einem anderen Schlüssel geantwortet als dem, der beim ersten Öffnen gespeichert wurde. Vielleicht sitzt jemand dazwischen.",
+    .e_shop_key_d = "Wenn der Shop sein Zertifikat geändert hat, bearbeite ihn (Y) und speichere ihn erneut: Sein neuer Schlüssel wird gespeichert. Sonst öffne ihn nicht in diesem Netzwerk.",
 };
 
 constexpr More kItalian{
@@ -2292,6 +2304,9 @@ constexpr More kItalian{
     .cz_redo_t = "Questo aggiornamento non si può unire",
     .cz_redo_d = "Il gioco è stato unito quando Nintendo l’aveva già compresso, e un nuovo aggiornamento non si può unire sopra. L’aggiornamento è installato, ma il gioco potrebbe non aprirsi. In Comprimi giochi, «Annulla» reinstalla dalla libreria il gioco originale e l’aggiornamento più recente; poi uniscili di nuovo.",
     .cz_undo_redo_body = "Questo gioco è stato unito quando Nintendo l’aveva già compresso, quindi il nuovo aggiornamento installato sopra non si può unire. Il gioco originale, l’aggiornamento più recente e i suoi DLC vengono reinstallati dalla libreria; poi potrai unirli di nuovo. Il salvataggio non viene toccato.",
+    .e_shop_key_t = "Il certificato del negozio è cambiato",
+    .e_shop_key_w = "Il negozio ha risposto con una chiave diversa da quella salvata la prima volta che è stato aperto. Potrebbe esserci qualcuno in mezzo.",
+    .e_shop_key_d = "Se il negozio ha cambiato certificato, modificalo (Y) e salvalo di nuovo: la sua nuova chiave viene salvata. Altrimenti, non aprirlo su questa rete.",
 };
 
 constexpr More kPortuguese{
@@ -2749,6 +2764,9 @@ constexpr More kPortuguese{
     .cz_redo_t = "Esta atualização não se pode juntar",
     .cz_redo_d = "O jogo foi juntado quando a Nintendo já o tinha comprimido, e uma atualização nova não se pode juntar por cima. A atualização foi instalada, mas o jogo pode não abrir com ela. Em Comprimir jogos, «Desfazer» reinstala a partir da biblioteca o jogo original e a atualização mais recente; depois, volta a juntá-los.",
     .cz_undo_redo_body = "Este jogo foi juntado quando a Nintendo já o tinha comprimido, por isso a atualização nova instalada por cima não se pode juntar. O jogo original, a atualização mais recente e os seus DLC voltam a ser instalados a partir da biblioteca; depois podes juntá-los outra vez. O jogo guardado não é tocado.",
+    .e_shop_key_t = "O certificado da loja mudou",
+    .e_shop_key_w = "A loja respondeu com uma chave diferente da que foi guardada da primeira vez que foi aberta. Pode haver alguém pelo meio.",
+    .e_shop_key_d = "Se a loja mudou de certificado, edita-a (Y) e guarda-a de novo: a nova chave fica guardada. Se não, não a abras nesta rede.",
 };
 
 constexpr More kDutch{
@@ -3206,6 +3224,9 @@ constexpr More kDutch{
     .cz_redo_t = "Deze update kan niet worden samengevoegd",
     .cz_redo_d = "Het spel is samengevoegd toen Nintendo het al had gecomprimeerd, en een nieuwere update kan er niet overheen worden samengevoegd. De update is geïnstalleerd, maar het spel opent er mogelijk niet mee. In Spellen comprimeren installeert ‘Ongedaan maken’ het originele spel en de nieuwste update opnieuw vanuit de bibliotheek; voeg ze daarna opnieuw samen.",
     .cz_undo_redo_body = "Dit spel is samengevoegd toen Nintendo het al had gecomprimeerd, dus de nieuwere update die erover is geïnstalleerd kan niet worden samengevoegd. Het originele spel, de nieuwste update en zijn DLC worden opnieuw geïnstalleerd vanuit de bibliotheek; daarna kun je ze opnieuw samenvoegen. De opslag wordt niet aangeraakt.",
+    .e_shop_key_t = "Het certificaat van de winkel is veranderd",
+    .e_shop_key_w = "De winkel antwoordde met een andere sleutel dan die bij de eerste keer openen is bewaard. Misschien zit er iemand tussen.",
+    .e_shop_key_d = "Als de winkel een nieuw certificaat heeft, bewerk hem (Y) en sla hem opnieuw op: de nieuwe sleutel wordt bewaard. Zo niet, open hem dan niet op dit netwerk.",
 };
 
 constexpr More kRussian{
@@ -3663,6 +3684,9 @@ constexpr More kRussian{
     .cz_redo_t = "Это обновление нельзя объединить",
     .cz_redo_d = "Игра была объединена, когда Nintendo уже сжала её, и новое обновление нельзя объединить поверх. Обновление установлено, но игра может с ним не запуститься. В разделе «Сжатие игр» кнопка «Отменить» заново установит из библиотеки исходную игру и самое новое обновление; затем объедините их снова.",
     .cz_undo_redo_body = "Эта игра была объединена, когда Nintendo уже сжала её, поэтому новое обновление поверх неё объединить нельзя. Исходная игра, самое новое обновление и её DLC снова устанавливаются из библиотеки; затем их можно объединить заново. Сохранения не затрагиваются.",
+    .e_shop_key_t = "Сертификат магазина изменился",
+    .e_shop_key_w = "Магазин ответил другим ключом, а не тем, что был сохранён при первом открытии. Возможно, кто-то вмешивается в соединение.",
+    .e_shop_key_d = "Если магазин сменил сертификат, измените его (Y) и сохраните снова: новый ключ будет сохранён. Если нет, не открывайте его в этой сети.",
 };
 
 constexpr More kJapanese{
@@ -4120,6 +4144,9 @@ constexpr More kJapanese{
     .cz_redo_t = "この更新データはまとめられません",
     .cz_redo_d = "このゲームは、任天堂がすでに圧縮した状態でまとめたため、新しい更新データを上からまとめられません。更新データはインストールされましたが、ゲームが起動しない場合があります。「ゲームを圧縮」の「元に戻す」で、元のゲームと最新の更新データをライブラリから再インストールし、もう一度まとめてください。",
     .cz_undo_redo_body = "このゲームは任天堂がすでに圧縮した状態でまとめたため、上にインストールされた新しい更新データはまとめられません。元のゲーム、最新の更新データ、DLCをライブラリから再インストールします。そのあと、もう一度まとめられます。セーブデータはそのままです。",
+    .e_shop_key_t = "ショップの証明書が変わりました",
+    .e_shop_key_w = "ショップが、最初に開いたときに保存したものとは別の鍵で応答しました。間に誰かがいる可能性があります。",
+    .e_shop_key_d = "ショップが証明書を変えた場合は、編集（Y）してもう一度保存してください。新しい鍵が保存されます。そうでなければ、このネットワークでは開かないでください。",
 };
 
 constexpr More kKorean{
@@ -4577,6 +4604,9 @@ constexpr More kKorean{
     .cz_redo_t = "이 업데이트는 합칠 수 없습니다",
     .cz_redo_d = "이 게임은 닌텐도가 이미 압축한 상태에서 합쳐져서, 새 업데이트를 위에 합칠 수 없습니다. 업데이트는 설치되었지만 게임이 열리지 않을 수 있습니다. '게임 압축'에서 '되돌리기'로 원래 게임과 최신 업데이트를 라이브러리에서 다시 설치한 뒤 다시 합치세요.",
     .cz_undo_redo_body = "이 게임은 닌텐도가 이미 압축한 상태에서 합쳐져서, 위에 설치된 새 업데이트를 합칠 수 없습니다. 원래 게임, 최신 업데이트와 DLC를 라이브러리에서 다시 설치합니다. 그런 다음 다시 합칠 수 있습니다. 세이브 데이터는 그대로입니다.",
+    .e_shop_key_t = "상점의 인증서가 바뀌었습니다",
+    .e_shop_key_w = "상점이 처음 열었을 때 저장한 것과 다른 키로 응답했습니다. 중간에 누군가 있을 수 있습니다.",
+    .e_shop_key_d = "상점이 인증서를 바꿨다면 편집(Y)해서 다시 저장하세요. 새 키가 저장됩니다. 그렇지 않다면 이 네트워크에서 열지 마세요.",
 };
 
 constexpr More kChinese{
@@ -5034,6 +5064,9 @@ constexpr More kChinese{
     .cz_redo_t = "无法合并此更新",
     .cz_redo_d = "该游戏合并时已被任天堂压缩，因此无法在其上合并新更新。更新已安装，但游戏可能无法打开。请在“压缩游戏”中用“撤销”从游戏库重新安装原始游戏和最新更新，然后再次合并。",
     .cz_undo_redo_body = "该游戏合并时已被任天堂压缩，因此其上安装的新更新无法合并。将从游戏库重新安装原始游戏、最新更新及其 DLC，之后可以再次合并。存档不受影响。",
+    .e_shop_key_t = "商店的证书已更改",
+    .e_shop_key_w = "商店使用的密钥与第一次打开时保存的不同。可能有人在中间拦截。",
+    .e_shop_key_d = "如果商店更换了证书，请编辑（Y）并重新保存：会保存新的密钥。否则，请不要在此网络中打开它。",
 };
 
 // In the order of LanguageName in i18n.cpp.

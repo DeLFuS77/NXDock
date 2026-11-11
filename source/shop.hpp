@@ -17,6 +17,7 @@ namespace nxdock {
 // apart and explained: it is encrypted with Tinfoil's key, which only Tinfoil has.
 struct ShopConfig {
     std::string name, url, user, pass; // the password is typed on the console and kept on the SD
+    std::string pin; // https: the key of the shop's certificate, kept the first time it opens
 };
 
 std::vector<ShopConfig> LoadShops(const std::string& path);
@@ -30,7 +31,8 @@ struct ShopFile {
     unsigned version = 0;
 };
 
-enum class ShopError { None, Encrypted, NotIndex, Auth, Network, Empty };
+// KeyChanged: an https shop answered with another key than the one kept the first time
+enum class ShopError { None, Encrypted, NotIndex, Auth, Network, Empty, KeyChanged };
 
 // The bytes of an index to its JSON (unpacking a TINFOIL header); Encrypted or NotIndex.
 ShopError UnpackIndex(const std::string& bytes, std::string& json);
@@ -48,14 +50,15 @@ public:
     ~ShopLoader();
     void Start(const ShopConfig& shop);
     bool Busy();
-    // once, when it ends
-    bool Take(ShopError& error, std::vector<ShopFile>& files);
+    // once, when it ends; `pin` the key of an https shop read the first time (to keep), or empty
+    bool Take(ShopError& error, std::vector<ShopFile>& files, std::string& pin);
 
 private:
     std::thread m_thread;
     std::mutex m_mutex;
     bool m_busy = false, m_done = false;
     ShopError m_error = ShopError::None;
+    std::string m_pin;
     std::vector<ShopFile> m_files;
 };
 

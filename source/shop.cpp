@@ -105,7 +105,7 @@ std::vector<ShopConfig> LoadShops(const std::string& path) {
             }
         }
         if (parts.size() >= 2 && !parts[1].empty()) {
-            out.push_back({parts[0], parts[1], parts.size() > 2 ? parts[2] : "", parts.size() > 3 ? parts[3] : ""});
+            out.push_back({parts[0], parts[1], parts.size() > 2 ? parts[2] : "", parts.size() > 3 ? parts[3] : "", parts.size() > 4 ? parts[4] : ""});
         }
     }
     std::fclose(f);
@@ -123,7 +123,8 @@ bool SaveShops(const std::string& path, const std::vector<ShopConfig>& shops) {
         return s;
     };
     for (const auto& s : shops) {
-        std::fprintf(f, "%s\t%s\t%s\t%s\n", clean(s.name).c_str(), clean(s.url).c_str(), clean(s.user).c_str(), clean(s.pass).c_str());
+        std::fprintf(f, "%s\t%s\t%s\t%s\t%s\n", clean(s.name).c_str(), clean(s.url).c_str(), clean(s.user).c_str(), clean(s.pass).c_str(),
+                     clean(s.pin).c_str());
     }
     const bool ok = std::fclose(f) == 0;
     std::remove(path.c_str());

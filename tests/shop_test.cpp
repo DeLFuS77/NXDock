@@ -81,9 +81,11 @@ int main() {
 
     // the list of shops, saved and read back; the key joins user and password
     const std::string path = "/tmp/shops_test.ini";
-    CHECK(SaveShops(path, {{"Home", "http://a/", "me", "secret"}, {"Open", "https://b/", "", ""}}));
+    CHECK(SaveShops(path, {{"Home", "http://a/", "me", "secret", ""}, {"Open", "https://b/", "", "", "sha256//abc="}}));
     const auto shops = LoadShops(path);
     CHECK(shops.size() == 2 && shops[0].pass == "secret" && shops[1].user.empty());
+    // the pin of an https shop is kept with it
+    CHECK(shops[0].pin.empty() && shops[1].pin == "sha256//abc=");
     CHECK(ShopKey(shops[0]) == std::string("me\x1fsecret") && ShopKey(shops[1]).empty());
 
     if (failures) {

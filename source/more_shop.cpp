@@ -64,7 +64,8 @@ bool App::EditShop(ShopConfig& shop, bool fresh) {
     std::string pass;
     // the password is typed again each time; empty keeps none
     if (!AskField(m.sh_guide_pass, "", true, pass)) return false;
-    shop = {name.empty() ? Host(url) : name, url, user, pass};
+    // saved again, the key of its certificate is read anew the next time it opens
+    shop = {name.empty() ? Host(url) : name, url, user, pass, ""};
     return true;
 }
 
@@ -72,7 +73,13 @@ void App::FollowShop() {
     if (!m_shop_loader) return;
     ShopError error;
     std::vector<ShopFile> files;
-    if (!m_shop_loader->Take(error, files)) return;
+    std::string pin;
+    if (!m_shop_loader->Take(error, files, pin)) return;
+    // the key of an https shop, the first time it opened: kept with the shop
+    if (!pin.empty() && m_shop_opening >= 0 && m_shop_opening < int(m_shops.size())) {
+        m_shops[size_t(m_shop_opening)].pin = pin;
+        SaveShops(ShopsPath(), m_shops);
+    }
     const More& m = TrM();
     if (error != ShopError::None) {
         ErrorText e;
@@ -81,6 +88,7 @@ void App::FollowShop() {
             case ShopError::Auth: e = {m.e_shop_auth_t, {}, m.e_shop_auth_d, {}}; break;
             case ShopError::Network: e = {m.e_network_t, m.e_network_w, m.e_network_d, {}}; break;
             case ShopError::Empty: e = {m.e_shop_empty, {}, m.e_shop_bad_d, {}}; break;
+            case ShopError::KeyChanged: e = {m.e_shop_key_t, m.e_shop_key_w, m.e_shop_key_d, {}}; break;
             default: e = {m.e_shop_bad_t, m.e_shop_bad_w, m.e_shop_bad_d, {}}; break;
         }
         m_dialog = Dialog{};

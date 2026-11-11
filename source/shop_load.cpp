@@ -3,6 +3,7 @@
 #include "shop.hpp"
 
 #include "http.hpp"
+#include "tls_pin.hpp"
 
 #include <new>
 
@@ -19,12 +20,13 @@ bool ShopLoader::Busy() {
     return m_busy;
 }
 
-bool ShopLoader::Take(ShopError& error, std::vector<ShopFile>& files) {
+bool ShopLoader::Take(ShopError& error, std::vector<ShopFile>& files, std::string& pin) {
     std::lock_guard lock(m_mutex);
     if (!m_done) return false;
     m_done = false;
     error = m_error;
     files = std::move(m_files);
+    pin = std::move(m_pin);
     return true;
 }
 
@@ -36,6 +38,23 @@ void ShopLoader::Start(const ShopConfig& shop) {
         const std::string key = ShopKey(shop);
         std::vector<ShopFile> files;
         ShopError error = ShopError::None;
+        // https: the key of the shop's certificate, read and kept the first time (there is no
+        // authority on the console to check it against); from then on another key is refused
+        std::string learned;
+        if (shop.url.rfind("https://", 0) == 0) {
+            std::string pin = shop.pin, why;
+            if (pin.empty()) {
+                pin = learned = tls::ReadPinAt(shop.url, why);
+            }
+            if (pin.empty()) {
+                std::lock_guard lock(m_mutex);
+                m_error = ShopError::Network;
+                m_done = true;
+                m_busy = false;
+                return;
+            }
+            tls::SetSitePin(shop.url, pin);
+        }
         std::vector<std::string> todo = {shop.url}, seen;
         // the index, and the directories it points to (one level deeper at most)
         for (size_t i = 0; i < todo.size() && i < 32; i++) {
@@ -50,6 +69,11 @@ void ShopLoader::Start(const ShopConfig& shop) {
             });
             if (r.status == 401 || r.status == 403) {
                 if (i == 0) error = ShopError::Auth;
+                continue;
+            }
+            // curl refused the certificate: not the key kept the first time
+            if (r.status == 0 && r.error.find("pinned") != std::string::npos) {
+                if (i == 0) error = ShopError::KeyChanged;
                 continue;
             }
             if (r.status != 200) {
@@ -83,6 +107,8 @@ void ShopLoader::Start(const ShopConfig& shop) {
         std::lock_guard lock(m_mutex);
         m_error = files.empty() ? error : ShopError::None;
         m_files = std::move(files);
+        // kept only when the shop answered with it
+        if (m_error == ShopError::None) m_pin = learned;
         m_done = true;
         m_busy = false;
     });

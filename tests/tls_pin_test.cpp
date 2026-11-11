@@ -91,6 +91,16 @@ int main(int argc, char** argv) {
         Check(Get(url) == 0, "another key is refused");
         SetPin("");
         Check(Get("http://127.0.0.1:1") == 0 || true, "plain http is left alone");
+
+        // a shop on https: its own pin, read the first time and kept
+        Check(ReadPinAt(url + "/install/hello", error) == pin, "the pin of a shop read at its address");
+        SetPin(PinOfPem(ReadFile(argv[4])), "https://library.invalid:443");
+        SetSitePin(url, pin);
+        Check(Get(url) == 200, "a shop with its own pin (the library's is for the library only)");
+        SetSitePin(url, PinOfPem(ReadFile(argv[4])));
+        Check(Get(url) == 0, "a shop answering with another key is refused");
+        SetSitePin(url, "");
+        SetPin("");
     }
     std::printf("%s\n", g_failed ? "FAILED" : "all passed");
     return g_failed ? 1 : 0;
