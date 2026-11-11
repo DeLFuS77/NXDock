@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- The SD card and USB disk list shows every file if asked, marks files and
+  folders (a range while Y is held, ZL for all) and has a menu on −: install
+  what a folder holds, copy, cut and paste, rename, a new folder, properties
+  and delete. The folders of the system are never deleted, renamed or moved.
+- Installing from the SD card or a USB disk can delete each file once it is
+  installed and checked; a failed install keeps it.
+- NXDock updates itself from its releases, after checking their signature;
+  the version before is kept to go back to.
+- In the console tells which games miss an update or DLC, also those not in
+  the library (from the versions list of titledb), with a filter.
+- The details of an installed content: its ticket, keys and firmware. Its
+  ticket can be put back from the library, and the version the console asks
+  for can be dropped.
+- MTP shows more folders, read only: the installed games as NSP, the saves,
+  the Album and a USB disk.
+- Saves: the console's own and BCAT too, copies to the SD card without a
+  library, Copy all, Delete the save (after a copy), and copies by themselves
+  every few days.
 - A shortcut on the HOME menu (Settings › HOME menu): NXDock opens from it with
   all the memory and the network of a game. Made on the console, to the SD card;
   made again, it is updated; it can be removed.
