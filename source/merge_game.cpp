@@ -90,11 +90,21 @@ bool Merger::Open(Input in, std::string& error) {
         error = "not a program NCA";
         return false;
     }
-    m_base = patchview::OpenBase(m_in.base, error);
-    if (!m_base) return false;
-    m_patched = patchview::OpenPatched(m_in.update, m_base.get(), error);
+    m_base.reset();
+    m_base_ptr = m_in.base_section;
+    if (!m_base_ptr) {
+        m_base = patchview::OpenBase(m_in.base, error);
+        if (!m_base) return false;
+        m_base_ptr = m_base.get();
+    }
+    m_patched = patchview::OpenPatched(m_in.update, m_base_ptr, error);
     if (!m_patched) return false;
     if (!m_romfs.Open(m_patched.get(), m_in.update.fsh.data(), m_in.hash, error)) return false;
+    {
+        const uint8_t* h = m_in.update.fsh.data() + 8;
+        const uint32_t layers = Get32(h + 0xC);
+        m_data_offset = layers >= 2 && layers <= 7 ? Get64(h + 0x10 + (layers - 2) * 0x18) : 0;
+    }
     // the runs of the update, when its data level is not compressed (then the runs are places of
     // the RomFS itself): what it reads more than once from the base is stored once
     m_runs.clear();
@@ -118,6 +128,10 @@ bool Merger::Open(Input in, std::string& error) {
         m_runs = mergepack::RunsFromIndirect(ir, end, data_offset, m_romfs.StoredSize());
     }
     return true;
+}
+
+bool Merger::Indirect(std::vector<patchview::IndirectEntry>& entries, uint64_t& end) const {
+    return m_patched && patchview::IndirectEntries(*m_patched, entries, end);
 }
 
 bool Merger::PackOnce(const lz4pack::WriteFn& write, const lz4pack::StepFn& step, lz4pack::Packed& out) {

@@ -33,6 +33,7 @@ using HeaderFn = std::function<void(uint8_t* header, size_t size)>;
 
 struct Input {
     patchview::NcaSection base;          // the RomFS section of the program NCA of the base game
+    patchview::Section* base_section = nullptr; // or the base as it is read (a merged game's, 25E)
     patchview::NcaSection update;        // the RomFS section of the program NCA of the update
     int update_index = 1;                // which section of it that is
     std::vector<uint8_t> update_header;  // its header, decrypted (0xC00)
@@ -61,6 +62,14 @@ public:
     // 2. the whole NCA, in order
     bool Write(const OutFn& out, const lz4pack::StepFn& step, std::string& error);
     const mergepack::Stats& Stats() const { return m_stats; }
+    // for the recipe of the merged game (merge_recipe): the indirect table of the update, the data
+    // level in its patched section, the size of the base section, and whether its RomFS is stored
+    // as it is read (when compressed, the places of the base are not places of the RomFS)
+    bool Indirect(std::vector<patchview::IndirectEntry>& entries, uint64_t& end) const;
+    uint64_t DataOffset() const { return m_data_offset; }
+    uint64_t DataSize() const { return m_romfs.StoredSize(); }
+    uint64_t BaseSize() const { return m_base_ptr ? m_base_ptr->Size() : 0; }
+    bool RomfsCompressed() const { return m_romfs.Compressed(); }
     // blocks of the base or the update found damaged as they were read
     uint64_t Damaged() const { return m_romfs.Damaged(); }
 
@@ -68,6 +77,8 @@ private:
     bool PackOnce(const lz4pack::WriteFn& write, const lz4pack::StepFn& step, lz4pack::Packed& out);
     Input m_in;
     std::unique_ptr<patchview::Section> m_base, m_patched;
+    patchview::Section* m_base_ptr = nullptr;
+    uint64_t m_data_offset = 0;
     patchview::Romfs m_romfs;
     std::vector<mergepack::Run> m_runs;
     lz4pack::Packed m_packed;

@@ -59,6 +59,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # the CNMT and the meta NCA of a game merged with its update (25D)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/merge_meta_test tests/merge_meta_test.cpp source/merge_meta.cpp /usr/lib/x86_64-linux-gnu/libcrypto.so.3
   /tmp/merge_meta_test
+  # the recipe of a merged game, and its base made again for a newer update (25E)
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -Iinclude -o /tmp/merge_recipe_test tests/merge_recipe_test.cpp source/merge_recipe.cpp source/patch_view.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o
+  /tmp/merge_recipe_test
   # the list of compressed games, the look for sigpatches and the CNMT made again (24A)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/compress_meta_test tests/compress_meta_test.cpp source/compress_meta.cpp
   /tmp/compress_meta_test

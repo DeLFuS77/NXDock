@@ -11,6 +11,7 @@
 #include "net.hpp"
 #include "merge_game.hpp"
 #include "merge_meta.hpp"
+#include "merge_recipe.hpp"
 #include "romfs_lz4.hpp"
 #include "yati/nx/crypto.hpp"
 #include "yati/nx/es.hpp"
@@ -20,6 +21,7 @@
 #include "yati/nx/ns.hpp"
 
 #include <switch.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <array>
@@ -402,10 +404,52 @@ patchview::NcaSection SectionOf(NcmContentStorage& cs, const NcmContentId& id, c
     return s;
 }
 
-// The base game and its update opened for the merge. `why` set when they cannot be.
+// The recipe of a merged game (25E): where the pieces of its base game lie in its RomFS, kept
+// next to the list of compressed games, one file per game.
+std::string RecipePath(u64 app) {
+    char path[128];
+    std::snprintf(path, sizeof(path), "sdmc:/switch/NXDock/recipes/%016llX.bin", (unsigned long long)app);
+    return path;
+}
+
+bool LoadRecipe(u64 app, recipe::Recipe& r) {
+    FILE* f = std::fopen(RecipePath(app).c_str(), "rb");
+    if (!f) return false;
+    std::vector<u8> b;
+    u8 chunk[4096];
+    size_t n;
+    while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0 && b.size() < 64 * 1024 * 1024) b.insert(b.end(), chunk, chunk + n);
+    std::fclose(f);
+    return recipe::Read(b, r);
+}
+
+bool SaveRecipe(u64 app, const recipe::Recipe& r) {
+    mkdir("sdmc:/switch/NXDock/recipes", 0777);
+    const std::string path = RecipePath(app), tmp = path + ".tmp";
+    const auto b = recipe::Write(r);
+    FILE* f = std::fopen(tmp.c_str(), "wb");
+    if (!f) return false;
+    const bool ok = std::fwrite(b.data(), 1, b.size(), f) == b.size();
+    if (std::fclose(f) != 0 || !ok) {
+        std::remove(tmp.c_str());
+        return false;
+    }
+    std::remove(path.c_str());
+    return std::rename(tmp.c_str(), path.c_str()) == 0;
+}
+
+// The base game and its update opened for the merge. `why` set when they cannot be. A game NXDock
+// merged before (its recipe says the version installed) is the base of a newer update: the base it
+// was made from is made again from its RomFS by the recipe (25E).
 struct Opened {
     nca::Header base_h{}, patch_h{};
     keys::KeyEntry base_key{}, patch_key{};
+    bool from_merged = false;
+    std::unique_ptr<patchview::Section> merged_section;
+    patchview::Romfs merged_romfs;
+    std::unique_ptr<recipe::RebuiltBase> rebuilt;
+    recipe::Recipe recipe;
+    u64 missing = 0; // bytes of the base the new update reads that the merged game has not
 };
 
 bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, mergegame::Merger& m, GameEstimate::Why& why) {
@@ -423,8 +467,24 @@ bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, merge
     why = GameEstimate::Why::Read;
     const int bi = RomfsIndex(o.base_h), ui = RomfsIndex(o.patch_h);
     if (bi < 0 || ui < 0) return false;
+    // merged before: the base made again from it
+    if (LoadRecipe(p.base.id, o.recipe) && o.recipe.version == p.base.version) {
+        std::string error;
+        const auto sec = SectionOf(s.cs, p.base_program, o.base_h, bi, o.base_key.key);
+        o.merged_section = patchview::OpenBase(sec, error);
+        if (!o.merged_section || !o.merged_romfs.Open(o.merged_section.get(), sec.fsh.data(), Sha256, error)) {
+            log_write("[NXDock] merge: the merged game: %s\n", error.c_str());
+            return false;
+        }
+        patchview::Romfs* romfs = &o.merged_romfs;
+        // the few bytes it has not are not fetched yet (from the library, later): the merge waits
+        o.rebuilt = std::make_unique<recipe::RebuiltBase>(o.recipe, [romfs](u64 at, u8* b, size_t n) { return romfs->Read(at, b, n); },
+                                                          recipe::FetchFn());
+        o.from_merged = true;
+    }
     mergegame::Input in;
-    in.base = SectionOf(s.cs, p.base_program, o.base_h, bi, o.base_key.key);
+    if (o.from_merged) in.base_section = o.rebuilt.get();
+    else in.base = SectionOf(s.cs, p.base_program, o.base_h, bi, o.base_key.key);
     in.update = SectionOf(s.cs, p.patch_program, o.patch_h, ui, o.patch_key.key);
     in.update_index = ui;
     in.update_header.assign(reinterpret_cast<const u8*>(&o.patch_h), reinterpret_cast<const u8*>(&o.patch_h) + 0xC00);
@@ -442,6 +502,17 @@ bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, merge
     if (!m.Open(std::move(in), error)) {
         log_write("[NXDock] merge: %s\n", error.c_str());
         return false;
+    }
+    if (o.from_merged) {
+        std::vector<patchview::IndirectEntry> entries;
+        u64 end = 0;
+        if (!m.Indirect(entries, end)) return false;
+        o.missing = 0;
+        for (const auto& gap : recipe::Missing(o.recipe, entries, end)) o.missing += gap.second;
+        if (o.missing) {
+            log_write("[NXDock] merge: the new update reads %llu bytes of the base the merged game has not\n", (unsigned long long)o.missing);
+            return false;
+        }
     }
     why = GameEstimate::Why::None;
     return true;
@@ -706,6 +777,18 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
             }
         }
     }
+    // the recipe, for the next update (25E): the places of the base the update read, found in the
+    // RomFS of the merged game. Without it, a newer update needs the base from the library.
+    {
+        std::vector<patchview::IndirectEntry> entries;
+        u64 end = 0;
+        if (!merger.RomfsCompressed() && merger.Indirect(entries, end)) {
+            const auto rc = recipe::FromIndirect(entries, end, merger.DataOffset(), merger.DataSize(), merger.BaseSize(), p.patch.version);
+            if (!SaveRecipe(app, rc)) log_write("[NXDock] merge %016llX: the recipe was not saved\n", (unsigned long long)app);
+        } else {
+            std::remove(RecipePath(app).c_str());
+        }
+    }
     saved = p.before - new_size;
     log_write("[NXDock] merged %016llX v%u: %llu bytes saved\n", (unsigned long long)app, p.patch.version, (unsigned long long)saved);
 }
@@ -782,7 +865,8 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
             e.state = GameEstimate::State::Unsupported;
             e.why = GameEstimate::Why::NotFound;
             for (const auto& m : marks) {
-                if (m.app_id == app) {
+                // one NXDock merged with a newer update installed over it: merged again (25E)
+                if (m.app_id == app && !HasUpdate(app)) {
                     e.state = GameEstimate::State::Ours;
                     e.saved = m.saved;
                     e.why = GameEstimate::Why::None;

@@ -135,6 +135,7 @@ add_executable(nxdock
     source/merge_nca.cpp
     source/merge_game.cpp
     source/merge_meta.cpp
+    source/merge_recipe.cpp
     source/compress_meta.cpp
     source/cnmt_patch.cpp
     source/compress_nx.cpp
