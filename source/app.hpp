@@ -57,7 +57,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -392,6 +392,18 @@ private:
     int m_battery = -1;
     bool m_charging = false;
     double m_battery_checked = -100;
+    // the WiFi in the top bar (1A): its coverage read every few seconds; a tap or the right stick
+    // opens a card with the network, the coverage and the addresses
+    void CheckWifi();
+    void DrawWifiCard(NVGcontext* vg);
+    bool m_nifm = false;
+    int m_wifi = -2; // 0..3, -1 without network, -2 not read yet
+    bool m_wifi_cable = false;
+    std::string m_wifi_ssid;
+    u32 m_wifi_ip = 0;
+    double m_wifi_checked = -100;
+    bool m_wifi_open = false;
+    ui::HitRect m_wifi_rect{}, m_wifi_card{};
     // the cover in focus lifts and leans a little (1A); tabs slide in and the page of a game grows
     // out of its cover (1T-A)
     void DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float s);

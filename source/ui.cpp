@@ -334,8 +334,38 @@ float Battery(NVGcontext* vg, const Theme& t, float right, float cy, int percent
     return bx - 7 - tw;
 }
 
+float Wifi(NVGcontext* vg, const Theme& t, float right, float cy, int strength) {
+    // red stays for errors: no network is grey and crossed, a weak signal amber
+    const NVGcolor lit = strength <= 0 ? t.muted : strength == 1 ? t.warn : t.work;
+    NVGcolor dim = t.muted;
+    dim.a = 0.28f;
+    const float w = 26, cx = right - w / 2, base = cy + 8;
+    const float radii[3] = {5.5f, 10.f, 14.5f};
+    for (int i = 0; i < 3; i++) {
+        nvgBeginPath(vg);
+        nvgArc(vg, cx, base, radii[i], -NVG_PI * 0.78f, -NVG_PI * 0.22f, NVG_CW);
+        nvgStrokeColor(vg, strength >= i + 1 ? lit : dim);
+        nvgStrokeWidth(vg, 2.6f);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgStroke(vg);
+    }
+    nvgBeginPath(vg);
+    nvgCircle(vg, cx, base, 1.9f);
+    nvgFillColor(vg, strength >= 1 ? lit : dim);
+    nvgFill(vg);
+    if (strength < 0) {
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, cx - 12, cy - 10);
+        nvgLineTo(vg, cx + 12, cy + 10);
+        nvgStrokeColor(vg, t.muted);
+        nvgStrokeWidth(vg, 2.2f);
+        nvgStroke(vg);
+    }
+    return right - w;
+}
+
 void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[6], const char* sd_free, int battery,
-            bool charging) {
+            bool charging, int wifi, HitRect* wifi_hit) {
     BrandMark(vg, t, 36, 19, 34);
     Text(vg, 80, 36, 24, t.text, "NXDock");
 
@@ -374,6 +404,11 @@ void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect ta
     float right = 1244 - TextWidth(vg, 17, clock) - 20;
     if (battery >= 0) {
         right = Battery(vg, t, right, 36, battery, charging) - 22;
+    }
+    if (wifi > -2) {
+        const float start = Wifi(vg, t, right, 36, wifi);
+        if (wifi_hit) *wifi_hit = {start - 10, 0, right - start + 20, 72, 0};
+        right = start - 20;
     }
     if (sd_free && sd_free[0]) {
         char sd[64];

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The WiFi in the top bar, with its coverage; tap it (or press the right stick)
+  for the network, the coverage and the addresses.
 - Large libraries: the catalog comes compressed, the last one is kept on the SD
   card and shown at once, and while the library prepares it NXDock says how far
   it is and can stop waiting. Covers no longer pile up in memory.

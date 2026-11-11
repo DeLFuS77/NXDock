@@ -73,8 +73,15 @@ void CheckMark(NVGcontext* vg, float cx, float cy, float s, NVGcolor c, float wi
 void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text);
 
 // battery: the charge in %, -1 when unknown (then nothing is drawn).
+// wifi: the coverage 0..3, -1 without network, -2 not known yet (nothing drawn); its area goes
+// to `wifi_hit` (taller than drawn: easy to tap).
 void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[6], const char* sd_free,
-            int battery = -1, bool charging = false);
+            int battery = -1, bool charging = false, int wifi = -2, HitRect* wifi_hit = nullptr);
+
+// The WiFi as the fan of the HOME menu (1A): three arcs lit by the coverage, blue with signal,
+// amber with one bar, grey and crossed without network. Drawn to the left of `right`; returns
+// where it starts.
+float Wifi(NVGcontext* vg, const Theme& t, float right, float cy, int strength);
 
 // The battery with its %: filled by the level, amber below 20 %, red only below 10 %, a bolt
 // while charging. Drawn to the left of `right`; returns where it starts.

@@ -13,6 +13,7 @@
 #include <yyjson.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -332,6 +333,7 @@ bool App::Init() {
         m_theme = color == ColorSetId_Dark ? DarkTheme() : LightTheme();
     }
     m_psm = R_SUCCEEDED(psmInitialize());
+    m_nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
     m_sound.Start();
     InitRumble();
     m_queue = std::make_unique<InstallQueue>();
@@ -426,6 +428,9 @@ void App::Exit() {
     if (m_psm) {
         psmExit();
     }
+    if (m_nifm) {
+        nifmExit();
+    }
     net::Exit();
 }
 
@@ -441,6 +446,107 @@ void App::CheckBattery() {
     }
     if (R_SUCCEEDED(psmGetChargerType(&charger))) {
         m_charging = charger != PsmChargerType_Unconnected;
+    }
+}
+
+void App::CheckWifi() {
+    if (!m_nifm || m_time - m_wifi_checked < 3) {
+        return;
+    }
+    m_wifi_checked = m_time;
+    NifmInternetConnectionType type{};
+    u32 strength = 0;
+    NifmInternetConnectionStatus status{};
+    if (R_FAILED(nifmGetInternetConnectionStatus(&type, &strength, &status))) {
+        // not connected to any network
+        m_wifi = -1;
+        m_wifi_ssid.clear();
+        m_wifi_ip = 0;
+        return;
+    }
+    m_wifi_cable = type == NifmInternetConnectionType_Ethernet;
+    m_wifi = m_wifi_cable ? 3 : int(std::min(strength, 3u));
+    m_wifi_ssid.clear();
+    if (!m_wifi_cable) {
+        auto profile = std::make_unique<NifmNetworkProfileData>();
+        if (R_SUCCEEDED(nifmGetCurrentNetworkProfile(profile.get()))) {
+            const auto& w = profile->wireless_setting_data;
+            m_wifi_ssid.assign(w.ssid, strnlen(w.ssid, std::min<size_t>(w.ssid_len, sizeof(w.ssid))));
+        }
+    }
+    u32 ip = 0;
+    m_wifi_ip = R_SUCCEEDED(nifmGetCurrentIpAddress(&ip)) ? ip : 0;
+}
+
+void App::DrawWifiCard(NVGcontext* vg) {
+    if (!m_wifi_open || m_wifi < -1) {
+        return;
+    }
+    const Theme& t = m_theme;
+    const auto& m = TrM();
+    const float w = 330, y = 80;
+    const float x = std::clamp(m_wifi_rect.x + m_wifi_rect.w / 2 - w / 2, 16.f, float(kWidth) - 16 - w);
+    struct Row {
+        const char* label;
+        std::string value;
+    };
+    std::vector<Row> rows;
+    const char* words[] = {m.wf_l0, m.wf_l1, m.wf_l2, m.wf_l3};
+    if (m_wifi >= 0) {
+        if (!m_wifi_cable) {
+            rows.push_back({m.wf_network, m_wifi_ssid.empty() ? std::string("-") : m_wifi_ssid});
+            char level[96];
+            std::snprintf(level, sizeof(level), m.wf_level_fmt, words[std::clamp(m_wifi, 0, 3)], m_wifi);
+            rows.push_back({m.wf_coverage, level});
+        }
+        if (m_wifi_ip) {
+            char ip[24];
+            std::snprintf(ip, sizeof(ip), "%u.%u.%u.%u", m_wifi_ip & 0xFF, (m_wifi_ip >> 8) & 0xFF, (m_wifi_ip >> 16) & 0xFF,
+                          m_wifi_ip >> 24);
+            rows.push_back({m.wf_console, ip});
+        }
+        const Config c = m_link.CurrentConfig();
+        if (!c.url.empty()) {
+            const size_t scheme = c.url.find("://");
+            rows.push_back({m.wf_library, c.url.substr(scheme == std::string::npos ? 0 : scheme + 3)});
+        }
+    }
+    const bool weak = m_wifi == 1 && !m_wifi_cable;
+    const float h = m_wifi < 0 ? 110 : 72 + 30 * float(rows.size()) + (weak ? 46 : 0);
+    m_wifi_card = {x, y, w, h, 0};
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, x, y + 6, w, h, 14);
+    nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 6, w, h, 14, 24, nvgRGBAf(0, 0, 0, 0.35f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    ui::FillRound(vg, x, y, w, h, 14, t.panel);
+    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, 14, t.line, 1);
+    const char* title = m_wifi < 0 ? m.wf_none : m_wifi_cable ? m.wf_cable : m.wf_title;
+    ui::Text(vg, x + 18, y + 26, 18, t.text, title);
+    if (m_wifi < 0) {
+        TextBox(vg, x + 18, y + 46, w - 36, 15, t.muted, m.wf_none_hint);
+        return;
+    }
+    float ry = y + 44;
+    if (!m_wifi_cable) {
+        // the coverage as a bar, in the colour of the fan
+        const std::array<float, 4> pct{0.08f, 0.35f, 0.68f, 0.96f};
+        const NVGcolor lit = m_wifi <= 0 ? t.muted : m_wifi == 1 ? t.warn : t.work;
+        ui::FillRound(vg, x + 18, ry, w - 36, 6, 3, t.panel2);
+        ui::FillRound(vg, x + 18, ry, (w - 36) * pct[size_t(std::clamp(m_wifi, 0, 3))], 6, 3, lit);
+        ry += 22;
+    } else {
+        ry += 8;
+    }
+    for (const auto& r : rows) {
+        ui::Text(vg, x + 18, ry + 10, 15, t.muted, r.label);
+        nvgSave(vg);
+        nvgScissor(vg, x + 120, ry - 4, w - 138, 28);
+        ui::Text(vg, x + w - 18, ry + 10, 15, t.text, r.value.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
+        ry += 30;
+    }
+    if (weak) {
+        TextBox(vg, x + 18, ry + 2, w - 36, 14, t.warn, m.wf_weak);
     }
 }
 
@@ -738,6 +844,11 @@ void App::ReadTouch(u64& down) {
 }
 
 void App::Tap(float x, float y, u64& down) {
+    if (m_wifi_open) {
+        // the WiFi card is on top: a tap on it does nothing, anywhere else closes it
+        if (!m_wifi_card.Contains(x, y)) m_wifi_open = false;
+        return;
+    }
     // Last drawn on top wins: walk backwards.
     for (auto it = m_hits.rbegin(); it != m_hits.rend(); ++it) {
         if (!it->rect.Contains(x, y)) {
@@ -746,6 +857,7 @@ void App::Tap(float x, float y, u64& down) {
         switch (it->kind) {
             case HitKind::Button: down |= it->rect.button; break;
             case HitKind::Tab: m_tab = Tab(it->index); break;
+            case HitKind::Wifi: m_wifi_open = true; break;
             case HitKind::Chip:
                 m_filter = it->index;
                 RebuildView();
@@ -983,6 +1095,15 @@ void App::Update(u64 down, u64 held) {
         UpdateDialog(down, held);
         return;
     }
+    // the WiFi card: the right stick opens and closes it, B or A closes it
+    if (down & HidNpadButton_StickR) {
+        m_wifi_open = !m_wifi_open && m_wifi > -2;
+        return;
+    }
+    if (m_wifi_open) {
+        if (down & (HidNpadButton_B | HidNpadButton_A)) m_wifi_open = false;
+        return;
+    }
     if (down & HidNpadButton_Plus) {
         // leaving stops an install (nothing is left half done): the second + leaves
         if (m_queue && m_queue->Busy() && m_time - m_quit_asked > 4) {
@@ -1129,6 +1250,7 @@ bool App::Frame() {
     FollowQueueWeb();
     CheckSdSpace();
     CheckBattery();
+    CheckWifi();
 
     // Ease the grid toward where it should be (frame-rate independent).
     if (!m_dragging) {
@@ -1217,7 +1339,8 @@ void App::Draw(NVGcontext* vg) {
     if (m_queue) {
         queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
     }
-    ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging);
+    ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect);
+    if (m_wifi > -2) m_hits.push_back({m_wifi_rect, HitKind::Wifi, 0});
     if (m_shop_active && m_tab == Tab::Library) {
         // which shop the library shows
         char badge[160];
@@ -1310,6 +1433,7 @@ void App::Draw(NVGcontext* vg) {
     }
     DrawFinish(vg);
     DrawTour(vg);
+    DrawWifiCard(vg);
     DrawTouchFeedback(vg);
     DrawSaver(vg);
     DrawScreenOff(vg);

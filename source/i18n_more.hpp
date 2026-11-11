@@ -113,6 +113,8 @@ struct More {
     const char *pf_title, *pf_body, *dn_title, *dn_body, *dn_line_fmt, *dn_go, *dn_skip;
     // a large library: its catalog prepared, the list kept on the SD card
     const char *cat_preparing_fmt, *cat_preparing, *cat_stale;
+    // the WiFi in the top bar and its card
+    const char *wf_title, *wf_cable, *wf_none, *wf_none_hint, *wf_network, *wf_coverage, *wf_level_fmt, *wf_l0, *wf_l1, *wf_l2, *wf_l3, *wf_console, *wf_library, *wf_weak;
 };
 
 const More& TrM();
