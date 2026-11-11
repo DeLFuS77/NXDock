@@ -855,7 +855,7 @@ void InstallQueue::RunJob(InstallJob& job) {
     m_installed = std::move(installed);
 }
 
-// An update installed over a game NXDock merged (it keeps its recipe): merged with it now, in the
+// An update installed over a game NXDock merged: merged with it now, in the
 // same job, so the game never stays with an update it cannot read (25G). A failure leaves the update
 // installed, the game as it was, and the reason on the job; Compress games offers it again.
 void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaKey>& keys) {

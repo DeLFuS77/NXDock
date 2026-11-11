@@ -76,6 +76,8 @@ std::vector<int> App::CompressVisible(const Space::View& v, const Compressor::Vi
         const auto it = c.games.find(app);
         if (it == c.games.end()) return false;
         const auto st = it->second.state;
+        // one to undo and merge again stays in sight
+        if (it->second.why == GameEstimate::Why::Redo) return false;
         return st == GameEstimate::State::Already || st == GameEstimate::State::Unsupported;
     });
     return rows;
@@ -163,7 +165,10 @@ void App::DrawCompress(NVGcontext* vg) {
     const auto rows = CompressVisible(v, c);
     if (!m_compress_told && !c.analyzing && v.scanned && m_compress_started) {
         for (const auto& [app, e] : c.games) {
-            if (!e.merge || !e.merged || (e.state != GameEstimate::State::Worth && e.state != GameEstimate::State::Low)) continue;
+            if (!e.merge || !e.merged ||
+                (e.state != GameEstimate::State::Worth && e.state != GameEstimate::State::Low && e.why != GameEstimate::Why::Redo)) {
+                continue;
+            }
             for (const auto& a : v.apps) {
                 if (a.app_id != app) continue;
                 std::snprintf(text, sizeof(text), m.cz_update_notice_fmt, a.name.c_str());
@@ -252,7 +257,8 @@ void App::DrawCompress(NVGcontext* vg) {
         }
         const bool merged_ours = e.state == GameEstimate::State::Ours && IsMergedGame(a.app_id);
         // a newer update over a game NXDock merged: it waits to be merged in the same way
-        const bool waiting = e.merge && e.merged && (e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low);
+        const bool redo = e.why == GameEstimate::Why::Redo;
+        const bool waiting = e.merge && e.merged && (e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low || redo);
         nvgSave(vg);
         nvgScissor(vg, rx + 24, ry, rw * 0.56f, rh);
         ui::Text(vg, rx + 24, ry + 18, 16, t.text, a.name.c_str());
@@ -320,6 +326,11 @@ void App::DrawCompress(NVGcontext* vg) {
                 col = t.work;
                 break;
             default:
+                if (redo) {
+                    std::snprintf(text, sizeof(text), "%s", m.cz_why_redo);
+                    col = t.orange;
+                    break;
+                }
                 std::snprintf(text, sizeof(text), "%s",
                               e.why == GameEstimate::Why::Sparse ? m.cz_why_sparse
                               : e.why == GameEstimate::Why::Key  ? m.cz_why_key
@@ -451,7 +462,7 @@ void App::UpdateCompress(u64 down, u64 held) {
         else Notice(m.cz_pending);
         return;
     }
-    if (e.state == GameEstimate::State::Ours) {
+    if (e.state == GameEstimate::State::Ours || e.why == GameEstimate::Why::Redo) {
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::CompressUndo;
         m_dialog.ids = {a.app_id};
@@ -528,7 +539,9 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
         case DialogKind::CompressUndo:
             std::snprintf(text, sizeof(text), m.cz_undo_title_fmt, m_dialog.text.c_str());
             title = text;
-            body = !m_dialog.ids.empty() && IsMergedGame(m_dialog.ids[0]) ? m.cz_undo_merged_body : m.cz_undo_body;
+            body = m_dialog.ids.empty() || !IsMergedGame(m_dialog.ids[0]) ? m.cz_undo_body
+                   : CanMergeAgain(m_dialog.ids[0])                      ? m.cz_undo_merged_body
+                                                                         : m.cz_undo_redo_body;
             primary = m.cz_undo_go;
             break;
         case DialogKind::CompressInfo:

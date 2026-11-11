@@ -460,6 +460,10 @@ constexpr More kEnglish{
     .cz_merge_go = "Merge and compress",
     .cz_update_notice_fmt = "%s has an update over the merged game. Open it here to merge it.",
     .cz_undo_merged_body = "The original game, its update and its DLC are installed again from the library, in place of the merged and compressed ones. The save is not touched.",
+    .cz_why_redo = "Undo it and merge it again",
+    .cz_redo_t = "This update cannot be merged",
+    .cz_redo_d = "The game was merged when Nintendo had already compressed it, and a newer update cannot be merged over it. The update is installed, but the game may not open with it. In Compress games, Undo installs the original game and the newest update from the library; then merge them again.",
+    .cz_undo_redo_body = "This game was merged when Nintendo had already compressed it, so the newer update installed over it cannot be merged. The original game, the newest update and its DLC are installed again from the library; then you can merge them again. The save is not touched.",
 };
 
 constexpr More kSpanish{
@@ -913,6 +917,10 @@ constexpr More kSpanish{
     .cz_merge_go = "Juntar y comprimir",
     .cz_update_notice_fmt = "%s tiene una actualización encima del juego juntado. Ábrelo aquí para juntarla.",
     .cz_undo_merged_body = "Se vuelven a instalar el juego, su actualización y sus DLC originales desde la biblioteca, en lugar de los juntados y comprimidos. La partida guardada no se toca.",
+    .cz_why_redo = "Deshazlo y vuelve a juntarlo",
+    .cz_redo_t = "Esta actualización no se puede juntar",
+    .cz_redo_d = "El juego se juntó cuando Nintendo ya lo había comprimido, y una actualización nueva no se puede juntar encima. La actualización se ha instalado, pero puede que el juego no abra con ella. En Comprimir juegos, «Deshacer» reinstala desde la biblioteca el juego original y la actualización más nueva; después, vuelve a juntarlos.",
+    .cz_undo_redo_body = "Este juego se juntó cuando Nintendo ya lo había comprimido, así que la actualización nueva que tiene encima no se puede juntar. Se vuelven a instalar desde la biblioteca el juego original, la actualización más nueva y sus DLC; después puedes juntarlos otra vez. La partida guardada no se toca.",
 };
 
 constexpr More kFrench{
@@ -1366,6 +1374,10 @@ constexpr More kFrench{
     .cz_merge_go = "Fusionner et compresser",
     .cz_update_notice_fmt = "%s a une mise à jour par-dessus le jeu fusionné. Ouvrez-le ici pour la fusionner.",
     .cz_undo_merged_body = "Le jeu, sa mise à jour et ses DLC d’origine sont réinstallés depuis la bibliothèque, à la place de ceux fusionnés et compressés. La sauvegarde n’est pas touchée.",
+    .cz_why_redo = "Annulez puis fusionnez à nouveau",
+    .cz_redo_t = "Cette mise à jour ne peut pas être fusionnée",
+    .cz_redo_d = "Le jeu a été fusionné alors que Nintendo l’avait déjà compressé, et une nouvelle mise à jour ne peut pas être fusionnée par-dessus. La mise à jour est installée, mais le jeu risque de ne pas s’ouvrir avec. Dans Compresser des jeux, « Annuler » réinstalle depuis la bibliothèque le jeu d’origine et la mise à jour la plus récente ; fusionnez-les ensuite à nouveau.",
+    .cz_undo_redo_body = "Ce jeu a été fusionné alors que Nintendo l’avait déjà compressé : la nouvelle mise à jour installée par-dessus ne peut pas être fusionnée. Le jeu d’origine, la mise à jour la plus récente et ses DLC sont réinstallés depuis la bibliothèque ; vous pourrez ensuite les fusionner à nouveau. La sauvegarde n’est pas touchée.",
 };
 
 constexpr More kGerman{
@@ -1819,6 +1831,10 @@ constexpr More kGerman{
     .cz_merge_go = "Zusammenführen und komprimieren",
     .cz_update_notice_fmt = "%s hat ein Update über dem zusammengeführten Spiel. Öffne es hier, um es zusammenzuführen.",
     .cz_undo_merged_body = "Das originale Spiel, sein Update und seine DLC werden aus der Bibliothek neu installiert, anstelle der zusammengeführten und komprimierten. Der Spielstand bleibt unberührt.",
+    .cz_why_redo = "Rückgängig machen und neu zusammenführen",
+    .cz_redo_t = "Dieses Update kann nicht zusammengeführt werden",
+    .cz_redo_d = "Das Spiel wurde zusammengeführt, als Nintendo es bereits komprimiert hatte, und ein neueres Update kann nicht darüber zusammengeführt werden. Das Update ist installiert, aber das Spiel startet damit vielleicht nicht. In „Spiele komprimieren“ installiert „Rückgängig“ das originale Spiel und das neueste Update aus der Bibliothek neu; danach erneut zusammenführen.",
+    .cz_undo_redo_body = "Dieses Spiel wurde zusammengeführt, als Nintendo es bereits komprimiert hatte, daher kann das neuere Update darüber nicht zusammengeführt werden. Das originale Spiel, das neueste Update und seine DLC werden aus der Bibliothek neu installiert; danach kannst du sie erneut zusammenführen. Der Spielstand bleibt unberührt.",
 };
 
 constexpr More kItalian{
@@ -2272,6 +2288,10 @@ constexpr More kItalian{
     .cz_merge_go = "Unisci e comprimi",
     .cz_update_notice_fmt = "%s ha un aggiornamento sopra il gioco unito. Aprilo qui per unirlo.",
     .cz_undo_merged_body = "Il gioco, il suo aggiornamento e i suoi DLC originali vengono reinstallati dalla libreria, al posto di quelli uniti e compressi. Il salvataggio non viene toccato.",
+    .cz_why_redo = "Annulla e unisci di nuovo",
+    .cz_redo_t = "Questo aggiornamento non si può unire",
+    .cz_redo_d = "Il gioco è stato unito quando Nintendo l’aveva già compresso, e un nuovo aggiornamento non si può unire sopra. L’aggiornamento è installato, ma il gioco potrebbe non aprirsi. In Comprimi giochi, «Annulla» reinstalla dalla libreria il gioco originale e l’aggiornamento più recente; poi uniscili di nuovo.",
+    .cz_undo_redo_body = "Questo gioco è stato unito quando Nintendo l’aveva già compresso, quindi il nuovo aggiornamento installato sopra non si può unire. Il gioco originale, l’aggiornamento più recente e i suoi DLC vengono reinstallati dalla libreria; poi potrai unirli di nuovo. Il salvataggio non viene toccato.",
 };
 
 constexpr More kPortuguese{
@@ -2725,6 +2745,10 @@ constexpr More kPortuguese{
     .cz_merge_go = "Juntar e comprimir",
     .cz_update_notice_fmt = "%s tem uma atualização por cima do jogo juntado. Abre-o aqui para a juntar.",
     .cz_undo_merged_body = "O jogo, a atualização e os DLC originais voltam a ser instalados a partir da biblioteca, em vez dos juntados e comprimidos. O jogo guardado não é tocado.",
+    .cz_why_redo = "Desfaz e volta a juntar",
+    .cz_redo_t = "Esta atualização não se pode juntar",
+    .cz_redo_d = "O jogo foi juntado quando a Nintendo já o tinha comprimido, e uma atualização nova não se pode juntar por cima. A atualização foi instalada, mas o jogo pode não abrir com ela. Em Comprimir jogos, «Desfazer» reinstala a partir da biblioteca o jogo original e a atualização mais recente; depois, volta a juntá-los.",
+    .cz_undo_redo_body = "Este jogo foi juntado quando a Nintendo já o tinha comprimido, por isso a atualização nova instalada por cima não se pode juntar. O jogo original, a atualização mais recente e os seus DLC voltam a ser instalados a partir da biblioteca; depois podes juntá-los outra vez. O jogo guardado não é tocado.",
 };
 
 constexpr More kDutch{
@@ -3178,6 +3202,10 @@ constexpr More kDutch{
     .cz_merge_go = "Samenvoegen en comprimeren",
     .cz_update_notice_fmt = "%s heeft een update boven op het samengevoegde spel. Open het hier om die samen te voegen.",
     .cz_undo_merged_body = "Het originele spel, zijn update en zijn DLC worden opnieuw geïnstalleerd vanuit de bibliotheek, in plaats van de samengevoegde en gecomprimeerde. De opslag wordt niet aangeraakt.",
+    .cz_why_redo = "Maak het ongedaan en voeg opnieuw samen",
+    .cz_redo_t = "Deze update kan niet worden samengevoegd",
+    .cz_redo_d = "Het spel is samengevoegd toen Nintendo het al had gecomprimeerd, en een nieuwere update kan er niet overheen worden samengevoegd. De update is geïnstalleerd, maar het spel opent er mogelijk niet mee. In Spellen comprimeren installeert ‘Ongedaan maken’ het originele spel en de nieuwste update opnieuw vanuit de bibliotheek; voeg ze daarna opnieuw samen.",
+    .cz_undo_redo_body = "Dit spel is samengevoegd toen Nintendo het al had gecomprimeerd, dus de nieuwere update die erover is geïnstalleerd kan niet worden samengevoegd. Het originele spel, de nieuwste update en zijn DLC worden opnieuw geïnstalleerd vanuit de bibliotheek; daarna kun je ze opnieuw samenvoegen. De opslag wordt niet aangeraakt.",
 };
 
 constexpr More kRussian{
@@ -3631,6 +3659,10 @@ constexpr More kRussian{
     .cz_merge_go = "Объединить и сжать",
     .cz_update_notice_fmt = "У %s есть обновление поверх объединённой игры. Откройте её здесь, чтобы объединить.",
     .cz_undo_merged_body = "Исходная игра, её обновление и DLC снова устанавливаются из библиотеки вместо объединённых и сжатых. Сохранения не затрагиваются.",
+    .cz_why_redo = "Отмените и объедините заново",
+    .cz_redo_t = "Это обновление нельзя объединить",
+    .cz_redo_d = "Игра была объединена, когда Nintendo уже сжала её, и новое обновление нельзя объединить поверх. Обновление установлено, но игра может с ним не запуститься. В разделе «Сжатие игр» кнопка «Отменить» заново установит из библиотеки исходную игру и самое новое обновление; затем объедините их снова.",
+    .cz_undo_redo_body = "Эта игра была объединена, когда Nintendo уже сжала её, поэтому новое обновление поверх неё объединить нельзя. Исходная игра, самое новое обновление и её DLC снова устанавливаются из библиотеки; затем их можно объединить заново. Сохранения не затрагиваются.",
 };
 
 constexpr More kJapanese{
@@ -4084,6 +4116,10 @@ constexpr More kJapanese{
     .cz_merge_go = "まとめて圧縮",
     .cz_update_notice_fmt = "%s は、まとめたゲームの上に更新データがあります。ここで開いてまとめてください。",
     .cz_undo_merged_body = "元のゲーム、更新データ、DLCをライブラリから再インストールし、まとめて圧縮したものと置き換えます。セーブデータはそのままです。",
+    .cz_why_redo = "元に戻してから、もう一度まとめてください",
+    .cz_redo_t = "この更新データはまとめられません",
+    .cz_redo_d = "このゲームは、任天堂がすでに圧縮した状態でまとめたため、新しい更新データを上からまとめられません。更新データはインストールされましたが、ゲームが起動しない場合があります。「ゲームを圧縮」の「元に戻す」で、元のゲームと最新の更新データをライブラリから再インストールし、もう一度まとめてください。",
+    .cz_undo_redo_body = "このゲームは任天堂がすでに圧縮した状態でまとめたため、上にインストールされた新しい更新データはまとめられません。元のゲーム、最新の更新データ、DLCをライブラリから再インストールします。そのあと、もう一度まとめられます。セーブデータはそのままです。",
 };
 
 constexpr More kKorean{
@@ -4537,6 +4573,10 @@ constexpr More kKorean{
     .cz_merge_go = "합쳐서 압축",
     .cz_update_notice_fmt = "%s 의 합친 게임 위에 업데이트가 있습니다. 여기서 열어 합치세요.",
     .cz_undo_merged_body = "원래 게임, 업데이트, DLC를 라이브러리에서 다시 설치해 합쳐서 압축한 것을 대신합니다. 세이브 데이터는 그대로입니다.",
+    .cz_why_redo = "되돌린 뒤 다시 합치세요",
+    .cz_redo_t = "이 업데이트는 합칠 수 없습니다",
+    .cz_redo_d = "이 게임은 닌텐도가 이미 압축한 상태에서 합쳐져서, 새 업데이트를 위에 합칠 수 없습니다. 업데이트는 설치되었지만 게임이 열리지 않을 수 있습니다. '게임 압축'에서 '되돌리기'로 원래 게임과 최신 업데이트를 라이브러리에서 다시 설치한 뒤 다시 합치세요.",
+    .cz_undo_redo_body = "이 게임은 닌텐도가 이미 압축한 상태에서 합쳐져서, 위에 설치된 새 업데이트를 합칠 수 없습니다. 원래 게임, 최신 업데이트와 DLC를 라이브러리에서 다시 설치합니다. 그런 다음 다시 합칠 수 있습니다. 세이브 데이터는 그대로입니다.",
 };
 
 constexpr More kChinese{
@@ -4990,6 +5030,10 @@ constexpr More kChinese{
     .cz_merge_go = "合并并压缩",
     .cz_update_notice_fmt = "%s 的合并游戏上装有更新。在这里打开它以进行合并。",
     .cz_undo_merged_body = "从游戏库重新安装原始游戏、其更新和 DLC，替换已合并并压缩的版本。存档不受影响。",
+    .cz_why_redo = "先撤销，再重新合并",
+    .cz_redo_t = "无法合并此更新",
+    .cz_redo_d = "该游戏合并时已被任天堂压缩，因此无法在其上合并新更新。更新已安装，但游戏可能无法打开。请在“压缩游戏”中用“撤销”从游戏库重新安装原始游戏和最新更新，然后再次合并。",
+    .cz_undo_redo_body = "该游戏合并时已被任天堂压缩，因此其上安装的新更新无法合并。将从游戏库重新安装原始游戏、最新更新及其 DLC，之后可以再次合并。存档不受影响。",
 };
 
 // In the order of LanguageName in i18n.cpp.

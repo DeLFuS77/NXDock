@@ -48,7 +48,9 @@ struct GameEstimate {
     unsigned long long saved = 0;  // what it would save (Worth, Low), or saved (Ours)
     // Update: being measured with its update; unsupported, a newer update over a merged game that
     // needs its base game, which the library has not (nothing is changed)
-    enum class Why { None, NotFound, Sparse, Key, Read, Update };
+    // Redo: a newer update over a game merged when Nintendo had compressed it; it is undone (the
+    // original and the update installed again) and merged again
+    enum class Why { None, NotFound, Sparse, Key, Read, Update, Redo };
     Why why = Why::None;           // Unsupported: why
     // With its update installed, the game is merged with it ("Merge and compress", 25F): `bytes`
     // and `saved` count the base and the update together. `merged`: NXDock merged it already, and
@@ -65,6 +67,9 @@ struct GameEstimate {
 // A game NXDock merged with its update (it keeps its recipe): a newer update installed over it is
 // merged in the same way, right after it is installed (25G).
 bool IsMergedGame(unsigned long long app);
+// Whether a newer update can be merged over it: false for one merged when Nintendo had compressed
+// it (it keeps no recipe).
+bool CanMergeAgain(unsigned long long app);
 // Merges the update installed over a game with it (25D, 25E), on the calling thread: progress gets
 // the phase (1 measuring, 2 writing, 3 registering and checking), what is done and of how much.
 // Gives the error to show (errors.hpp), empty when it went well; `saved` what it saved.

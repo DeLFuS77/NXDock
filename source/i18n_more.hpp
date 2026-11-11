@@ -90,6 +90,8 @@ struct More {
     const char *cz_possible, *cz_checking_fmt, *cz_measuring_fmt, *cz_counts_fmt, *cz_only_some, *cz_show_all, *cz_none_possible;
     // merge and compress, and the DLC with their game (25F: 1A, 4A)
     const char *cz_merge_tag, *cz_merge_sub_fmt, *cz_merge_worth_fmt, *cz_merged_fmt, *cz_merged_sub, *cz_update_wait, *cz_update_tag, *cz_update_sub_fmt, *cz_dlc_fmt, *cz_go_merge_title_fmt, *cz_go_merge_body_fmt, *cz_merge_risks, *cz_go_dlc_fmt, *cz_merge_go, *cz_update_notice_fmt, *cz_undo_merged_body;
+    // a game merged when Nintendo had compressed it: undone before a newer update is merged
+    const char *cz_why_redo, *cz_redo_t, *cz_redo_d, *cz_undo_redo_body;
 };
 
 const More& TrM();
