@@ -62,6 +62,9 @@ std::vector<int> App::CompressRows(const Space::View& v) const {
     for (int i = 0; i < int(v.apps.size()); i++) {
         const auto& a = v.apps[size_t(i)];
         if (a.archived) continue;
+        // games only: not the forwarders and homebrew installed as titles (their IDs do not start
+        // with 01, as those of games do), nor the small applications, where nothing is gained
+        if ((a.app_id >> 56) != 0x01 || a.Bytes() < (100ull << 20)) continue;
         const bool base = std::any_of(a.contents.begin(), a.contents.end(), [](const InstalledApp::Content& c) {
             return c.type == NcmContentMetaType_Application;
         });

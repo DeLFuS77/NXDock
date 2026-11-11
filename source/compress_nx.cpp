@@ -34,6 +34,9 @@
 #include <functional>
 #include <memory>
 
+extern "C" void nxdock_log_open(const char* path);
+extern "C" void nxdock_log_close();
+
 namespace nxdock {
 namespace {
 
@@ -334,6 +337,7 @@ bool FindPair(Storage& s, u64 app, Pair& p) {
     if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Application, app, app, app,
                                             NcmContentInstallType_Full)) ||
         written < 1) {
+        log_write("[NXDock] %016llX: no game in this storage\n", (unsigned long long)app);
         return false;
     }
     p.base = keys_found[0];
@@ -341,6 +345,7 @@ bool FindPair(Storage& s, u64 app, Pair& p) {
     if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Patch, patch_id, patch_id, patch_id,
                                             NcmContentInstallType_Full)) ||
         written < 1) {
+        log_write("[NXDock] %016llX: no update in this storage\n", (unsigned long long)app);
         return false;
     }
     p.patch = keys_found[0];
@@ -353,7 +358,11 @@ bool FindPair(Storage& s, u64 app, Pair& p) {
     const auto* bm = OfType(p.base_infos, NcmContentType_Meta);
     const auto* um = OfType(p.patch_infos, NcmContentType_Meta);
     // the CNMTs are needed to make the new one
-    if (!bp || !up || !bm || !um) return false;
+    if (!bp || !up || !bm || !um) {
+        log_write("[NXDock] %016llX: contents not listed (program %d/%d, CNMT %d/%d of the game/update)\n", (unsigned long long)app, bp != nullptr,
+                  up != nullptr, bm != nullptr, um != nullptr);
+        return false;
+    }
     p.base_program = bp->content_id;
     p.patch_program = up->content_id;
     p.base_meta = bm->content_id;
@@ -982,9 +991,18 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
     Join();
     m_stop = false;
     m_thread = std::thread([this, apps] {
+        // what each game is found to be, and why, in sdmc:/switch/NXDock/compress.log
+        nxdock_log_open("sdmc:/switch/NXDock/compress.log");
+        const auto note = [](unsigned long long app, const GameEstimate& e) {
+            static const char* states[] = {"pending", "possible", "worth", "low", "already compressed", "compressed by NXDock", "cannot"};
+            static const char* whys[] = {"", "not found", "sparse", "no key (ticket)", "could not be read", "update"};
+            log_write("[NXDock] %016llX: %s%s%s, %llu MB, saves %.0f %%\n", app, states[int(e.state)], e.why != GameEstimate::Why::None ? ": " : "",
+                      whys[int(e.why)], e.bytes >> 20, e.gain * 100);
+        };
         const auto marks = Marks();
         keys::Keys k;
         const bool ready = R_SUCCEEDED(splCryptoInitialize()) && R_SUCCEEDED(keys::parse_keys(k, false)) && R_SUCCEEDED(ncmInitialize());
+        if (!ready) log_write("[NXDock] the keys or ncm could not be opened: nothing can be checked\n");
         std::vector<u8> work;
         // 1. every game, from the header of its program alone: fast, even with hundreds
         std::vector<unsigned long long> possible;
@@ -1035,6 +1053,7 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
             }
             std::lock_guard lock(m_mutex);
             m_view.games[app] = e;
+            if (e.state != GameEstimate::State::Possible) note(app, e);
         }
         {
             std::lock_guard lock(m_mutex);
@@ -1118,9 +1137,11 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
             std::lock_guard lock(m_mutex);
             m_view.games[app] = e;
             m_view.measure_done++;
+            note(app, e);
         }
         ncmExit();
         splCryptoExit();
+        nxdock_log_close();
         std::lock_guard lock(m_mutex);
         m_view.analyzing = false;
     });
@@ -1186,6 +1207,8 @@ bool Compressor::StartCompress(unsigned long long app) {
     m_stop = false;
     m_thread = std::thread([this, app] {
         net::Boost awake; // the console stays awake while a game is written again
+        // what it does goes to sdmc:/switch/NXDock/compress.log, for when something goes wrong
+        nxdock_log_open("sdmc:/switch/NXDock/compress.log");
         const More& m = TrM();
         std::string error;
         u64 saved = 0;
@@ -1525,6 +1548,7 @@ bool Compressor::StartCompress(unsigned long long app) {
         }();
         ncmExit();
         splCryptoExit();
+        nxdock_log_close();
         std::lock_guard lock(m_mutex);
         m_view.running = false;
         m_view.error = error;

@@ -880,6 +880,8 @@ void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaK
         m_merge_stop = false;
     }
     log_write("[NXDock] the update of a merged game: merging %016llX\n", (unsigned long long)app);
+    // what the merge does goes to its own log (the one of the install is closed by now)
+    nxdock_log_open("sdmc:/switch/NXDock/compress.log");
     u64 saved = 0;
     const std::string error = MergeUpdate(app, m_merge_stop, [this](int phase, uint64_t done, uint64_t total) {
         std::lock_guard lock(m_mutex);
@@ -899,6 +901,7 @@ void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaK
             m_merge_sample = done;
         }
     }, saved);
+    nxdock_log_close();
     std::lock_guard lock(m_mutex);
     m_merging = false;
     if (error.empty()) {
