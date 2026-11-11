@@ -3,8 +3,10 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <condition_variable>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -42,11 +44,19 @@ struct InstallJob {
     bool checked = false;     // the check before installing was shown for it (2A)
     bool firmware_ok = false; // the user chose to install it although the firmware is older
     std::vector<NcmContentId> repair; // a repair: these damaged parts go, and only what is missing comes
+    u32 version = 0;          // an update: its version
+    bool downgrade = false;   // an older update in place of the one installed (20A)
+    bool resumable = false;   // a journal is kept, to go on if the console goes off (23A)
+    bool resumed = false;     // going on from the journal
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took
     u64 written = 0;    // bytes installed
     u64 saved = 0;      // bytes not downloaded: the console had them already (16A)
+    // an update of a game NXDock merged: merged with it right after it is installed (25G)
+    bool merged = false;   // merged with the game
+    u64 merge_saved = 0;   // what that saved
+    std::string merge_error; // why it was not (the update stays installed, for Compress games)
 };
 
 // What NXDock installed since it was opened, for "Undo what was installed in this session".
@@ -80,6 +90,16 @@ public:
         u32 checked = 0;       // NCAs whose SHA-256 matched
         u32 ncas = 0;          // NCAs to install
         u64 saved = 0;         // bytes the console had already (16A)
+        bool copying_save = false; // the saves go to the library first (18A)
+        u64 copy_done = 0, copy_total = 0;
+        // installed, now merged with the game (25G): the phase (1 read and measure, 2 compress and
+        // write, 3 check), how far, how fast; and what the install itself took
+        bool merging = false;
+        int merge_phase = 0;
+        u64 merge_done = 0, merge_total = 0;
+        double merge_rate = 0;
+        u64 installed_bytes = 0;
+        double installed_seconds = 0;
         int threads = -1;      // decompression threads: 3 for NCZBLOCK, 1 solid, 0 none, -1 unknown
         int connections = 0;
         double net_rate = 0, ready_rate = 0, write_rate = 0; // MB/s
@@ -100,6 +120,9 @@ public:
     void Clear(); // the finished ones
     // Puts a failed or cancelled job back in the queue.
     void Retry(int id);
+    // Paused, the job installing finishes and the next waits (22A).
+    void SetPaused(bool paused);
+    bool Paused();
 
     std::vector<InstallJob> Jobs();
     Live GetLive();
@@ -115,6 +138,25 @@ public:
     // queue's thread; false while something installs or waits.
     bool StartUndo(std::vector<int> jobs = {});
     bool Undoing();
+
+    // The copy of the saves before a change to a game (18A), set by the interface: the app id,
+    // why (0 an update, 1 a repair, 2 a removal, 3 going back), the version it goes to, the one
+    // installed now and the progress. Empty when it went well or was not needed.
+    using SaveCopy = std::function<std::string(u64 app, int why, u32 to, u32 current, std::function<void(u64, u64)> progress)>;
+    void SetSaveCopy(SaveCopy fn);
+    // Before an update (19A): what of the cheats and mods stops working with the new version, as
+    // text for the question; empty when nothing does (or it cannot be told).
+    using ModsCheck = std::function<std::string(u64 app, u32 from, u32 to)>;
+    void SetModsCheck(ModsCheck fn);
+    // A copy that failed waits for the user: go on without it, or not.
+    struct Ask {
+        bool waiting = false;
+        std::string game, error; // the error packed (errors.hpp); for the mods, what stops working
+        int why = 0;             // as SaveCopy's; 10: cheats and mods that stop working
+        u64 app = 0;
+    };
+    Ask PendingAsk();
+    void Answer(bool go_on);
 
     // Checks every part of a game on the queue's thread; false while something installs.
     struct VerifyView {
@@ -133,6 +175,9 @@ private:
     void RunJob(InstallJob& job);
     void RunUndo();
     void RunVerify();
+    bool CopyBefore(u64 app, int why, u32 to, const std::string& game);
+    bool AskAbout(const Ask& ask);
+    bool ModsBefore(u64 app, u32 to, const std::string& game);
 
     std::thread m_thread;
     std::mutex m_mutex;
@@ -142,6 +187,7 @@ private:
     int m_next_id = 1;
     int m_connections = 4;
     bool m_download_test = false;
+    bool m_paused = false;
     std::atomic<unsigned> m_version{0};
     std::map<u64, InstalledState> m_installed;
     std::vector<SessionItem> m_session;
@@ -152,6 +198,21 @@ private:
     Result m_verify_rc = 0;
     VerifyProgress m_verify_progress;
     std::vector<VerifiedContent> m_verify_result;
+    SaveCopy m_save_copy;
+    ModsCheck m_mods_check;
+    Ask m_ask;
+    bool m_answered = false, m_go_on = false;
+    std::atomic<bool> m_copying{false};
+    // the merge after an install (25G)
+    void MergeAfter(InstallJob& job, const std::vector<NcmContentMetaKey>& keys);
+    std::atomic<bool> m_merge_stop{false};
+    bool m_merging = false;
+    int m_merge_phase = 0;
+    u64 m_merge_done = 0, m_merge_total = 0, m_merge_sample = 0;
+    double m_merge_t = 0, m_merge_rate = 0;
+    u64 m_installed_bytes = 0;
+    double m_installed_seconds = 0;
+    std::atomic<u64> m_copy_done{0}, m_copy_total{0};
 
     // the running job
     sphaira::ui::ProgressBox* m_box = nullptr;
@@ -163,6 +224,16 @@ private:
     u64 m_sample_net = 0, m_sample_ready = 0, m_sample_written = 0;
     double m_rate_net = 0, m_rate_ready = 0, m_rate_written = 0;
 };
+
+// The journal of the install that was cut by the console going off (23A): resume.hpp.
+struct ResumeState;
+constexpr const char* kResumeDir = "sdmc:/switch/NXDock/resume";
+// The jobs of a journal: the one cut, then those that waited (the key is the library's, given).
+std::vector<InstallJob> ResumeJobs(const ResumeState& state, const std::string& key);
+// Every placeholder of a journal deleted, and the journal: nothing is left.
+void DiscardResume(const ResumeState& state);
+// The placeholders (hexadecimal) of the journal in one storage: never cleaned (24A).
+std::set<std::string> ResumePlaceholders(bool sd);
 
 // The install or check was cancelled by the user.
 bool IsCancelled(unsigned rc);

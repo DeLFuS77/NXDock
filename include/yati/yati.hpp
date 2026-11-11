@@ -12,6 +12,7 @@
 #include "container/base.hpp"
 #include "ui/progress_box.hpp"
 #include <memory>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -96,6 +97,19 @@ struct ConfigOverride {
 
     // NXDock: see Config::repair.
     std::optional<bool> repair{};
+
+    // NXDock: an older update in place of the one installed (20A); the launch version goes back
+    // with it.
+    std::optional<bool> allow_downgrade{};
+
+    // NXDock: going on after the console went off (23A). `part` is told of every part when its
+    // placeholder is made, and again once its SHA-256 matched and it was flushed (with its
+    // decrypted header); `before` is asked, before a part is downloaded, whether a checked
+    // placeholder of it is there from before (and gives its header back; null to ask only).
+    struct Resume {
+        std::function<void(const NcmContentId&, const NcmPlaceHolderId&, s64, bool, const void*, size_t)> part;
+        std::function<bool(const NcmContentId&, NcmPlaceHolderId&, void*, size_t)> before;
+    } resume{};
 
     // NXDock: installs content that needs a newer firmware than the console's, after the
     // check before installing warned about it and the user went on.

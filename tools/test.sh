@@ -25,6 +25,12 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # the MTP responder of NXDock, with a fake cable
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/mtp_test tests/mtp_test.cpp source/mtp_proto.cpp source/mtp_storage.cpp
   /tmp/mtp_test /tmp
+  # the check of the SD card, against fake cards made up here
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -o /tmp/sdcheck_test tests/sdcheck_test.cpp source/sdcheck.cpp
+  /tmp/sdcheck_test
+  # the journal of an install cut by the console going off, cut at every byte and every step
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/resume_test tests/resume_test.cpp source/resume.cpp
+  /tmp/resume_test /tmp
   # clear errors and the check before installing, in every language
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp
   /tmp/errors_test
@@ -41,6 +47,26 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   gcc -std=c11 -Wall -Wextra -O2 -Iinclude -c -o /tmp/lz4nintendo.o source/lz4nintendo.c
   g++ -std=c++20 -Wall -Wextra -O2 -Iinclude -o /tmp/lz4nintendo_test tests/lz4nintendo_test.cpp /tmp/lz4nintendo.o
   /tmp/lz4nintendo_test tests/fixtures/lz4nintendo_golden.txt LICENSE assets/icon.jpg
+  # the compressed storage of an NCA, written as Nintendo writes it (24A)
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/romfs_lz4_test tests/romfs_lz4_test.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libcrypto.so.3 -lpthread
+  /tmp/romfs_lz4_test
+  # the RomFS of a game with its update, read as the console reads it (25B)
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/patch_view_test tests/patch_view_test.cpp source/patch_view.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libcrypto.so.3 -lpthread
+  /tmp/patch_view_test
+  # the data level of a merged game, what is held again stored once, and its NCA (25C)
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/merge_pack_test tests/merge_pack_test.cpp source/merge_pack.cpp source/merge_nca.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libcrypto.so.3 -lpthread
+  /tmp/merge_pack_test
+  # the CNMT and the meta NCA of a game merged with its update (25D)
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/merge_meta_test tests/merge_meta_test.cpp source/merge_meta.cpp /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+  /tmp/merge_meta_test
+  # the recipe of a merged game, and its base made again for a newer update (25E)
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -Iinclude -o /tmp/merge_recipe_test tests/merge_recipe_test.cpp source/merge_recipe.cpp source/patch_view.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o
+  /tmp/merge_recipe_test
+  # the list of compressed games, the look for sigpatches and the CNMT made again (24A)
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/compress_meta_test tests/compress_meta_test.cpp source/compress_meta.cpp
+  /tmp/compress_meta_test
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/cnmt_patch_test tests/cnmt_patch_test.cpp source/cnmt_patch.cpp
+  /tmp/cnmt_patch_test
   g++ -std=c++23 -Wall -Wextra -O2 -Itests/shim -Iinclude -Icompat -I/tmp/inc -o /tmp/nczsect_test tests/nczsect_test.cpp source/yati/nx/nczsect.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libzstd.so.1
   /tmp/nczsect_test tests/fixtures
   # HTTPS with a pinned key: certificates made here, the pin checked against openssl
@@ -56,6 +82,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   sleep 1
   /tmp/tls_pin_test /tmp/tls/rsa.pem "sha256//$(pin_of /tmp/tls/rsa.pem)" https://127.0.0.1:18766 /tmp/tls/ec.pem
   kill $tls_server
+  # what the web asks of the queue
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/inc -Ibuild/_deps/yyjson-src/src -DNXDOCK_VERSION=\"test\" -o /tmp/queue_report_test tests/queue_report_test.cpp source/queue_report.cpp source/http.cpp source/tls_pin.cpp /tmp/yyjson.o /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
+  /tmp/queue_report_test
   # the network source, against a Range server that cuts answers on purpose
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -I/tmp/inc -DNXDOCK_VERSION=\"test\" -o /tmp/http_source_test tests/http_source_test.cpp source/http_source.cpp source/http.cpp source/tls_pin.cpp /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
   size=12595257

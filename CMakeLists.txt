@@ -126,6 +126,22 @@ add_executable(nxdock
     source/shop.cpp
     source/shop_load.cpp
     source/space.cpp
+    source/sdcheck.cpp
+    source/queue_report.cpp
+    source/resume.cpp
+    source/romfs_lz4.cpp
+    source/patch_view.cpp
+    source/merge_pack.cpp
+    source/merge_nca.cpp
+    source/merge_game.cpp
+    source/merge_meta.cpp
+    source/merge_recipe.cpp
+    source/compress_meta.cpp
+    source/cnmt_patch.cpp
+    source/compress_nx.cpp
+    source/sdcheck_nx.cpp
+    source/more_sdcheck.cpp
+    source/more_compress.cpp
     source/space_plan.cpp
     source/vault.cpp
     source/vault_json.cpp

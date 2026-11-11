@@ -22,6 +22,28 @@ static bool Exists(const std::string& p) {
 
 int main() {
     const unsigned long long id = 0x0100000000010000ull;
+    {
+        // what stops working when the game goes to another build (19A)
+        const std::string atm = "/tmp/mods_risk/atmosphere";
+        std::system(("rm -rf /tmp/mods_risk && mkdir -p " + atm + "/contents/0100000000010000/cheats " + atm +
+                     "/exefs_patches/60fps " + atm + "/contents/0100000000010000/exefs").c_str());
+        auto touch = [](const std::string& p) { if (FILE* f = std::fopen(p.c_str(), "w")) std::fclose(f); };
+        touch(atm + "/contents/0100000000010000/cheats/AAAAAAAAAAAAAAAA.txt");
+        touch(atm + "/contents/0100000000010000/cheats/aaaaaaaaaaaabbbb.txt");
+        touch(atm + "/exefs_patches/60fps/AAAAAAAAAAAAAAAA0000000000000000.ips");
+        touch(atm + "/exefs_patches/60fps/CCCCCCCCCCCCCCCC0000000000000000.ips");
+        auto r = ModsAtRiskFor(atm, id, "AAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBB");
+        CHECK(r.cheats == 2 && r.patches == 1 && !r.exefs && r.Any());
+        touch(atm + "/contents/0100000000010000/exefs/main");
+        r = ModsAtRiskFor(atm, id, "AAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBB");
+        CHECK(r.exefs);
+        CHECK(!ModsAtRiskFor(atm, id, "AAAAAAAAAAAAAAAA", "aaaaaaaaaaaaaaaa").Any()); // the same build
+        CHECK(!ModsAtRiskFor(atm, id, "AAAAAAAAAAAAAAAA", "").Any());                 // the new one not known
+        touch(atm + "/contents/0100000000010000/cheats/BBBBBBBBBBBBBBBB.txt");
+        r = ModsAtRiskFor(atm, id, "", "BBBBBBBBBBBBBBBB");
+        CHECK(r.cheats == 0 && r.patches == 0 && r.exefs); // cheats for the new build there already
+        CHECK(!ModsAtRiskFor(atm, 0x0100000000020000ull, "AAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBB").cheats);
+    }
     CHECK(ModTarget("atmosphere/contents/0100000000010000/romfs/a.bin", id) == "romfs/a.bin");
     CHECK(ModTarget("contents/0100000000010000/exefs/main.npdm", id) == "exefs/main.npdm");
     CHECK(ModTarget("0100000000010000/romfs/x/y.txt", id) == "romfs/x/y.txt");

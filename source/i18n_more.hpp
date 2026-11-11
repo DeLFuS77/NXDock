@@ -64,6 +64,34 @@ struct More {
     const char *wiz_screen_off, *wiz_no_app, *tour_more, *tour_count4;
     // only what is missing is installed (phase 16)
     const char *saved_fmt;
+    // the check of the SD card (phase 17)
+    const char *sd_action, *sd_action_sub, *sd_running_fmt, *sd_title, *sd_explain, *sd_risk, *sd_quick, *sd_quick_sub, *sd_full,
+        *sd_full_sub, *sd_start, *sd_stop, *sd_again, *sd_writing, *sd_reading, *sd_deleting, *sd_write_speed, *sd_read_speed,
+        *sd_left, *sd_keep_on, *sd_free_fmt, *sd_key_free, *sd_key_written, *sd_key_ok, *sd_key_bad, *sd_good_t, *sd_good_d,
+        *sd_fake_t, *sd_fake_d, *sd_bad_t, *sd_bad_d, *sd_full_t, *sd_full_d, *sd_failed_t, *sd_failed_d, *sd_stopped_t,
+        *sd_stopped, *sd_speeds_fmt;
+    // the saves copied before a change to a game (phase 18)
+    const char *sc_row, *sc_note_update, *sc_note_repair, *sc_note_remove, *sc_note_back, *sc_copying, *sc_ask_title, *sc_ask_body,
+        *sc_go_on, *sc_go_remove;
+    // cheats and mods that an update breaks (phase 19)
+    const char *mr_title, *mr_cheats_fmt, *mr_patches_fmt, *mr_exefs, *mr_body, *mr_go, *mr_not_now;
+    // another version of a game (phase 20)
+    const char *ver_hint, *ver_title, *ver_installed, *ver_back_fmt, *ver_install_fmt, *ver_note, *dg_title_fmt, *dg_body_fmt, *dg_go;
+    // the queue on the web and its end on the phone (phases 21 and 22)
+    const char *qw_notify_row, *qw_paused, *qw_paused_web, *qw_resumed, *qw_pause, *qw_go_on, *qw_cancel_title, *qw_cancel_body, *qw_cancel_go,
+        *qw_keep;
+    // going on after the console went off (phase 23)
+    const char *rs_title, *rs_parts_fmt, *rs_waiting_fmt, *rs_note, *rs_go, *rs_discard, *rs_discarded;
+    // optimize space: what Clean leftovers takes (phase 24)
+    const char *cl_sub_fmt, *cl_body_fmt;
+    // compress games, experimental (phase 24)
+    const char *cz_action, *cz_action_sub, *cz_title, *cz_tag, *cz_intro_title, *cz_intro_body, *cz_turn_on, *cz_row, *cz_fw_ok, *cz_fw_old, *cz_sig_ok_fmt, *cz_sig_missing, *cz_explain, *cz_pending, *cz_worth_fmt, *cz_low_fmt, *cz_already, *cz_ours_fmt, *cz_unsupported, *cz_no_games, *cz_go_title_fmt, *cz_go_body_fmt, *cz_risks, *cz_go, *cz_nosig_title, *cz_nosig_body, *cz_fw_title, *cz_fw_body, *cz_undo_title_fmt, *cz_undo_body, *cz_undo_go, *cz_undo_missing, *cz_phase1, *cz_phase2, *cz_phase3, *cz_done_fmt, *cz_hist_label, *cz_badge, *cz_busy, *cz_failed_t, *cz_failed_d, *cz_unsupported_t, *cz_unsupported_d, *cz_stopped_t, *cz_stopped_d, *cz_low_t, *cz_low_d, *cz_room_t, *cz_room_d;
+    const char *cz_tap, *cz_why_sparse, *cz_why_key, *cz_why_missing, *cz_why_update, *cz_base_t, *cz_base_d, *qm_tag, *qm_merging, *qm_playable, *qm_read, *qm_pack, *qm_check, *qm_installed, *qm_note, *qm_merged_fmt, *qm_at_end, *cz_keys_ok, *cz_keys_missing, *cz_keys_t, *cz_keys_d, *sp_reading_fmt, *sp_names_fmt, *jump_letters;
+    const char *cz_possible, *cz_checking_fmt, *cz_measuring_fmt, *cz_counts_fmt, *cz_only_some, *cz_show_all, *cz_none_possible;
+    // merge and compress, and the DLC with their game (25F: 1A, 4A)
+    const char *cz_merge_tag, *cz_merge_sub_fmt, *cz_merge_worth_fmt, *cz_merged_fmt, *cz_merged_sub, *cz_update_wait, *cz_update_tag, *cz_update_sub_fmt, *cz_dlc_fmt, *cz_go_merge_title_fmt, *cz_go_merge_body_fmt, *cz_merge_risks, *cz_go_dlc_fmt, *cz_merge_go, *cz_update_notice_fmt, *cz_undo_merged_body;
+    // a game merged when Nintendo had compressed it: undone before a newer update is merged
+    const char *cz_why_redo, *cz_redo_t, *cz_redo_d, *cz_undo_redo_body;
 };
 
 const More& TrM();

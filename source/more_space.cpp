@@ -9,8 +9,10 @@
 #include "draw.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "sdcheck_nx.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <ctime>
 
 namespace nxdock {
@@ -35,6 +37,94 @@ void Bar(NVGcontext* vg, const Theme& t, float x, float y, float w, long long fr
 }
 
 } // namespace
+
+namespace {
+
+std::string FirstLetter(const std::string& name) {
+    for (unsigned char c : name) {
+        if (std::isalpha(c)) return std::string(1, char(std::toupper(c)));
+        if (std::isdigit(c)) return "#";
+        if (c >= 0x80) return std::string(1, char(c)); // a name in another script: its own group
+    }
+    return "#";
+}
+
+} // namespace
+
+namespace {
+
+// Names compared as a person reads them: without case.
+bool NameBefore(const std::string& a, const std::string& b) {
+    const size_t n = std::min(a.size(), b.size());
+    for (size_t i = 0; i < n; i++) {
+        const int x = std::tolower((unsigned char)a[i]), y = std::tolower((unsigned char)b[i]);
+        if (x != y) return x < y;
+    }
+    return a.size() < b.size();
+}
+
+} // namespace
+
+void App::SortPickRows(const Space::View& v) {
+    if (m_pick_rows.empty()) return;
+    std::vector<size_t> order(m_pick_rows.size());
+    for (size_t i = 0; i < order.size(); i++) order[i] = i;
+    const auto name = [&](size_t i) -> const std::string& { return v.apps[size_t(m_pick_rows[i].first)].name; };
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        if (name(a) != name(b)) return NameBefore(name(a), name(b));
+        return m_pick_rows[a].second < m_pick_rows[b].second;
+    });
+    bool same = true;
+    for (size_t i = 0; i < order.size(); i++) same &= order[i] == i;
+    if (same) return;
+    const auto focused = m_pick_rows[size_t(std::clamp(m_pick_focus, 0, int(m_pick_rows.size()) - 1))];
+    std::vector<std::pair<int, int>> rows;
+    std::vector<char> marks;
+    for (size_t i : order) {
+        rows.push_back(m_pick_rows[i]);
+        marks.push_back(m_pick_marks[i]);
+    }
+    m_pick_rows = std::move(rows);
+    m_pick_marks = std::move(marks);
+    for (size_t i = 0; i < m_pick_rows.size(); i++) {
+        if (m_pick_rows[i] == focused) m_pick_focus = int(i);
+    }
+}
+
+int App::ListJump(const std::vector<std::string>& names, int focus, int dir) {
+    if (names.empty()) return focus;
+    focus = std::clamp(focus, 0, int(names.size()) - 1);
+    const std::string here = FirstLetter(names[size_t(focus)]);
+    int i = focus;
+    if (dir > 0) {
+        while (i < int(names.size()) - 1 && FirstLetter(names[size_t(i)]) == here) i++;
+    } else {
+        // to the start of this letter, or of the one before when at its start already
+        while (i > 0 && FirstLetter(names[size_t(i - 1)]) == here) i--;
+        if (i == focus && i > 0) {
+            const std::string before = FirstLetter(names[size_t(i - 1)]);
+            i--;
+            while (i > 0 && FirstLetter(names[size_t(i - 1)]) == before) i--;
+        }
+    }
+    m_list_letter = FirstLetter(names[size_t(i)]);
+    m_list_letter_at = m_time;
+    return i;
+}
+
+void App::DrawListLetter(NVGcontext* vg, float cx, float cy) {
+    const double age = m_time - m_list_letter_at;
+    if (age > 0.7 || m_list_letter.empty()) return;
+    const Theme& t = m_theme;
+    const float a = float(age < 0.5 ? 1.0 : 1.0 - (age - 0.5) / 0.2);
+    const float k = ui::Still() ? 1.f : ui::EaseOutBack(std::min(1.f, float(age / 0.18)));
+    nvgSave(vg);
+    nvgGlobalAlpha(vg, a);
+    const float s = 120 * k;
+    ui::FillRound(vg, cx - s / 2, cy - s / 2, s, s, 24 * k, t.work);
+    ui::Text(vg, cx, cy + 2, 72 * k, t.on_work, m_list_letter.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgRestore(vg);
+}
 
 unsigned long long App::QueueNeedsOnSd() {
     if (!m_queue) return 0;
@@ -129,6 +219,14 @@ void App::DrawSpace(NVGcontext* vg) {
         DrawPicker(vg, v);
         return;
     }
+    if (m_space_mode == 2 && m_sdcheck) {
+        DrawSdCheck(vg);
+        return;
+    }
+    if (m_space_mode == 3 && m_compress) {
+        DrawCompress(vg);
+        return;
+    }
     const float lx = 48, rx = 664, cw = 568;
     char line[200];
     std::snprintf(line, sizeof(line), m.sp_sd_fmt, v.storage.sd_free >= 0 ? draw::Size(u64(v.storage.sd_free)).c_str() : "?",
@@ -142,9 +240,9 @@ void App::DrawSpace(NVGcontext* vg) {
 
     // the six actions, each with what it frees or needs
     const unsigned long long need = QueueNeedsOnSd();
-    std::string sub[6], right[6];
+    std::string sub[8], right[8];
     char text[200];
-    std::snprintf(text, sizeof(text), m.a_clean_sub_fmt, v.leftovers.contents, v.leftovers.tickets);
+    std::snprintf(text, sizeof(text), m.cl_sub_fmt, v.leftovers.contents, v.leftovers.placeholders, v.leftovers.addons, v.leftovers.tickets);
     sub[0] = v.scanned ? text : m.scanning;
     right[0] = v.scanned ? draw::Size(v.leftovers.bytes) : "";
     sub[1] = m.a_archive_sub;
@@ -161,17 +259,27 @@ void App::DrawSpace(NVGcontext* vg) {
     sub[4] = v.card ? m.a_card_sub : m.a_card_none;
     sub[5] = m.a_dump_sub;
     right[5] = m.choose_word;
-    const char* titles[6] = {m.a_clean, m.a_archive, m.a_move, m.a_plan, m.a_card, m.a_dump};
-    m_space_focus = std::clamp(m_space_focus, 0, 5);
-    for (int i = 0; i < 6; i++) {
-        const bool left = i < 3;
-        const float x = left ? lx : rx, y = (left ? 222 : 100) + (i % 3) * 78;
+    const auto sd = m_sdcheck ? m_sdcheck->Snapshot() : SdChecker::View{};
+    if (sd.running) {
+        std::snprintf(text, sizeof(text), m.sd_running_fmt, sd.bytes ? int(100.0 * double(sd.bytes_done) / double(sd.bytes)) : 0);
+        sub[6] = text;
+    } else {
+        sub[6] = m.sd_action_sub;
+    }
+    sub[7] = m.cz_action_sub;
+    right[7] = m.cz_tag;
+    const char* titles[8] = {m.a_clean, m.a_archive, m.a_move, m.a_plan, m.a_card, m.a_dump, m.sd_action, m.cz_action};
+    m_space_focus = std::clamp(m_space_focus, 0, 7);
+    for (int i = 0; i < 8; i++) {
+        // three and "Compress games" on the left, four on the right
+        const bool left = i < 3 || i == 7;
+        const float x = left ? lx : rx, y = left ? 222 + (i == 7 ? 3 : i) * 78 : 100 + (i - 3) * 78;
         draw::Panel(vg, t, x, y, cw, 66, 12);
         if (i == m_space_focus) ui::Focus(vg, t, x, y, cw, 66, 12, m_time);
         AddHit(x, y, cw, 66, HitKind::SpaceAction, i);
-        const bool off = (i == 4 && !v.card) || (i == 0 && v.scanned && !v.leftovers.contents && !v.leftovers.tickets);
+        const bool off = (i == 4 && !v.card) || (i == 0 && v.scanned && !v.leftovers.Any());
         nvgGlobalAlpha(vg, off ? 0.5f : 1.f);
-        DrawTileIcon(vg, i == 0 ? 6 : i == 1 ? 4 : i == 2 ? 5 : i == 3 ? 5 : i == 4 ? 0 : 1, x + 18, y + 33);
+        DrawTileIcon(vg, i == 0 ? 6 : i == 1 ? 4 : i == 2 ? 5 : i == 3 ? 5 : i == 4 ? 0 : i == 5 ? 1 : i == 6 ? 0 : 5, x + 18, y + 33);
         ui::Text(vg, x + 70, y + 24, 17, t.text, titles[i]);
         nvgSave(vg);
         nvgScissor(vg, x + 70, y + 34, cw - 190, 30);
@@ -180,22 +288,33 @@ void App::DrawSpace(NVGcontext* vg) {
         ui::Text(vg, x + cw - 18, y + 33, 15, t.muted, right[i].c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         nvgGlobalAlpha(vg, 1.f);
     }
-    draw::Box(vg, rx, 344, cw, 14, t.muted, m.dumps_note);
+    draw::Box(vg, rx, 412, cw, 14, t.muted, m.dumps_note);
 
+    // the console being read: how far (a long while with many games)
+    if ((v.task == Space::Task::Scan && v.total) || v.names_total) {
+        const bool names = v.task != Space::Task::Scan;
+        draw::Panel(vg, t, lx, 572, kWidth - 96, 70, 12);
+        std::snprintf(text, sizeof(text), names ? m.sp_names_fmt : m.sp_reading_fmt, names ? v.names_done : int(v.done),
+                      names ? v.names_total : int(v.total));
+        ui::Spinner(vg, lx + 30, 596, 9, t.work, m_time);
+        ui::Text(vg, lx + 50, 596, 15, t.muted, text);
+        const float frac = names ? float(v.names_done) / float(std::max(1, v.names_total)) : float(double(v.done) / double(v.total));
+        ui::Progress(vg, t, lx + 22, 620, kWidth - 140, 10, frac, t.work, m_time);
+    }
     // the work going on
     if (v.task != Space::Task::None && v.task != Space::Task::Scan) {
         const char* what = v.task == Space::Task::Clean     ? m.st_cleaning
                            : v.task == Space::Task::Archive ? m.st_archiving
                            : v.task == Space::Task::Move    ? m.st_moving
                                                             : m.st_dumping;
-        draw::Panel(vg, t, lx, 500, kWidth - 96, 120, 12);
-        ui::Text(vg, lx + 22, 528, 17, t.text, what);
-        if (!v.current.empty()) ui::Text(vg, lx + 22, 554, 14, t.muted, v.current.c_str());
+        draw::Panel(vg, t, lx, 548, kWidth - 96, 104, 12);
+        ui::Text(vg, lx + 22, 570, 17, t.text, what);
+        if (!v.current.empty()) ui::Text(vg, lx + 22, 594, 14, t.muted, v.current.c_str());
         const float frac = v.total ? float(double(v.done) / double(v.total)) : 0.f;
-        ui::Progress(vg, t, lx + 22, 576, kWidth - 140, 12, frac, t.work, m_time);
+        ui::Progress(vg, t, lx + 22, 612, kWidth - 140, 12, frac, t.work, m_time);
         if (v.total) {
             std::snprintf(text, sizeof(text), "%s / %s", draw::Size(v.done).c_str(), draw::Size(v.total).c_str());
-            ui::Text(vg, kWidth - 70, 604, 14, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            ui::Text(vg, kWidth - 70, 640, 14, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         }
     }
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}};
@@ -205,6 +324,7 @@ void App::DrawSpace(NVGcontext* vg) {
 }
 
 void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
+    SortPickRows(v);
     const Theme& t = m_theme;
     const auto& s = Tr();
     const More& m = TrM();
@@ -273,6 +393,7 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     char left[96];
     std::snprintf(left, sizeof(left), "%s", m_pick_kind == 0 ? draw::Size(marked).c_str() : "");
+    DrawListLetter(vg, kWidth / 2, 360);
     ui::HintBar(vg, t, m_pick_kind == 0 ? left : nullptr, hints, m_hint_rects);
 }
 
@@ -281,8 +402,16 @@ void App::UpdateSpace(u64 down, u64 held) {
     if (!m_space) return;
     const auto v = m_space->Snapshot();
     if (m_space_mode == 1) {
+        SortPickRows(v);
         if (Repeat(down, held, HidNpadButton_AnyUp) && m_pick_focus > 0) m_pick_focus--;
         if (Repeat(down, held, HidNpadButton_AnyDown) && m_pick_focus < int(m_pick_rows.size()) - 1) m_pick_focus++;
+        // by first letter, for long lists
+        const bool left = Repeat(down, held, HidNpadButton_AnyLeft), right = Repeat(down, held, HidNpadButton_AnyRight);
+        if (left || right) {
+            std::vector<std::string> names;
+            for (const auto& r : m_pick_rows) names.push_back(v.apps[size_t(r.first)].name);
+            m_pick_focus = ListJump(names, m_pick_focus, right ? 1 : -1);
+        }
         if (down & HidNpadButton_B) {
             m_space_mode = 0;
             return;
@@ -331,16 +460,46 @@ void App::UpdateSpace(u64 down, u64 held) {
         return;
     }
     // the actions: three on the left, three on the right
-    if (Repeat(down, held, HidNpadButton_AnyUp) && m_space_focus % 3 > 0) m_space_focus--;
-    if (Repeat(down, held, HidNpadButton_AnyDown) && m_space_focus % 3 < 2) m_space_focus++;
-    if (Repeat(down, held, HidNpadButton_AnyLeft) && m_space_focus >= 3) m_space_focus -= 3;
-    if (Repeat(down, held, HidNpadButton_AnyRight) && m_space_focus < 3) m_space_focus += 3;
+    if (m_space_mode == 2 && m_sdcheck) {
+        UpdateSdCheck(down, held);
+        return;
+    }
+    if (m_space_mode == 3 && m_compress) {
+        UpdateCompress(down, held);
+        return;
+    }
+    // the actions: four on the left (0, 1, 2, 7), four on the right (3 to 6)
+    {
+        static constexpr int kLeft[] = {0, 1, 2, 7}, kRight[] = {3, 4, 5, 6};
+        const bool right_col = m_space_focus >= 3 && m_space_focus <= 6;
+        const int* col = right_col ? kRight : kLeft;
+        int row = 0;
+        for (int k = 0; k < 4; k++) {
+            if (col[k] == m_space_focus) row = k;
+        }
+        if (Repeat(down, held, HidNpadButton_AnyUp) && row > 0) m_space_focus = col[row - 1];
+        if (Repeat(down, held, HidNpadButton_AnyDown) && row < 3) m_space_focus = col[row + 1];
+        if (Repeat(down, held, HidNpadButton_AnyLeft) && right_col) m_space_focus = kLeft[row];
+        if (Repeat(down, held, HidNpadButton_AnyRight) && !right_col) m_space_focus = kRight[row];
+    }
     if (down & HidNpadButton_B) {
         m_more = MoreScreen::Tiles;
         return;
     }
     if ((down & HidNpadButton_X) && v.task == Space::Task::Dump) {
         m_space->Cancel();
+        return;
+    }
+    if ((down & HidNpadButton_A) && m_space_focus == 6) {
+        OpenSdCheck();
+        return;
+    }
+    if ((down & HidNpadButton_A) && m_space_focus == 7) {
+        OpenCompress(); // it opens at once; the list comes when the scan ends
+        return;
+    }
+    if ((down & HidNpadButton_A) && !v.scanned) {
+        Notice(m.scanning); // never silent: the console is still being read
         return;
     }
     if (!(down & HidNpadButton_A) || !v.scanned) return;
@@ -351,7 +510,7 @@ void App::UpdateSpace(u64 down, u64 held) {
     const Config c = m_link.CurrentConfig();
     switch (m_space_focus) {
         case 0:
-            if (!v.leftovers.contents && !v.leftovers.tickets) return;
+            if (!v.leftovers.Any()) return;
             m_dialog = Dialog{};
             m_dialog.kind = DialogKind::SpaceClean;
             break;
@@ -386,7 +545,8 @@ void App::SpaceDialogText(std::string& title, std::string& body, std::string& pr
     switch (m_dialog.kind) {
         case DialogKind::SpaceClean:
             title = m.clean_title;
-            std::snprintf(text, sizeof(text), m.clean_body_fmt, v.leftovers.contents, draw::Size(v.leftovers.bytes).c_str(), v.leftovers.tickets);
+            std::snprintf(text, sizeof(text), m.cl_body_fmt, draw::Size(v.leftovers.bytes).c_str(), v.leftovers.contents, v.leftovers.placeholders,
+                          v.leftovers.addons, v.leftovers.tickets);
             body = text;
             primary = m.clean_go;
             break;

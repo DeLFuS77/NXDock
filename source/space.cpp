@@ -9,6 +9,9 @@
 #include "yati/nx/es.hpp"
 #include "yati/nx/ncm.hpp"
 #include "yati/nx/ns.hpp"
+#include "install_queue.hpp"
+#include "resume.hpp"
+#include "uninstall.hpp"
 
 #include <switch.h>
 
@@ -273,6 +276,61 @@ std::string Upload(const std::string& url, const std::string& key, const std::st
 Space::~Space() {
     m_cancel = true;
     if (m_thread.joinable()) m_thread.join();
+    if (m_name_thread.joinable()) m_name_thread.join();
+}
+
+void Space::NameLater() {
+    if (m_naming.exchange(true)) return;
+    if (m_name_thread.joinable()) m_name_thread.join();
+    m_name_thread = std::thread([this] {
+        std::vector<u64> missing;
+        {
+            std::lock_guard lock(m_mutex);
+            for (const auto& a : m_view.apps) {
+                if (!m_names.count(a.app_id)) missing.push_back(a.app_id);
+            }
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.names_done = 0;
+            m_view.names_total = int(missing.size());
+        }
+        if (!missing.empty() && R_SUCCEEDED(nsInitialize())) {
+            auto control = std::make_unique<NsApplicationControlData>();
+            for (const u64 app : missing) {
+                if (m_cancel) break;
+                {
+                    std::lock_guard lock(m_mutex);
+                    m_view.names_done++;
+                }
+                std::string name;
+                u64 size = 0;
+                // the cache of the console first (fast), then the game itself
+                for (const auto source : {NsApplicationControlSource_CacheOnly, NsApplicationControlSource_Storage}) {
+                    if (R_SUCCEEDED(nsGetApplicationControlData(source, app, control.get(), sizeof(*control), &size))) {
+                        NacpLanguageEntry* lang = nullptr;
+                        if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang && lang->name[0]) {
+                            name = lang->name;
+                            break;
+                        }
+                    }
+                }
+                if (name.empty()) continue;
+                // in place: the order of the list stays while it is on screen
+                std::lock_guard lock(m_mutex);
+                m_names[app] = name;
+                for (auto& a : m_view.apps) {
+                    if (a.app_id == app) a.name = name;
+                }
+            }
+            nsExit();
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.names_done = m_view.names_total = 0;
+        }
+        m_naming = false;
+    });
 }
 
 bool Space::Busy() {
@@ -306,6 +364,7 @@ void Space::Run(Task task, std::function<std::string()> work) {
     m_thread = std::thread([this, task, work] {
         const std::string error = work();
         if (task != Task::Scan) ScanNow(); // what changed, read again
+        NameLater(); // names not known yet, without holding the screen
         std::lock_guard lock(m_mutex);
         m_view.error = error;
         m_view.last = task;
@@ -322,6 +381,13 @@ void Space::ScanNow() {
     Storage st;
     std::set<u64> installed_ids;
     if (R_SUCCEEDED(ncmInitialize())) {
+        // how many to read, for the bar of the screen
+        unsigned long long total = 0, done = 0;
+        for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+            Store s(sid);
+            if (s.ok) total += s.Keys().size();
+        }
+        Progress(0, total);
         for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
             Store s(sid);
             if (!s.ok) continue;
@@ -333,6 +399,7 @@ void Space::ScanNow() {
             (nand ? st.nand_total : st.sd_total) = total_b;
             std::set<std::string> referenced;
             for (const auto& key : s.Keys()) {
+                if ((++done & 15) == 0) Progress(done, total);
                 if (key.type != NcmContentMetaType_Application && key.type != NcmContentMetaType_Patch && key.type != NcmContentMetaType_AddOnContent) continue;
                 installed_ids.insert(key.id);
                 const u64 app = AppOf(key.id);
@@ -349,6 +416,21 @@ void Space::ScanNow() {
                 }
                 (nand ? a.nand_bytes : a.sd_bytes) += c.bytes;
                 a.contents.push_back(c);
+            }
+            // placeholders of installs that did not end (24A), except those NXDock can go on with
+            {
+                const auto keep = ResumePlaceholders(!nand);
+                std::vector<NcmPlaceHolderId> phs(512);
+                s32 n = 0;
+                if (R_SUCCEEDED(ncmContentStorageListPlaceHolder(&s.cs, phs.data(), s32(phs.size()), &n))) {
+                    for (s32 i = 0; i < n; i++) {
+                        if (keep.count(IdHex(&phs[size_t(i)], sizeof(NcmPlaceHolderId)))) continue;
+                        s64 size = 0;
+                        ncmContentStorageGetSizeFromPlaceHolderId(&s.cs, &size, &phs[size_t(i)]);
+                        left.placeholders++;
+                        left.bytes += u64(std::max<s64>(0, size));
+                    }
+                }
             }
             // contents no title refers to
             std::vector<NcmContentId> ids(256);
@@ -418,13 +500,15 @@ void Space::ScanNow() {
             }
             pdmqryExit();
         }
-        auto control = std::make_unique<NsApplicationControlData>();
-        for (auto& a : apps) {
-            u64 size = 0;
-            if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, a.app_id, control.get(), sizeof(*control), &size))) {
-                NacpLanguageEntry* lang = nullptr;
-                if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang) a.name = lang->name;
+        // the names known already; the others come after, on their own thread (NameLater)
+        {
+            std::lock_guard lock(m_mutex);
+            for (auto& a : apps) {
+                auto it = m_names.find(a.app_id);
+                if (it != m_names.end()) a.name = it->second;
             }
+        }
+        for (auto& a : apps) {
             if (a.name.empty()) {
                 char t[20];
                 std::snprintf(t, sizeof(t), "%016llX", (unsigned long long)a.app_id);
@@ -433,6 +517,16 @@ void Space::ScanNow() {
         }
         // tickets of titles that are not on the console in any way
         const std::set<u64> records = RecordApps();
+        // updates and DLC whose game is neither installed nor in the records (24A)
+        for (const auto& a : apps) {
+            if (a.archived || records.count(a.app_id)) continue;
+            const bool base = std::any_of(a.contents.begin(), a.contents.end(), [](const InstalledApp::Content& c) {
+                return c.type == NcmContentMetaType_Application;
+            });
+            if (base) continue;
+            left.addons += int(a.contents.size());
+            left.bytes += a.Bytes();
+        }
         if (R_SUCCEEDED(esx::Initialize())) {
             std::vector<FsRightsId> ids;
             esx::GetCommonTickets(ids);
@@ -500,7 +594,43 @@ bool Space::StartClean() {
                 if (written < s32(ids.size())) break;
             }
             for (const auto& id : orphans) ncmContentStorageDelete(&s.cs, &id);
-            ncmContentStorageCleanupAllPlaceHolder(&s.cs);
+            // placeholders, one by one: those of an install NXDock can go on with stay (24A)
+            const auto keep = ResumePlaceholders(sid == NcmStorageId_SdCard);
+            std::vector<NcmPlaceHolderId> phs(512);
+            s32 n = 0;
+            if (R_SUCCEEDED(ncmContentStorageListPlaceHolder(&s.cs, phs.data(), s32(phs.size()), &n))) {
+                for (s32 i = 0; i < n; i++) {
+                    if (!keep.count(IdHex(&phs[size_t(i)], sizeof(NcmPlaceHolderId)))) ncmContentStorageDeletePlaceHolder(&s.cs, &phs[size_t(i)]);
+                }
+            }
+        }
+        // updates and DLC whose game is neither installed nor in the records (24A)
+        if (R_SUCCEEDED(nsInitialize())) {
+            const std::set<u64> records = RecordApps();
+            nsExit();
+            for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+                std::vector<NcmContentMetaKey> lonely;
+                {
+                    Store s(sid);
+                    if (!s.ok) continue;
+                    const auto keys = s.Keys();
+                    std::set<u64> bases;
+                    for (const auto sid2 : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+                        Store o(sid2);
+                        if (!o.ok) continue;
+                        for (const auto& k : o.Keys()) {
+                            if (k.type == NcmContentMetaType_Application) bases.insert(AppOf(k.id));
+                        }
+                    }
+                    for (const auto& k : keys) {
+                        if ((k.type == NcmContentMetaType_Patch || k.type == NcmContentMetaType_AddOnContent) && !bases.count(AppOf(k.id)) &&
+                            !records.count(AppOf(k.id))) {
+                            lonely.push_back(k);
+                        }
+                    }
+                }
+                for (const auto& k : lonely) RemoveInstalled(k, sid);
+            }
         }
         ncmExit();
         if (R_SUCCEEDED(nsInitialize())) {

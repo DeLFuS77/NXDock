@@ -7,6 +7,10 @@
 #include "usb_disks.hpp"
 #include "usb_tinfoil.hpp"
 #include "i18n_more.hpp"
+#include "mods.hpp"
+#include "resume.hpp"
+#include "http.hpp"
+#include <yyjson.h>
 
 #include <algorithm>
 #include <cmath>
@@ -180,7 +184,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 }
 
 // Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowSaveCopy, kRowNotifyDone, kRowCompress, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -318,6 +322,58 @@ bool App::Init() {
     InitRumble();
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
+    m_report = std::make_unique<QueueReport>();
+    // cheats and mods that an update would break (19A): the builds of both versions, from the
+    // library app (its database, or the file of the update), against what is on the SD card
+    m_queue->SetModsCheck([this](u64 app, u32 from, u32 to) -> std::string {
+        const Config c = m_link.CurrentConfig();
+        if (!c.Linked()) return {};
+        const auto build = [&c, app](u32 version) -> std::string {
+            char hex[24];
+            std::snprintf(hex, sizeof(hex), "%016llX", (unsigned long long)app);
+            const auto r = http::Get(c.url + "/install/cheats/" + hex + "?version=" + std::to_string(version), c.key, 15000);
+            if (r.status != 200 && r.status != 404) return {};
+            yyjson_doc* doc = yyjson_read(r.body.data(), r.body.size(), 0);
+            if (!doc) return {};
+            const char* b = yyjson_get_str(yyjson_obj_get(yyjson_doc_get_root(doc), "build_id"));
+            std::string out = b ? b : "";
+            yyjson_doc_free(doc);
+            return out;
+        };
+        const std::string to_build = build(to);
+        if (to_build.empty()) return {};
+        const auto risk = ModsAtRiskFor("sdmc:/atmosphere", app, build(from), to_build);
+        if (!risk.Any()) return {};
+        const More& m = TrM();
+        std::string what;
+        char line[200];
+        if (risk.cheats) {
+            std::snprintf(line, sizeof(line), m.mr_cheats_fmt, risk.cheats);
+            what += std::string("\xE2\x80\xA2 ") + line + "\n";
+        }
+        if (risk.patches) {
+            std::snprintf(line, sizeof(line), m.mr_patches_fmt, risk.patches);
+            what += std::string("\xE2\x80\xA2 ") + line + "\n";
+        }
+        if (risk.exefs) what += std::string("\xE2\x80\xA2 ") + m.mr_exefs + "\n";
+        return what;
+    });
+    // the saves to the library before an update, a repair or a removal (18A), when it is on and
+    // a library is linked; on the queue's thread
+    m_queue->SetSaveCopy([this](u64 app, int why, u32 to, u32 current, std::function<void(u64, u64)> progress) -> std::string {
+        if (!m_ui.save_copy) return {};
+        const Config c = m_link.CurrentConfig();
+        if (!c.Linked()) return {};
+        const More& m = TrM();
+        char note[160];
+        switch (why) {
+            case 0: std::snprintf(note, sizeof(note), m.sc_note_update, ("v" + std::to_string(to)).c_str()); break;
+            case 1: std::snprintf(note, sizeof(note), "%s", m.sc_note_repair); break;
+            case 3: std::snprintf(note, sizeof(note), m.sc_note_back, ("v" + std::to_string(to)).c_str()); break;
+            default: std::snprintf(note, sizeof(note), "%s", m.sc_note_remove); break;
+        }
+        return CopySavesBefore(c.url, c.key, app, current, note, progress);
+    });
     m_push = std::make_unique<Push>();
     m_safety = std::make_unique<Safety>();
     m_sysinfo = ReadSystemInfo();
@@ -392,6 +448,24 @@ void App::ActivateSetting(int row) {
         case kRowScreenOff:
             m_ui.screen_off_auto = !m_ui.screen_off_auto;
             m_ui.Save();
+            break;
+        case kRowSaveCopy:
+            m_ui.save_copy = !m_ui.save_copy;
+            m_ui.Save();
+            break;
+        case kRowNotifyDone:
+            m_ui.notify_done = !m_ui.notify_done;
+            m_ui.Save();
+            break;
+        case kRowCompress:
+            // turned on only after its window (24A); off at once
+            if (m_ui.compress_on) {
+                m_ui.compress_on = false;
+                m_ui.Save();
+            } else {
+                m_dialog = Dialog{};
+                m_dialog.kind = DialogKind::CompressIntro;
+            }
             break;
         case kRowAnim:
             m_ui.anim = (m_ui.anim + 1) % 3;
@@ -703,6 +777,23 @@ void App::Tap(float x, float y, u64& down) {
                     m_shop_focus = it->index;
                 }
                 break;
+            case HitKind::CompressRow:
+                if (m_compress_focus == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_compress_focus = it->index;
+                }
+                break;
+            case HitKind::VersionChip:
+                down |= HidNpadButton_Minus;
+                break;
+            case HitKind::SdChoice:
+                if (it->index >= 2 || m_sd_choice == it->index) {
+                    down |= HidNpadButton_A;
+                } else {
+                    m_sd_choice = it->index;
+                }
+                break;
             case HitKind::SpaceAction:
                 if (m_space_focus == it->index) {
                     down |= HidNpadButton_A;
@@ -736,6 +827,14 @@ void App::Tap(float x, float y, u64& down) {
                 }
                 break;
             case HitKind::DialogBack: down |= HidNpadButton_B; break; // as B: each question answers its own way
+            case HitKind::DialogLine:
+                if (m_dialog.entry == it->index) {
+                    m_dialog.focus = 1;
+                    down |= HidNpadButton_A;
+                } else {
+                    m_dialog.entry = it->index;
+                }
+                break;
             case HitKind::DialogButton:
                 // a button of the question acts at once: tapping it is the choice
                 m_dialog.focus = it->index;
@@ -873,6 +972,8 @@ bool App::Frame() {
     FollowFinish();
     FollowUsb();
     FollowPush();
+    FollowQueueAsk();
+    FollowQueueWeb();
     CheckSdSpace();
     CheckBattery();
 
@@ -1670,6 +1771,10 @@ void App::UpdateDetail(u64 down, u64 held) {
             Notice(Tr().verify_wait);
         }
     }
+    if ((down & HidNpadButton_Minus) && g.installed.base && !m_shop_active) {
+        OpenVersions(); // another version of the update (20A)
+        return;
+    }
     if ((down & HidNpadButton_X) && g.installed.base && !m_shop_active) {
         // the cheats and mods of this game; B comes back here
         OpenMods();
@@ -1899,19 +2004,34 @@ void App::DrawDetail(NVGcontext* vg) {
     facts.push_back({s.format, FormatOf(g), t.text});
     facts.push_back({s.will_take, SizeText(picked_size), t.text});
     if (firmware) facts.push_back({s.firmware, FirmwareText(firmware) + " " + s.or_newer, t.text});
+    const bool versions = g.installed.base && !m_shop_active && !VersionRows(g).empty();
+    if (!m_marks_read) {
+        m_marks_read = true;
+        m_compressed_marks = Compressor::Marks();
+    }
+    const bool compressed = std::any_of(m_compressed_marks.begin(), m_compressed_marks.end(), [&g](const CompressedGame& c) {
+        return c.app_id == g.title_id;
+    });
     if (g.installed.base) {
         facts.push_back({s.on_console, g.installed.patch ? "v" + std::to_string(g.installed.patch) : std::string("v0"), t.ok});
     } else {
         facts.push_back({s.on_console, "—", t.muted});
     }
+    if (compressed && g.installed.base) facts.insert(facts.end() - 1, {TrM().cz_badge, "LZ4", t.work}); // 24A
     float fx = rx;
     const float fy = cy + 62;
-    for (const auto& f : facts) {
-        const float w = std::max(ui::TextWidth(vg, 14, f.label), ui::TextWidth(vg, 17, f.value.c_str())) + 28;
+    for (size_t i = 0; i < facts.size(); i++) {
+        const auto& f = facts[i];
+        const bool chip = versions && i + 1 == facts.size(); // the version on the console: − changes it (20A)
+        const float w = std::max(ui::TextWidth(vg, 14, f.label), ui::TextWidth(vg, 17, f.value.c_str())) + 28 + (chip ? 34 : 0);
         ui::FillRound(vg, fx, fy, w, 56, 10, Hex(0, t.dark ? 0.25f : 0.04f));
-        ui::StrokeRound(vg, fx + .5f, fy + .5f, w - 1, 55, 10, t.line, 1);
+        ui::StrokeRound(vg, fx + .5f, fy + .5f, w - 1, 55, 10, chip ? t.work : t.line, chip ? 1.5f : 1.f);
         ui::Text(vg, fx + 14, fy + 18, 14, t.muted, f.label);
         ui::Text(vg, fx + 14, fy + 39, 17, f.color, f.value.c_str());
+        if (chip) {
+            ui::Symbol(vg, t, fx + w - 22, fy + 28, 18, ui::glyph::Minus, t.work, HidNpadButton_Minus);
+            AddHit(fx, fy, w, 56, HitKind::VersionChip, 0);
+        }
         fx += w + 10;
     }
 
@@ -2019,8 +2139,33 @@ void App::DrawDetail(NVGcontext* vg) {
     if (g.installed.base && !m_shop_active) {
         hints.push_back({ui::glyph::X, TrM().t_mods, HidNpadButton_X}); // its cheats and mods (10A)
     }
+    if (versions) hints.push_back({ui::glyph::Minus, TrM().ver_hint, HidNpadButton_Minus}); // another version (20A)
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
+}
+
+std::vector<int> App::VersionRows(const Game& g) const {
+    std::vector<int> rows;
+    for (int i = 0; i < int(g.files.size()); i++) {
+        if (g.files[i].kind == CatalogFile::Kind::Update) rows.push_back(i);
+    }
+    std::sort(rows.begin(), rows.end(), [&g](int a, int b) { return g.files[a].version > g.files[b].version; });
+    return rows;
+}
+
+void App::OpenVersions() {
+    const Game& g = m_games[m_detail_game];
+    const auto rows = VersionRows(g);
+    if (rows.empty() || !g.installed.base) return;
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::Versions;
+    m_dialog.game = m_detail_game;
+    m_dialog.focus = 1;
+    // the focus on the version installed, or the newest
+    m_dialog.entry = 0;
+    for (int r = 0; r < int(rows.size()); r++) {
+        if (g.files[rows[r]].version == g.installed.patch) m_dialog.entry = r;
+    }
 }
 
 namespace {
@@ -2059,7 +2204,14 @@ std::vector<InstallJob> QueueOrder(std::vector<InstallJob> jobs) {
 }
 
 // Of what the install writes: how far, from the live counters.
+// The merge after an install (25G): measuring, then compressing and writing, then the check.
+float MergeFraction(const InstallQueue::Live& l) {
+    const float part = l.merge_total ? std::clamp(float(double(l.merge_done) / double(l.merge_total)), 0.f, 1.f) : 0.f;
+    return l.merge_phase <= 1 ? 0.45f * part : l.merge_phase == 2 ? 0.45f + 0.45f * part : 0.9f + 0.1f * part;
+}
+
 float JobFraction(const InstallQueue::Live& l) {
+    if (l.merging) return MergeFraction(l);
     if (l.phase >= 3) return 1.f;
     if (l.total == 0) return 0.f;
     return std::clamp(float(double(l.written) / double(l.total)), 0.f, 1.f);
@@ -2132,6 +2284,8 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
         case CatalogFile::Kind::Update: job.label = std::string(s.update_word) + " v" + std::to_string(f.version); break;
         case CatalogFile::Kind::Dlc: job.label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
     }
+    job.version = f.version;
+    job.resumable = !m_shop_active; // a journal while it installs (23A); a shop's key is not written down
     job.cover = g.cover;
     job.color_key = g.key;
     job.file_id = f.id;
@@ -2216,6 +2370,147 @@ bool App::RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>&
         out.push_back(std::move(job));
     }
     return all && !out.empty();
+}
+
+// The queue as the web shows it (22A): each job, and for the one installing its stage, speed and
+// time left.
+std::string App::QueueJson() {
+    const auto jobs = m_queue->Jobs();
+    const auto live = m_queue->GetLive();
+    std::string out = std::string("{\"paused\":") + (m_queue->Paused() ? "true" : "false") + ",\"jobs\":[";
+    bool first = true;
+    for (const auto& j : jobs) {
+        const char* state = j.state == InstallJob::State::Waiting   ? "waiting"
+                            : j.state == InstallJob::State::Running ? "running"
+                            : j.state == InstallJob::State::Done    ? "done"
+                            : j.state == InstallJob::State::Failed  ? "failed"
+                                                                    : "cancelled";
+        char head[160];
+        std::snprintf(head, sizeof(head), "{\"id\":%d,\"state\":\"%s\",\"size\":%llu", j.id, state, (unsigned long long)j.size);
+        std::string item = head;
+        item += ",\"game\":" + http::JsonQuote(j.game) + ",\"label\":" + http::JsonQuote(j.label);
+        if (j.state == InstallJob::State::Running && live.running && live.job == j.id) {
+            const char* stage = live.copying_save ? "copy" : live.phase >= 3 ? "register" : live.phase <= 1 ? "network" : "write";
+            const double rate = live.total ? live.write_rate : live.net_rate;
+            const double left = live.write_rate > 0.1 && live.total ? double(live.total - std::min(live.total, live.written)) / (live.write_rate * 1048576.0) : 0;
+            char more[200];
+            std::snprintf(more, sizeof(more), ",\"stage\":\"%s\",\"percent\":%.1f,\"speed\":%.1f,\"left\":%d", stage, double(JobFraction(live)) * 100.0, rate,
+                          int(left));
+            item += more;
+        }
+        if (j.state == InstallJob::State::Failed && !j.error.empty()) {
+            // the title of the packed error is enough for the web
+            item += ",\"error\":" + http::JsonQuote(UnpackError(j.error).title);
+        }
+        item += "}";
+        out += (first ? "" : ",") + item;
+        first = false;
+    }
+    return out + "]}";
+}
+
+void App::FollowQueueWeb() {
+    if (!m_queue || !m_report) return;
+    const Config c = m_link.CurrentConfig();
+    if (!c.Linked()) return;
+    m_report->SetLink(c.url, c.key);
+    const auto jobs = m_queue->Jobs();
+    bool busy = false;
+    for (const auto& j : jobs) {
+        if (j.state == InstallJob::State::Waiting || j.state == InstallJob::State::Running) {
+            busy = true;
+            if (std::find(m_report_jobs.begin(), m_report_jobs.end(), j.id) == m_report_jobs.end()) m_report_jobs.push_back(j.id);
+        }
+    }
+    // what the queue does, every two seconds while it works, and once when it stops
+    if ((busy && m_time - m_report_at >= 2) || (!busy && m_report_busy)) {
+        m_report_at = m_time;
+        m_report->Live(QueueJson());
+    }
+    if (!busy && m_report_busy) {
+        // the end of the queue: what went well and what failed, for the phone (21A)
+        std::string items;
+        for (const auto& j : jobs) {
+            if (std::find(m_report_jobs.begin(), m_report_jobs.end(), j.id) == m_report_jobs.end()) continue;
+            if (j.state != InstallJob::State::Done && j.state != InstallJob::State::Failed) continue;
+            if (!items.empty()) items += ",";
+            items += "{\"game\":" + http::JsonQuote(j.game) + ",\"label\":" + http::JsonQuote(j.label) + ",\"ok\":" +
+                     (j.state == InstallJob::State::Done ? "true" : "false");
+            if (j.state == InstallJob::State::Failed) items += ",\"error\":" + http::JsonQuote(UnpackError(j.error).title);
+            items += "}";
+        }
+        if (m_ui.notify_done && !items.empty() && !m_queue->Paused()) m_report->Done("{\"items\":[" + items + "]}");
+        m_report_jobs.clear();
+    }
+    m_report_busy = busy;
+    // what the web asked
+    const More& m = TrM();
+    for (auto& cmd : m_report->TakeCommands()) {
+        if (cmd.action == "pause") {
+            m_queue->SetPaused(true);
+            Notice(m.qw_paused_web);
+        } else if (cmd.action == "resume") {
+            m_queue->SetPaused(false);
+            Notice(m.qw_resumed);
+        } else {
+            m_web_cancels.push_back(std::move(cmd));
+        }
+    }
+    // a cancel is asked about on the screen first, as what the web sends to install
+    if (!m_web_cancels.empty() && m_dialog.kind == DialogKind::None && !m_wizard) {
+        const QueueCommand cmd = m_web_cancels.front();
+        m_web_cancels.erase(m_web_cancels.begin());
+        const auto it = std::find_if(jobs.begin(), jobs.end(), [&cmd](const InstallJob& j) { return j.id == cmd.job; });
+        if (it != jobs.end() && (it->state == InstallJob::State::Waiting || it->state == InstallJob::State::Running)) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::WebCancel;
+            m_dialog.entry = cmd.job;
+            m_dialog.text = it->game + (it->label.empty() ? "" : " \xC2\xB7 " + it->label);
+        }
+    }
+}
+
+void App::CheckResume() {
+    m_resume_checked = true;
+    auto state = std::make_unique<ResumeState>();
+    if (!LoadResume(kResumeDir, *state)) return;
+    m_resume = std::move(state);
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::Resume;
+    m_dialog.focus = 1;
+}
+
+void App::FollowQueueAsk() {
+    if (!m_queue || m_dialog.kind != DialogKind::None || m_wizard) return;
+    if (!m_resume_checked && !TourActive()) {
+        CheckResume();
+        if (m_dialog.kind != DialogKind::None) return;
+    }
+    if (m_mods_after) {
+        // the update asked about ended: Cheats and mods of the game, for the new version (19A)
+        bool pending = false;
+        for (const auto& j : m_queue->Jobs()) {
+            if ((j.title_id & ~0x1FFFull) == m_mods_after &&
+                (j.state == InstallJob::State::Waiting || j.state == InstallJob::State::Running)) {
+                pending = true;
+            }
+        }
+        if (!pending) {
+            const unsigned long long app = m_mods_after;
+            m_mods_after = 0;
+            OpenMods();
+            OpenModsGame(app, m_mods_after_name);
+            m_tab = Tab::More;
+        }
+    }
+    const auto ask = m_queue->PendingAsk();
+    if (!ask.waiting) return;
+    m_dialog = Dialog{};
+    m_dialog.kind = ask.why == 10 ? DialogKind::ModsAsk : DialogKind::SaveCopyAsk;
+    m_dialog.text = ask.game;
+    m_dialog.from = ask.error;
+    m_dialog.entry = ask.why;
+    m_dialog.ids = {ask.app};
 }
 
 void App::FollowPush() {
@@ -2388,6 +2683,11 @@ void App::UpdateQueue(u64 down, u64 held) {
     if (down & HidNpadButton_Y) {
         m_queue->Clear();
     }
+    if (down & HidNpadButton_ZR) {
+        const bool paused = !m_queue->Paused();
+        m_queue->SetPaused(paused);
+        Notice(paused ? TrM().qw_paused : TrM().qw_resumed);
+    }
 }
 
 void App::DrawQueueStrip(NVGcontext* vg, float qy) {
@@ -2427,7 +2727,11 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     // the four stages, as figures: network, decompress, write, check
     char figures[200];
     const float frac = JobFraction(live);
-    if (live.phase >= 3) {
+    if (live.merging) {
+        std::snprintf(figures, sizeof(figures), "%s… %d %%", TrM().qm_merging, int(frac * 100));
+    } else if (live.copying_save) {
+        std::snprintf(figures, sizeof(figures), "%s…", TrM().sc_copying);
+    } else if (live.phase >= 3) {
         std::snprintf(figures, sizeof(figures), "%s…", s.registering);
     } else if (live.total == 0) {
         std::snprintf(figures, sizeof(figures), "%s… · %s %.0f MB/s", s.preparing, s.network, live.net_rate);
@@ -2440,7 +2744,7 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     const float fw = ui::TextWidth(vg, 15, figures);
     const float bar_x = 494, bar_end = 1196 - fw - 18;
     if (bar_end - bar_x > 40) {
-        ui::Progress(vg, t, bar_x, qy + 23, bar_end - bar_x, 8, frac, t.work, m_time);
+        ui::Progress(vg, t, bar_x, qy + 23, bar_end - bar_x, 8, frac, live.merging ? t.violet : t.work, m_time);
     }
     ui::Text(vg, 1196, qy + 27, 15, t.muted, figures, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -2476,7 +2780,8 @@ void App::DrawQueue(NVGcontext* vg) {
         nvgSave(vg);
         nvgScissor(vg, cx, py + 16, pw - 168 - 140, 48);
         const float nw = ui::Text(vg, cx, py + 40, 24, t.text, j.game.c_str()) - cx;
-        const std::string sub = j.label + " · " + Upper(j.format) + " · " + (j.nand ? s.internal : "SD");
+        const std::string sub = j.label + " · " + Upper(j.format) + " · " + (j.nand ? s.internal : "SD") +
+                                (live.merging ? std::string(" · ") + TrM().qm_tag : std::string());
         ui::Text(vg, cx + nw + 14, py + 41, 16, t.muted, sub.c_str());
         nvgRestore(vg);
 
@@ -2484,8 +2789,17 @@ void App::DrawQueue(NVGcontext* vg) {
         char pct[16];
         std::snprintf(pct, sizeof(pct), "%d %%", int(frac * 100));
         ui::Text(vg, px + pw - 24, py + 40, 26, t.text, pct, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        char eta[160];
-        if (live.phase >= 3) {
+        char eta[200];
+        if (live.merging) {
+            // installed, now merged with the game (25G, as chosen: A)
+            const u64 left_bytes = live.merge_total > live.merge_done ? live.merge_total - live.merge_done : 0;
+            const double left = live.merge_rate > 0.1 && live.merge_phase < 3 ? double(left_bytes) / (live.merge_rate * 1024 * 1024) : -1;
+            std::snprintf(eta, sizeof(eta), "%s… %s / %s%s%s · %s", TrM().qm_merging, SizeText(live.merge_done).c_str(),
+                          SizeText(live.merge_total).c_str(), left >= 0 ? (std::string(" · ") + s.left + " ").c_str() : "",
+                          left >= 0 ? Duration(left).c_str() : "", TrM().qm_playable);
+        } else if (live.copying_save) {
+            std::snprintf(eta, sizeof(eta), "%s… %s", TrM().sc_copying, live.copy_total ? (SizeText(live.copy_done) + " / " + SizeText(live.copy_total)).c_str() : "");
+        } else if (live.phase >= 3) {
             std::snprintf(eta, sizeof(eta), "%s…", s.registering);
         } else if (live.total == 0) {
             std::snprintf(eta, sizeof(eta), "%s… · %s", s.preparing, Duration(live.elapsed).c_str());
@@ -2495,7 +2809,7 @@ void App::DrawQueue(NVGcontext* vg) {
                           left >= 0 ? (std::string(" · ") + s.left + " ").c_str() : "", left >= 0 ? Duration(left).c_str() : "");
         }
         const float ew = ui::Text(vg, cx, py + 70, 16, t.muted, eta) - cx;
-        if (live.saved > 0) {
+        if (live.saved > 0 && !live.merging) {
             // what the console had already, in the green of what went well (16A)
             char saved[64];
             std::snprintf(saved, sizeof(saved), TrM().saved_fmt, SizeText(live.saved).c_str());
@@ -2506,11 +2820,25 @@ void App::DrawQueue(NVGcontext* vg) {
             nvgFill(vg);
             ui::Text(vg, sx + 14, py + 70, 16, t.ok, saved);
         }
-        ui::Progress(vg, t, cx, py + 88, pw - 168 - 24, 12, frac, t.work, m_time);
+        ui::Progress(vg, t, cx, py + 88, pw - 168 - 24, 12, frac, live.merging ? t.violet : t.work, m_time);
 
         struct Lane { std::string title; NVGcolor color; std::string value; std::string unit; float meter; int segments; };
         char v[32];
         std::vector<Lane> lanes;
+        if (live.merging) {
+            // the three steps of the merge: read and measure, compress and write, check
+            const float part = live.merge_total ? std::clamp(float(double(live.merge_done) / double(live.merge_total)), 0.f, 1.f) : 0.f;
+            const auto step = [&](int phase) { return live.merge_phase > phase ? 1.f : live.merge_phase == phase ? part : 0.f; };
+            const auto rate = [&](int phase) {
+                if (live.merge_phase != phase) return std::string(live.merge_phase > phase ? "100" : "\u2014");
+                std::snprintf(v, sizeof(v), "%.0f", live.merge_rate);
+                return std::string(v);
+            };
+            const auto unit = [&](int phase) { return std::string(live.merge_phase == phase ? "MB/s" : live.merge_phase > phase ? "%" : ""); };
+            lanes.push_back({TrM().qm_read, t.work, rate(1), unit(1), step(1), -1});
+            lanes.push_back({std::string(TrM().qm_pack) + " \u00b7 3 " + s.threads, t.violet, rate(2), unit(2), step(2), -1});
+            lanes.push_back({TrM().qm_check, t.ok, live.merge_phase >= 3 ? rate(3) : "\u2014", live.merge_phase >= 3 ? "MB/s" : TrM().qm_at_end, step(3), -1});
+        } else {
         std::snprintf(v, sizeof(v), "%.0f", live.net_rate);
         lanes.push_back({s.network, t.work, v, "MB/s", live.source_size ? float(double(live.net) / double(live.source_size)) : 0.f, -1});
         if (live.threads == 0) {
@@ -2528,8 +2856,10 @@ void App::DrawQueue(NVGcontext* vg) {
         std::snprintf(v, sizeof(v), "%u", live.checked);
         lanes.push_back({s.check_sha, t.ok, v, std::string(s.parts_of) + " " + std::to_string(live.ncas),
                          live.ncas ? float(live.checked) / float(live.ncas) : 0.f, -1});
-        const float lw = (pw - 168 - 24 - 3 * 14) / 4;
-        for (int i = 0; i < 4; i++) {
+        }
+        const int nl = int(lanes.size());
+        const float lw = (pw - 168 - 24 - (nl - 1) * 14) / nl;
+        for (int i = 0; i < nl; i++) {
             const Lane& lane = lanes[i];
             const float lx = cx + i * (lw + 14), ly = py + 118;
             ui::FillRound(vg, lx, ly, lw, 92, 12, t.panel2);
@@ -2560,17 +2890,32 @@ void App::DrawQueue(NVGcontext* vg) {
             }
         }
         y = py + ph + 26;
+        if (live.merging) {
+            // what the job did already: the update, installed
+            ui::Text(vg, 62, y, 13, t.muted, TrM().qm_installed);
+            const std::string what = SizeText(live.installed_bytes) + " \u00b7 " + Duration(live.installed_seconds);
+            const float mx = 62 + ui::TextWidth(vg, 13, TrM().qm_installed) + 20;
+            nvgBeginPath(vg);
+            nvgCircle(vg, mx, y, 7);
+            nvgFillColor(vg, t.ok);
+            nvgFill(vg);
+            ui::CheckMark(vg, mx, y, 8, t.panel, 2.f);
+            ui::Text(vg, mx + 14, y, 13, t.ok, what.c_str());
+            y += 26;
+        }
     }
 
     // Waiting, then done; the list scrolls to keep the row in focus in sight.
     const int first_row = running ? 1 : 0;
     // a failed row in focus shows what happened and what to do under the list (1A)
     const InstallJob& focused = rows[m_queue_focus];
-    const bool card = focused.state == InstallJob::State::Failed && !focused.error.empty();
-    const float card_h = card ? ErrorCard(vg, t, 48, 0, kWidth - 96, focused.error, false) : 0;
+    // or, installed but not merged with its game, why (25G)
+    const std::string& card_text = focused.state == InstallJob::State::Done ? focused.merge_error : focused.error;
+    const bool card = (focused.state == InstallJob::State::Failed || focused.state == InstallJob::State::Done) && !card_text.empty();
+    const float card_h = card ? ErrorCard(vg, t, 48, 0, kWidth - 96, card_text, false) : 0;
     const float list_top = y, list_bottom = card ? std::max(y + 100, 650 - card_h - 12) : 640;
     if (card) {
-        ErrorCard(vg, t, 48, 650 - card_h, kWidth - 96, focused.error, true);
+        ErrorCard(vg, t, 48, 650 - card_h, kWidth - 96, card_text, true);
     }
     const float pitch = 54;
     const int visible = std::max(1, int((list_bottom - list_top - 34) / pitch));
@@ -2617,7 +2962,18 @@ void App::DrawQueue(NVGcontext* vg) {
             std::snprintf(saved, sizeof(saved), TrM().saved_fmt, SizeText(j.saved).c_str());
             info += std::string(" · ") + saved;
         }
-        if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
+        if (j.state == InstallJob::State::Done && j.merged) {
+            char merged[96];
+            std::snprintf(merged, sizeof(merged), TrM().qm_merged_fmt, SizeText(j.merge_saved).c_str());
+            info += std::string(" \u00b7 ") + merged;
+        }
+        if (j.state == InstallJob::State::Done && !j.merge_error.empty()) {
+            // installed, not merged: why, in place of the figures (the game waits in Compress games)
+            nvgSave(vg);
+            nvgScissor(vg, 730, y, 340, 44);
+            ui::Text(vg, 1070, y + 22, 14, t.orange, ErrorTitle(j.merge_error).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            nvgRestore(vg);
+        } else if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
             // why, in place of the figures
             nvgSave(vg);
             nvgScissor(vg, 730, y, 340, 44);
@@ -2662,8 +3018,11 @@ void App::DrawQueue(NVGcontext* vg) {
     hints.push_back({ui::glyph::X, f.state == InstallJob::State::Running ? s.cancel : s.remove, HidNpadButton_X});
     hints.push_back({ui::glyph::Y, s.clear_done, HidNpadButton_Y});
     if (running) hints.push_back({ui::glyph::Minus, TrM().so_button, HidNpadButton_Minus}); // the screen off (11A)
+    const bool paused = m_queue->Paused();
+    if (paused || m_queue->Waiting() > 0) hints.push_back({ui::glyph::ZR, paused ? TrM().qw_go_on : TrM().qw_pause, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
-    ui::HintBar(vg, t, m_prefs.download_test ? s.download_test : (running ? s.no_sleep : s.queue_done_hint), hints, m_hint_rects);
+    ui::HintBar(vg, t, paused ? TrM().qw_paused : m_prefs.download_test ? s.download_test : live.merging ? TrM().qm_note : (running ? s.no_sleep : s.queue_done_hint), hints,
+                m_hint_rects);
 }
 
 void App::DrawSettings(NVGcontext* vg) {
@@ -2691,6 +3050,9 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.wiz_row, s.wiz_repeat, true},
         {TrM().so_auto_row, m_ui.screen_off_auto ? s.yes_word : s.no_word, m_ui.screen_off_auto},
         {TrM().anim_row, m_ui.anim == 2 ? TrM().anim_none : m_ui.anim == 1 ? TrM().anim_soft : TrM().anim_full, m_ui.anim != 2},
+        {TrM().sc_row, m_ui.save_copy ? s.yes_word : s.no_word, m_ui.save_copy},
+        {TrM().qw_notify_row, m_ui.notify_done ? s.yes_word : s.no_word, m_ui.notify_done},
+        {TrM().cz_row, m_ui.compress_on ? s.yes_word : s.no_word, m_ui.compress_on},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
         {s.speed_test, running ? s.cancel : s.start, linked},
@@ -3347,6 +3709,8 @@ void App::DrawDialog(NVGcontext* vg) {
         std::string text, tag, right;
         NVGcolor color;
         int mark = 0; // 1: fine, 2: a warning (the check before installing)
+        bool focus = false; // the row in focus (the versions of a game, 20A)
+        int hit = -1;       // a row that answers to touch
     };
     std::string title, body, note, primary, error;
     std::vector<Line> lines;
@@ -3515,6 +3879,110 @@ void App::DrawDialog(NVGcontext* vg) {
             title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             error = m_dialog.from;
             break;
+        case DialogKind::CompressIntro:
+        case DialogKind::CompressGo:
+        case DialogKind::CompressUndo:
+        case DialogKind::CompressInfo:
+            CompressDialogText(title, body, note, primary);
+            break;
+        case DialogKind::Versions: {
+            const More& m = TrM();
+            const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
+            const auto rows = VersionRows(g);
+            m_dialog.entry = std::clamp(m_dialog.entry, 0, std::max(0, int(rows.size()) - 1));
+            title = m.ver_title;
+            body = g.name;
+            // a window of five around the focus
+            const int first = std::clamp(m_dialog.entry - 2, 0, std::max(0, int(rows.size()) - 5));
+            for (int r = first; r < int(rows.size()) && r < first + 5; r++) {
+                const CatalogFile& f = g.files[rows[r]];
+                const bool here = f.version == g.installed.patch;
+                Line l{std::string(s.update_word) + " v" + std::to_string(f.version), here ? s.installed_tag : "",
+                       Upper(f.format) + " \xC2\xB7 " + SizeText(f.size), t.text};
+                l.focus = r == m_dialog.entry;
+                l.hit = r;
+                lines.push_back(l);
+            }
+            const CatalogFile& chosen = g.files[rows[size_t(m_dialog.entry)]];
+            char text[96];
+            if (chosen.version == g.installed.patch) {
+                primary = m.ver_installed;
+                can = false;
+            } else if (chosen.version < g.installed.patch) {
+                std::snprintf(text, sizeof(text), m.ver_back_fmt, ("v" + std::to_string(chosen.version)).c_str());
+                primary = text;
+                note = m.ver_note;
+            } else {
+                std::snprintf(text, sizeof(text), m.ver_install_fmt, ("v" + std::to_string(chosen.version)).c_str());
+                primary = text;
+            }
+            break;
+        }
+        case DialogKind::Downgrade: {
+            const More& m = TrM();
+            char text[200];
+            std::snprintf(text, sizeof(text), m.dg_title_fmt, m_dialog.jobs.empty() ? "" : ("v" + std::to_string(m_dialog.jobs[0].version)).c_str());
+            title = text;
+            std::snprintf(text, sizeof(text), m.dg_body_fmt, ("v" + std::to_string(m_dialog.size)).c_str(),
+                          m_dialog.jobs.empty() ? "" : ("v" + std::to_string(m_dialog.jobs[0].version)).c_str());
+            body = text;
+            note = m.ver_note;
+            primary = m.dg_go;
+            break;
+        }
+        case DialogKind::Resume: {
+            const More& m = TrM();
+            title = m.rs_title;
+            if (m_resume) {
+                const auto& f = m_resume->job.fields;
+                const auto get = [&f](const char* k) {
+                    auto it = f.find(k);
+                    return it == f.end() ? std::string() : it->second;
+                };
+                body = get("game") + (get("label").empty() ? "" : " \xC2\xB7 " + get("label"));
+                long long bytes = 0;
+                const int parts = ResumeChecked(*m_resume, &bytes);
+                char text[300];
+                std::snprintf(text, sizeof(text), m.rs_parts_fmt, parts, SizeText(u64(bytes)).c_str());
+                body += std::string("\n") + text;
+                if (!m_resume->waiting.empty()) {
+                    std::snprintf(text, sizeof(text), m.rs_waiting_fmt, int(m_resume->waiting.size()));
+                    body += std::string("\n") + text;
+                }
+            }
+            note = m.rs_note;
+            primary = m.rs_go;
+            cancel_label = m.rs_discard;
+            break;
+        }
+        case DialogKind::WebCancel: {
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.qw_cancel_title, m_dialog.text.c_str());
+            title = text;
+            body = m.qw_cancel_body;
+            primary = m.qw_cancel_go;
+            cancel_label = m.qw_keep;
+            break;
+        }
+        case DialogKind::ModsAsk: {
+            const More& m = TrM();
+            title = m.mr_title;
+            body = m_dialog.text + "\n" + m_dialog.from + "\n" + m.mr_body;
+            primary = m.mr_go;
+            cancel_label = m.mr_not_now;
+            break;
+        }
+        case DialogKind::SaveCopyAsk: {
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.sc_ask_title, m_dialog.text.c_str());
+            title = text;
+            body = m.sc_ask_body;
+            error = m_dialog.from;
+            primary = m_dialog.entry == 2 ? m.sc_go_remove : m.sc_go_on;
+            break;
+        }
         case DialogKind::MtpNand: {
             const More& m = TrM();
             title = m.nand_q_title;
@@ -3628,6 +4096,11 @@ void App::DrawDialog(NVGcontext* vg) {
         for (int i = 0; i < shown; i++) {
             const Line& l = lines[i];
             const float ly = cy + 6 + i * 40 + 20;
+            if (l.focus) {
+                ui::FillRound(vg, x + pad + 4, ly - 18, iw - 8, 36, 8, t.panel);
+                ui::StrokeRound(vg, x + pad + 4, ly - 18, iw - 8, 36, 8, t.work, 2.5f);
+            }
+            if (l.hit >= 0) AddHit(x + pad, ly - 20, iw, 40, HitKind::DialogLine, l.hit);
             if (i > 0) {
                 nvgBeginPath(vg);
                 nvgRect(vg, x + pad + 14, ly - 20, iw - 28, 1);
@@ -3785,6 +4258,18 @@ void App::UpdateDialog(u64 down, u64 held) {
         m_dialog.kind = DialogKind::None;
         return;
     }
+    if (m_dialog.kind == DialogKind::Versions) {
+        const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
+        const int n = int(VersionRows(g).size());
+        if (Repeat(down, held, HidNpadButton_AnyUp) && m_dialog.entry > 0) {
+            m_dialog.entry--;
+            m_dialog.focus = 1;
+        }
+        if (Repeat(down, held, HidNpadButton_AnyDown) && m_dialog.entry < n - 1) {
+            m_dialog.entry++;
+            m_dialog.focus = 1;
+        }
+    }
     if (m_dialog.kind == DialogKind::Where) {
         // Cancel, Internal memory, SD card, from left to right
         static constexpr int kOrder[] = {0, 2, 1};
@@ -3806,7 +4291,14 @@ void App::UpdateDialog(u64 down, u64 held) {
     }
     const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
     if (declined) {
-        if (m_dialog.kind == DialogKind::Push) {
+        if (m_dialog.kind == DialogKind::Resume) {
+            // discarded: every placeholder of the journal goes, and the journal
+            if (m_resume) DiscardResume(*m_resume);
+            m_resume.reset();
+            Notice(TrM().rs_discarded);
+        } else if (m_dialog.kind == DialogKind::SaveCopyAsk || m_dialog.kind == DialogKind::ModsAsk) {
+            m_queue->Answer(false);
+        } else if (m_dialog.kind == DialogKind::Push) {
             for (const auto& id : m_dialog.push) m_push->Answer(id, false);
         } else if (m_dialog.kind == DialogKind::Share) {
             m_prefs.share_installed = 0;
@@ -3840,6 +4332,51 @@ void App::ConfirmDialog() {
         }
         case DialogKind::UpdateAll:
             AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::SaveCopyAsk:
+            m_queue->Answer(true);
+            break;
+        case DialogKind::Versions: {
+            const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
+            const auto rows = VersionRows(g);
+            if (rows.empty()) break;
+            const CatalogFile& f = g.files[rows[size_t(std::clamp(m_dialog.entry, 0, int(rows.size()) - 1))]];
+            if (f.version == g.installed.patch) break;
+            InstallJob job = JobFor(g, f);
+            job.nand = g.installed.base_nand; // where the game is, as its update goes there too
+            if (f.version > g.installed.patch) {
+                AddJobs({job}); // a newer one: a plain update
+                break;
+            }
+            // an older one: asked once more, with what it means for the save
+            job.downgrade = true;
+            const u32 now = g.installed.patch;
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::Downgrade;
+            m_dialog.jobs = {job};
+            m_dialog.size = now;
+            return;
+        }
+        case DialogKind::Downgrade:
+            AddJobs(std::move(m_dialog.jobs));
+            break;
+        case DialogKind::WebCancel:
+            m_queue->Remove(m_dialog.entry); // a waiting one goes; the one installing is cancelled
+            break;
+        case DialogKind::CompressIntro:
+        case DialogKind::CompressGo:
+        case DialogKind::CompressUndo:
+            ConfirmCompressDialog();
+            break;
+        case DialogKind::Resume:
+            if (m_resume) AddJobs(ResumeJobs(*m_resume, m_link.CurrentConfig().key));
+            m_resume.reset();
+            break;
+        case DialogKind::ModsAsk:
+            // the update goes on; when it ends, Cheats and mods opens for the new version
+            m_mods_after = m_dialog.ids.empty() ? 0 : m_dialog.ids[0];
+            m_mods_after_name = m_dialog.text;
+            m_queue->Answer(true);
             break;
         case DialogKind::Where:
             for (auto& j : m_dialog.jobs) j.nand = false;

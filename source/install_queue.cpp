@@ -2,6 +2,8 @@
 // Copyright (C) 2026 DeLFuS77
 #include "install_queue.hpp"
 
+#include "compress_nx.hpp"
+
 #include "errors.hpp"
 #include "history.hpp"
 #include "file_source.hpp"
@@ -15,6 +17,7 @@
 #include "yati/container/nsp.hpp"
 #include "yati/container/xci.hpp"
 #include "yati/yati.hpp"
+#include "resume.hpp"
 #include "log.hpp"
 
 #include <switch.h>
@@ -198,7 +201,10 @@ void InstallQueue::Remove(int id) {
             continue;
         }
         if (it->state == InstallJob::State::Running) {
-            if (m_box) {
+            if (m_merging) {
+                // installed already: only the merge stops, the update stays installed
+                m_merge_stop = true;
+            } else if (m_box) {
                 m_box->RequestCancel();
             }
         } else {
@@ -206,6 +212,122 @@ void InstallQueue::Remove(int id) {
         }
         return;
     }
+}
+
+namespace {
+
+ResumeJob ToResume(const InstallJob& j) {
+    ResumeJob r;
+    auto& f = r.fields;
+    f["game"] = j.game;
+    f["label"] = j.label;
+    f["cover"] = j.cover;
+    f["color"] = j.color_key;
+    f["file"] = j.file_id;
+    f["url"] = j.url;
+    f["format"] = j.format;
+    f["origin"] = std::to_string(int(j.origin));
+    f["kind"] = std::to_string(int(j.kind));
+    f["title"] = std::to_string(j.title_id);
+    f["size"] = std::to_string(j.size);
+    f["nand"] = j.nand ? "1" : "0";
+    f["system"] = std::to_string(j.required_system);
+    f["version"] = std::to_string(j.version);
+    f["downgrade"] = j.downgrade ? "1" : "0";
+    f["firmware_ok"] = j.firmware_ok ? "1" : "0";
+    r.parts = j.parts;
+    return r;
+}
+
+InstallJob FromResume(const ResumeJob& r, const std::string& key) {
+    const auto get = [&r](const char* k) {
+        auto it = r.fields.find(k);
+        return it == r.fields.end() ? std::string() : it->second;
+    };
+    InstallJob j;
+    j.game = get("game");
+    j.label = get("label");
+    j.cover = get("cover");
+    j.color_key = get("color");
+    j.file_id = get("file");
+    j.url = get("url");
+    j.format = get("format");
+    j.origin = InstallJob::Origin(std::atoi(get("origin").c_str()));
+    j.kind = CatalogFile::Kind(std::atoi(get("kind").c_str()));
+    j.title_id = std::strtoull(get("title").c_str(), nullptr, 10);
+    j.size = std::strtoull(get("size").c_str(), nullptr, 10);
+    j.nand = get("nand") == "1";
+    j.required_system = u32(std::strtoul(get("system").c_str(), nullptr, 10));
+    j.version = u32(std::strtoul(get("version").c_str(), nullptr, 10));
+    j.downgrade = get("downgrade") == "1";
+    j.firmware_ok = get("firmware_ok") == "1";
+    j.checked = true; // asked about before the console went off
+    j.parts = r.parts;
+    j.resumable = true;
+    if (j.origin == InstallJob::Origin::Library) j.key = key;
+    return j;
+}
+
+} // namespace
+
+std::vector<InstallJob> ResumeJobs(const ResumeState& state, const std::string& key) {
+    std::vector<InstallJob> jobs;
+    jobs.push_back(FromResume(state.job, key));
+    jobs.back().resumed = true;
+    for (const auto& w : state.waiting) jobs.push_back(FromResume(w, key));
+    return jobs;
+}
+
+namespace {
+
+// The placeholders of these parts deleted, where they are.
+void DeletePlaceholders(const std::vector<ResumePart>& parts) {
+    if (parts.empty()) return;
+    if (R_SUCCEEDED(ncmInitialize())) {
+        for (const bool sd : {true, false}) {
+            NcmContentStorage cs{};
+            if (R_FAILED(ncmOpenContentStorage(&cs, sd ? NcmStorageId_SdCard : NcmStorageId_BuiltInUser))) continue;
+            for (const auto& p : parts) {
+                NcmPlaceHolderId ph{};
+                if (p.sd != sd || !ResumeUnhex(p.placeholder, &ph, sizeof(ph))) continue;
+                bool has = false;
+                if (R_SUCCEEDED(ncmContentStorageHasPlaceHolder(&cs, &has, &ph)) && has) ncmContentStorageDeletePlaceHolder(&cs, &ph);
+            }
+            ncmContentStorageClose(&cs);
+        }
+        ncmExit();
+    }
+}
+
+} // namespace
+
+std::set<std::string> ResumePlaceholders(bool sd) {
+    std::set<std::string> out;
+    ResumeState state;
+    if (!LoadResume(kResumeDir, state)) return out;
+    for (const auto& p : state.parts) {
+        if (p.sd == sd) out.insert(p.placeholder);
+    }
+    return out;
+}
+
+void DiscardResume(const ResumeState& state) {
+    DeletePlaceholders(state.parts);
+    ClearResume(kResumeDir);
+}
+
+void InstallQueue::SetPaused(bool paused) {
+    {
+        std::lock_guard lock(m_mutex);
+        m_paused = paused;
+        m_version++;
+    }
+    m_cv.notify_all();
+}
+
+bool InstallQueue::Paused() {
+    std::lock_guard lock(m_mutex);
+    return m_paused;
 }
 
 void InstallQueue::Retry(int id) {
@@ -259,6 +381,95 @@ std::map<u64, InstalledState> InstallQueue::Installed() {
 std::vector<SessionItem> InstallQueue::Session() {
     std::lock_guard lock(m_mutex);
     return {m_session.rbegin(), m_session.rend()};
+}
+
+void InstallQueue::SetModsCheck(ModsCheck fn) {
+    std::lock_guard lock(m_mutex);
+    m_mods_check = std::move(fn);
+}
+
+// A question for the user, from the queue's thread: true to go on.
+bool InstallQueue::AskAbout(const Ask& ask) {
+    std::unique_lock lock(m_mutex);
+    m_ask = ask;
+    m_ask.waiting = true;
+    m_answered = false;
+    m_version++;
+    m_cv.wait(lock, [this] { return m_answered || m_quit; });
+    m_ask = Ask{};
+    return m_answered && m_go_on;
+}
+
+// Before an update: cheats and mods that would stop working are said first (19A).
+bool InstallQueue::ModsBefore(u64 app, u32 to, const std::string& game) {
+    ModsCheck fn;
+    u32 from = 0;
+    {
+        std::lock_guard lock(m_mutex);
+        fn = m_mods_check;
+        auto it = m_installed.find(app);
+        if (it == m_installed.end() || !it->second.base) return true; // not installed: nothing to break
+        from = it->second.patch;
+    }
+    if (!fn) return true;
+    const std::string what = fn(app, from, to);
+    if (what.empty()) return true;
+    Ask ask;
+    ask.game = game;
+    ask.error = what;
+    ask.why = 10;
+    ask.app = app;
+    return AskAbout(ask);
+}
+
+void InstallQueue::SetSaveCopy(SaveCopy fn) {
+    std::lock_guard lock(m_mutex);
+    m_save_copy = std::move(fn);
+}
+
+InstallQueue::Ask InstallQueue::PendingAsk() {
+    std::lock_guard lock(m_mutex);
+    return m_ask;
+}
+
+void InstallQueue::Answer(bool go_on) {
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_ask.waiting) return;
+        m_answered = true;
+        m_go_on = go_on;
+    }
+    m_cv.notify_all();
+}
+
+// Before a change to a game: the saves of its users to the library (18A). False when the copy
+// failed and the user chose not to go on.
+bool InstallQueue::CopyBefore(u64 app, int why, u32 to, const std::string& game) {
+    SaveCopy fn;
+    u32 current = 0;
+    {
+        std::lock_guard lock(m_mutex);
+        fn = m_save_copy;
+        auto it = m_installed.find(app);
+        if (it != m_installed.end()) current = it->second.patch;
+    }
+    if (!fn) return true;
+    m_copy_done = 0;
+    m_copy_total = 0;
+    m_copying = true;
+    const std::string error = fn(app, why, to, current, [this](u64 d, u64 t) {
+        m_copy_done = d;
+        m_copy_total = t;
+    });
+    m_copying = false;
+    if (error.empty()) return true;
+    log_write("[NXDock] the saves of %016lX could not be copied\n", app);
+    Ask ask;
+    ask.game = game;
+    ask.error = error;
+    ask.why = why;
+    ask.app = app;
+    return AskAbout(ask);
 }
 
 bool InstallQueue::StartUndo(std::vector<int> jobs) {
@@ -350,6 +561,16 @@ InstallQueue::Live InstallQueue::GetLive() {
     l.checked = m_box->NcasChecked();
     l.ncas = m_box->NcasTotal();
     l.saved = m_box->SavedBytes();
+    l.copying_save = m_copying;
+    l.copy_done = m_copy_done;
+    l.copy_total = m_copy_total;
+    l.merging = m_merging;
+    l.merge_phase = m_merge_phase;
+    l.merge_done = m_merge_done;
+    l.merge_total = m_merge_total;
+    l.merge_rate = m_merge_rate;
+    l.installed_bytes = m_installed_bytes;
+    l.installed_seconds = m_installed_seconds;
     l.threads = m_box->Threads();
     l.connections = m_connections;
     const double now = Now();
@@ -402,7 +623,7 @@ void InstallQueue::Run() {
             continue;
         }
         auto it = std::find_if(m_jobs.begin(), m_jobs.end(), [](const InstallJob& j) { return j.state == InstallJob::State::Waiting; });
-        if (it == m_jobs.end()) {
+        if (it == m_jobs.end() || m_paused) {
             m_cv.wait(lock);
             continue;
         }
@@ -418,6 +639,9 @@ void InstallQueue::Run() {
                 j.seconds = job.seconds;
                 j.written = job.written;
                 j.saved = job.saved;
+                j.merged = job.merged;
+                j.merge_saved = job.merge_saved;
+                j.merge_error = job.merge_error;
             }
         }
         m_version++;
@@ -453,8 +677,37 @@ void InstallQueue::RunJob(InstallJob& job) {
     options.connections = ConnectionsFor(connections, applet);
     options.piece = applet ? 1024 * 1024 : 8 * 1024 * 1024;
     options.ahead = 2;
-    Result rc = 0;
-    {
+    // the saves first, before an update or a repair (18A); a failed copy asks the user
+    bool go_on = true;
+    if (job.kind == CatalogFile::Kind::Update && job.repair.empty()) {
+        go_on = ModsBefore(job.title_id & ~0x1FFFull, job.version, job.game);
+    }
+    if (go_on && (job.kind == CatalogFile::Kind::Update || !job.repair.empty())) {
+        go_on = CopyBefore(job.title_id & ~0x1FFFull, job.downgrade ? 3 : job.repair.empty() ? 0 : 1, job.version, job.game);
+    }
+    Result rc = go_on ? Result(0) : Result(Result_TransferCancelled);
+    // the journal, to go on if the console goes off (23A): files from the library or a disk
+    ResumeState journal;
+    std::mutex journal_mutex;
+    const bool journaled = go_on && job.resumable && (job.origin == InstallJob::Origin::Library || job.origin == InstallJob::Origin::File);
+    if (journaled) {
+        if (job.resumed && LoadResume(kResumeDir, journal)) {
+            // parts cut half way are written again: their placeholders go now
+            DeletePlaceholders(ResumeTakeCut(journal));
+        } else {
+            journal = ResumeState{};
+        }
+        journal.job = ToResume(job);
+        journal.waiting.clear();
+        {
+            std::lock_guard lock(m_mutex);
+            for (const auto& w : m_jobs) {
+                if (w.state == InstallJob::State::Waiting && w.resumable) journal.waiting.push_back(ToResume(w));
+            }
+        }
+        SaveResume(kResumeDir, journal);
+    }
+    if (go_on) {
         // the source of the file, from where it comes
         std::unique_ptr<sphaira::yati::source::Base> holder;
         s64 size = 0;
@@ -501,6 +754,28 @@ void InstallQueue::RunJob(InstallJob& job) {
                 config.sd_card_install = !job.nand;
                 // the check before installing warned and the user went on anyway (2A)
                 config.allow_newer_firmware = job.firmware_ok;
+                // going back to an older version, asked for on the page of the game (20A)
+                if (job.downgrade) config.allow_downgrade = true;
+                if (journaled) {
+                    const bool sd = !job.nand;
+                    config.resume.part = [&journal, &journal_mutex, sd](const NcmContentId& cid, const NcmPlaceHolderId& ph, s64 size, bool checked,
+                                                                        const void* header, size_t header_size) {
+                        std::lock_guard lock(journal_mutex);
+                        const std::string id = ResumeHex(&cid, sizeof(cid));
+                        // the header first: a part is said checked only once its header is kept
+                        const bool kept = checked && (!header || SaveResumeHeader(kResumeDir, id, header, header_size));
+                        ResumeNote(journal, id, ResumeHex(&ph, sizeof(ph)), size, kept, sd);
+                        SaveResume(kResumeDir, journal);
+                    };
+                    config.resume.before = [&journal, &journal_mutex, sd](const NcmContentId& cid, NcmPlaceHolderId& ph, void* header,
+                                                                          size_t header_size) {
+                        std::lock_guard lock(journal_mutex);
+                        const std::string id = ResumeHex(&cid, sizeof(cid));
+                        std::string placeholder;
+                        if (!ResumeLookup(journal, id, sd, placeholder) || !ResumeUnhex(placeholder, &ph, sizeof(ph))) return false;
+                        return !header || LoadResumeHeader(kResumeDir, id, header, header_size);
+                    };
+                }
                 if (!job.repair.empty()) {
                     // a repair: the damaged parts go first; only what is missing then comes
                     config.repair = true;
@@ -517,6 +792,11 @@ void InstallQueue::RunJob(InstallJob& job) {
     }
     log_write("[NXDock] result 0x%X\n", rc);
     nxdock_log_close();
+    if (journaled) {
+        // the job ended, well or not: its placeholders that were not registered go with the journal
+        std::lock_guard lock(journal_mutex);
+        DiscardResume(journal);
+    }
 
     job.seconds = Now() - m_started;
     job.written = box.WrittenBytes();
@@ -528,6 +808,9 @@ void InstallQueue::RunJob(InstallJob& job) {
                                                                                                                  : InstallJob::State::Failed;
         const s64 free_bytes = StorageFreeSpace(job.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
         job.error = InstallErrorText(rc, box.NeededBytes(), box.NeededFirmware(), free_bytes, job.nand);
+    }
+    if (job.state == InstallJob::State::Done && !test) {
+        MergeAfter(job, box.Registered());
     }
     if (job.origin == InstallJob::Origin::Mtp) {
         MtpJobEnded(job.state == InstallJob::State::Done, job.error);
@@ -572,6 +855,63 @@ void InstallQueue::RunJob(InstallJob& job) {
     m_installed = std::move(installed);
 }
 
+// An update installed over a game NXDock merged: merged with it now, in the
+// same job, so the game never stays with an update it cannot read (25G). A failure leaves the update
+// installed, the game as it was, and the reason on the job; Compress games offers it again.
+void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaKey>& keys) {
+    u64 app = 0;
+    for (const auto& k : keys) {
+        if (k.type == NcmContentMetaType_Patch && IsMergedGame(k.id & ~u64(0xFFF))) {
+            app = k.id & ~u64(0xFFF);
+        }
+    }
+    if (!app) {
+        return;
+    }
+    {
+        std::lock_guard lock(m_mutex);
+        m_merging = true;
+        m_merge_phase = 1;
+        m_merge_done = m_merge_total = m_merge_sample = 0;
+        m_merge_t = Now();
+        m_merge_rate = 0;
+        m_installed_bytes = job.written;
+        m_installed_seconds = job.seconds;
+        m_merge_stop = false;
+    }
+    log_write("[NXDock] the update of a merged game: merging %016llX\n", (unsigned long long)app);
+    // what the merge does goes to its own log (the one of the install is closed by now)
+    nxdock_log_open("sdmc:/switch/NXDock/compress.log");
+    u64 saved = 0;
+    const std::string error = MergeUpdate(app, m_merge_stop, [this](int phase, uint64_t done, uint64_t total) {
+        std::lock_guard lock(m_mutex);
+        if (phase != m_merge_phase) {
+            m_merge_sample = 0;
+            m_merge_t = Now();
+            m_merge_rate = 0;
+        }
+        m_merge_phase = phase;
+        m_merge_done = done;
+        m_merge_total = total;
+        const double now = Now();
+        if (now - m_merge_t >= 0.5) {
+            const double rate = double(done - std::min(done, m_merge_sample)) / (now - m_merge_t) / (1024.0 * 1024.0);
+            m_merge_rate = m_merge_rate == 0 ? rate : m_merge_rate * 0.6 + rate * 0.4;
+            m_merge_t = now;
+            m_merge_sample = done;
+        }
+    }, saved);
+    nxdock_log_close();
+    std::lock_guard lock(m_mutex);
+    m_merging = false;
+    if (error.empty()) {
+        job.merged = true;
+        job.merge_saved = saved;
+    } else {
+        job.merge_error = error;
+    }
+}
+
 void InstallQueue::RunUndo() {
     std::vector<size_t> todo;
     {
@@ -596,6 +936,17 @@ void InstallQueue::RunUndo() {
             nand = m_session[*it].nand;
         }
         Result rc = 0;
+        std::string game;
+        {
+            std::lock_guard lock(m_mutex);
+            game = m_session[*it].game;
+        }
+        // the saves first (18A): a removal the user did not want to go on with leaves it as it was
+        if (!keys.empty() && !CopyBefore(keys.front().id & ~0x1FFFull, 2, 0, game)) {
+            std::lock_guard lock(m_mutex);
+            m_session[*it].state = SessionItem::State::Installed;
+            continue;
+        }
         for (const auto& key : keys) {
             const Result r = RemoveInstalled(key, nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
             if (R_FAILED(r) && R_SUCCEEDED(rc)) {
