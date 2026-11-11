@@ -27,7 +27,7 @@ bool Gfx::Init() {
     m_device = dk::DeviceMaker{}.create();
     m_queue = dk::QueueMaker{m_device}.setFlags(DkQueueFlags_Graphics).create();
 
-    m_pool_images.emplace(m_device, DkMemBlockFlags_GpuCached | DkMemBlockFlags_Image, 16 * 1024 * 1024);
+    m_pool_images.emplace(m_device, DkMemBlockFlags_GpuCached | DkMemBlockFlags_Image, 4 * 1024 * 1024);
     m_pool_code.emplace(m_device, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached | DkMemBlockFlags_Code, 128 * 1024);
     m_pool_data.emplace(m_device, DkMemBlockFlags_CpuUncached | DkMemBlockFlags_GpuCached, 1 * 1024 * 1024);
 

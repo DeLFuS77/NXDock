@@ -28,12 +28,15 @@ namespace {
 
 constexpr int kWorkers = 2;
 constexpr int kUploadsPerFrame = 3;
-// images kept on the GPU at most (a cover is at most 400 px a side, ~640 KB): about two screens
-constexpr size_t kMaxImages = 96;
+// images kept on the GPU at most (a cover is at most 288 px a side, ~330 KB): a screen and a half
+constexpr size_t kMaxImages = 64;
 // covers waiting to be fetched: scrolling fast through a large library keeps only the newest
 constexpr size_t kMaxWanted = 48;
-// the largest a cover is drawn is 330 px, on the page of a game: kept at most this big
-constexpr int kMaxSide = 400;
+// every cover is scaled down to fit this, whatever its size: a library of 799 px pictures kept them
+// whole (2.5 MB each on the GPU) and filled the memory while scrolling
+constexpr int kMaxSide = 288;
+// frames an image dropped from the screen waits before it is freed: the GPU may still be drawing it
+constexpr unsigned long kTrashFrames = 4;
 constexpr const char* kCacheDir = "sdmc:/switch/NXDock/covers";
 
 // The file a cover is kept in: its address hashed, so any name of the app is a safe file name.
@@ -144,12 +147,16 @@ void Covers::Upload(NVGcontext* vg) {
             if (oldest == m_used.end() || oldest->second + 1 >= m_frame) break;
             const auto img = m_images.find(oldest->first);
             if (img != m_images.end()) {
-                if (img->second) nvgDeleteImage(vg, img->second);
+                if (img->second) m_trash.emplace_back(img->second, m_frame);
                 m_images.erase(img);
             }
             m_asked.erase(oldest->first);
             m_used.erase(oldest);
             loaded--;
+        }
+        while (!m_trash.empty() && m_trash.front().second + kTrashFrames <= m_frame) {
+            nvgDeleteImage(vg, m_trash.front().first);
+            m_trash.pop_front();
         }
     }
     for (int i = 0; i < kUploadsPerFrame; i++) {
@@ -168,13 +175,17 @@ void Covers::Upload(NVGcontext* vg) {
 }
 
 void Covers::Free(NVGcontext* vg) {
+    // the frame on its way may still draw them: they go to the trash, freed a few frames later (on
+    // leaving, the renderer frees whatever is left)
+    (void)vg;
     std::lock_guard lock(m_mutex);
     for (const auto& [path, image] : m_images) {
-        if (image) nvgDeleteImage(vg, image);
+        if (image) m_trash.emplace_back(image, m_frame);
     }
     m_images.clear();
     m_asked.clear();
     m_used.clear();
+    m_decoded.clear(); // decoded for the library just left
 }
 
 bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes) {
@@ -233,26 +244,30 @@ void Covers::Work() {
             int channels = 0;
             unsigned char* pixels = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &channels, 4);
             if (pixels) {
-                // covers are drawn at most 330 px: a larger picture is halved (or more), a box average of whole
-                // steps, so a library of large pictures does not fill the memory
-                const int step = std::max(1, std::max(w, h) / kMaxSide);
-                d.width = w / step;
-                d.height = h / step;
-                if (step == 1) {
+                // scaled down to fit kMaxSide: each new pixel is the average of the source pixels it covers
+                const int side = std::max(w, h);
+                d.width = side > kMaxSide ? std::max(1, w * kMaxSide / side) : w;
+                d.height = side > kMaxSide ? std::max(1, h * kMaxSide / side) : h;
+                if (d.width == w && d.height == h) {
                     d.rgba.assign(pixels, pixels + size_t(w) * h * 4);
-                } else if (d.width > 0 && d.height > 0) {
+                } else {
                     d.rgba.resize(size_t(d.width) * d.height * 4);
                     for (int y = 0; y < d.height; y++) {
+                        const int y0 = y * h / d.height;
+                        const int y1 = std::max(y0 + 1, (y + 1) * h / d.height);
                         for (int x = 0; x < d.width; x++) {
+                            const int x0 = x * w / d.width;
+                            const int x1 = std::max(x0 + 1, (x + 1) * w / d.width);
                             unsigned sum[4] = {0, 0, 0, 0};
-                            for (int dy = 0; dy < step; dy++) {
-                                const unsigned char* row = pixels + (size_t(y * step + dy) * w + size_t(x) * step) * 4;
-                                for (int dx = 0; dx < step; dx++) {
-                                    for (int c = 0; c < 4; c++) sum[c] += row[dx * 4 + c];
+                            for (int sy = y0; sy < y1; sy++) {
+                                const unsigned char* row = pixels + (size_t(sy) * w + size_t(x0)) * 4;
+                                for (int sx = 0; sx < x1 - x0; sx++) {
+                                    for (int c = 0; c < 4; c++) sum[c] += row[sx * 4 + c];
                                 }
                             }
+                            const unsigned n = unsigned((y1 - y0) * (x1 - x0));
                             unsigned char* out = d.rgba.data() + (size_t(y) * d.width + x) * 4;
-                            for (int c = 0; c < 4; c++) out[c] = static_cast<unsigned char>(sum[c] / unsigned(step * step));
+                            for (int c = 0; c < 4; c++) out[c] = static_cast<unsigned char>(sum[c] / n);
                         }
                     }
                 }

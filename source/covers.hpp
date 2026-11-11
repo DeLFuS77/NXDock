@@ -48,6 +48,9 @@ private:
     // longest are freed when there are too many
     std::map<std::string, unsigned long> m_used;
     unsigned long m_frame = 0;
+    // images taken off the screen and the frame they were dropped in: the GPU may still be drawing
+    // a frame that uses them, so they are freed a few frames later
+    std::deque<std::pair<int, unsigned long>> m_trash;
     std::atomic<bool> m_stop{false};
 };
 

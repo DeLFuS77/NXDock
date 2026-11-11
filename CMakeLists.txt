@@ -20,6 +20,17 @@ FetchContent_Declare(nanovg
     GIT_TAG 2acb0f3
 )
 FetchContent_MakeAvailable(nanovg)
+# nanovg-deko3d forgets the image slots above a freed one it reuses, and then hands out slots still in
+# use: with covers coming and going in a large library, a picture could be drawn from another one's
+# slot. The highest slot used is kept instead.
+set(_dk_renderer "${nanovg_SOURCE_DIR}/source/dk_renderer.cpp")
+file(READ "${_dk_renderer}" _dk_text)
+string(REPLACE "m_last_image_descriptor = free_image_descriptor;"
+               "m_last_image_descriptor = std::max(m_last_image_descriptor, free_image_descriptor);"
+               _dk_patched "${_dk_text}")
+if(NOT _dk_patched STREQUAL _dk_text)
+    file(WRITE "${_dk_renderer}" "${_dk_patched}")
+endif()
 
 # yyjson (MIT licence), the JSON reader, the same version Sphaira uses.
 set(YYJSON_INSTALL OFF)
