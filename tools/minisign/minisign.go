@@ -1,7 +1,7 @@
 // Package minisign signs and checks the checksums of the releases of NXDock as minisign does,
-// for tools/releasesign and tools/releasekey. NXDock itself runs on the console only and never
-// updates itself; the signature is for anyone to check a download with minisign and the public
-// key in release.pub.
+// for tools/releasesign and tools/releasekey. The signature is for anyone to check a download with
+// minisign and the public key in release.pub, and for NXDock, which checks it on the console
+// (source/minisig.cpp, with the keys of release.pub built in) before it updates itself.
 package minisign
 
 import (

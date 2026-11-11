@@ -11,6 +11,7 @@
 #include "catalog.hpp"
 #include "file_source.hpp"
 #include "fileops.hpp"
+#include "updater.hpp"
 #include "forwarder.hpp"
 #include "config.hpp"
 #include "covers.hpp"
@@ -200,6 +201,17 @@ private:
     std::vector<fileops::GameFile> m_files_found; // the games under what is chosen, read when the menu opens
     fileops::Count m_files_count;                  // what is chosen holds, read then too
     ToolDialog m_tool;                             // a question of the new tools, prepared when it opens
+    // NXDock updating itself (5A, more_update.cpp)
+    void FollowSelfUpdate();
+    void AskSelfUpdate();
+    bool UpdaterDialogText(ToolDialog& d);
+    bool UpdaterDialogInput(u64 down);
+    void ConfirmUpdater();
+    std::unique_ptr<Updater> m_updater;
+    bool m_update_silent = false;   // the check at start: only a notice when a newer one is out
+    bool m_update_has_old = false;  // NXDock.nro.old is there, to go back to
+    double m_update_old_at = -100, m_update_done_at = -100;
+    bool m_update_started = false;
     // the vault of saves (6A, more_vault.cpp)
     void OpenVault();
     std::vector<LibrarySave> VaultCopies();
@@ -549,7 +561,7 @@ private:
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
-                            FilesDelete, FilesWork, FilesProps };
+                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

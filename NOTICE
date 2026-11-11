@@ -29,6 +29,12 @@ yyjson (version 0.12.0)
   Copyright (c) 2020 YaoYuan
   MIT licence. Fetched at build time.
 
+Monocypher (version 4.0.2)
+  https://github.com/LoupVaillant/Monocypher
+  Copyright (c) 2017-2023 Loup Vaillant
+  CC0-1.0 or BSD-2-Clause. Fetched at build time; checks the signature of a new version of NXDock
+  (Ed25519 and BLAKE2b) before it is put in place.
+
 QR Code generator library (version 1.8.0, the C version)
   https://github.com/nayuki/QR-Code-generator
   Copyright (c) Project Nayuki

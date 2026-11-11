@@ -25,6 +25,8 @@ struct Tools {
         *fp_holds, *fp_holds_fmt, *fp_where, *fp_changed, *fp_game_fmt;
     // deleting the files once they install well
     const char *fa_switch, *fa_sub, *fa_tag, *fa_done_fmt;
+    // NXDock updating itself (5A)
+    const char *st_g_nxdock, *up_row, *up_have_fmt, *up_have_new_fmt, *up_notice_row, *up_back_row, *up_back_kept, *up_back_none, *up_checking, *up_title_fmt, *up_body_fmt, *up_note_fmt, *up_go, *up_later, *up_latest_t, *up_latest_fmt, *up_downloading, *up_done, *up_failed_t, *up_err_network, *up_err_none, *up_err_keys, *up_err_sig, *up_err_sum, *up_err_write, *up_busy, *up_out_fmt, *up_back_title, *up_back_body, *up_back_go, *up_back_failed, *up_wiz;
 };
 
 const Tools& TrT();

@@ -8,6 +8,7 @@
 #include "usb_disks.hpp"
 #include "usb_tinfoil.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 #include "mods.hpp"
 #include "resume.hpp"
 #include "http.hpp"
@@ -216,12 +217,13 @@ enum SettingRow {
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowSounds, kRowAnim,
     kRowWizard,
+    kRowSelfUpdate, kRowSelfNotice, kRowSelfBack,
     kRowHome, kRowHomeRemove,
     kRowAddress, kRowKey,
     kSettingRows
 };
 // the first row of each group
-constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowHome, kRowAddress};
+constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowSelfUpdate, kRowHome, kRowAddress};
 constexpr int kGroups = int(std::size(kGroupStarts));
 // the levels of the notice of little battery; 0 is off
 constexpr int kBatterySteps[] = {0, 10, 15, 20, 30};
@@ -504,6 +506,8 @@ void App::Exit() {
     // the backlight on again before leaving
     ScreenOn();
     if (m_lbl) lblExit();
+    // a check or a download of a new version is let go
+    m_updater.reset();
     // a copy, a move or a delete of the file list stops first (what was done stays done)
     if (m_fwork) {
         m_fwork->cancel = true;
@@ -682,6 +686,19 @@ void App::ActivateSetting(int row) {
             break;
         case kRowWizard:
             OpenWizard();
+            break;
+        case kRowSelfUpdate:
+            AskSelfUpdate();
+            break;
+        case kRowSelfNotice:
+            m_ui.self_update_notice = !m_ui.self_update_notice;
+            m_ui.Save();
+            break;
+        case kRowSelfBack:
+            if (m_update_has_old) {
+                m_dialog = Dialog{};
+                m_dialog.kind = DialogKind::SelfBack;
+            }
             break;
         case kRowHome:
             AskHomeShortcut(false);
@@ -1463,6 +1480,7 @@ bool App::Frame() {
     FollowLink();
     FollowQueue();
     FollowFilesWork();
+    FollowSelfUpdate();
     FollowFinish();
     FollowUsb();
     FollowPush();
@@ -3874,6 +3892,12 @@ void App::DrawSettings(NVGcontext* vg) {
     const char* themes[] = {s.light, s.dark, s.wiz_theme_auto};
     struct Row { const char* label; std::string value; bool accent; };
     const auto yes = [&](bool on) { return std::string(on ? s.yes_word : s.no_word); };
+    // the version, and the newer one when it was found (5A)
+    const Updater::View up = m_updater ? m_updater->Snapshot() : Updater::View{};
+    const bool self_newer = up.stage == Updater::Stage::Newer;
+    char self_update[160];
+    if (self_newer) std::snprintf(self_update, sizeof(self_update), TrT().up_have_new_fmt, NXDOCK_VERSION, up.version.c_str());
+    else std::snprintf(self_update, sizeof(self_update), TrT().up_have_fmt, NXDOCK_VERSION);
     const Row rows[kSettingRows] = {
         {s.library, library, linked},
         {s.forget, "", false},
@@ -3893,12 +3917,15 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.sounds_row, yes(m_ui.sounds), m_ui.sounds},
         {m.anim_row, m_ui.anim == 2 ? m.anim_none : m_ui.anim == 1 ? m.anim_soft : m.anim_full, m_ui.anim != 2},
         {s.wiz_row, s.wiz_repeat, true},
+        {TrT().up_row, self_update, self_newer},
+        {TrT().up_notice_row, yes(m_ui.self_update_notice), m_ui.self_update_notice},
+        {TrT().up_back_row, m_update_has_old ? TrT().up_back_kept : TrT().up_back_none, false},
         {m.hm_row, m_home.running_from ? m.hm_in_use : m_home.installed ? m.hm_on : s.no_word, m_home.installed},
         {m.hm_remove_row, "", false},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
     };
-    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, m.st_g_home, m.st_g_manual};
+    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, TrT().st_g_nxdock, m.st_g_home, m.st_g_manual};
     const float x = 48, w = 540, h = 56, gap = 8, head = 34;
     // where each row goes: a title before the first of each group
     float top_of[kSettingRows];
@@ -3930,7 +3957,7 @@ void App::DrawSettings(NVGcontext* vg) {
         }
         const bool dim = ((i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked) ||
                          (i == kRowHomeRemove && (!m_home.installed || m_home.running_from)) ||
-                         (i == kRowHome && m_home.running_from);
+                         (i == kRowHome && m_home.running_from) || (i == kRowSelfBack && !m_update_has_old);
         nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
         Panel(vg, t, x, y, w, h, 14);
         if (i == m_setting) {
@@ -3969,6 +3996,8 @@ void App::DrawSettings(NVGcontext* vg) {
     else if (m_setting == kRowForget) act = m.fg_go;
     else if (m_setting == kRowSpeed) act = running ? s.cancel : s.start;
     else if (m_setting == kRowHome) act = m_home.installed ? m.hm_update : m.hm_make;
+    else if (m_setting == kRowSelfUpdate) act = m.open;
+    else if (m_setting == kRowSelfBack) act = TrT().up_back_go;
     else if (m_setting == kRowHomeRemove) act = m.hm_remove_go;
     ui::HintBar(vg, t, nullptr,
                 {{ui::glyph::A, act, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},

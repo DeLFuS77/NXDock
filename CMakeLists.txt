@@ -55,6 +55,35 @@ add_library(qrcodegen STATIC ${qrcodegen_SOURCE_DIR}/c/qrcodegen.c)
 target_include_directories(qrcodegen PUBLIC ${qrcodegen_SOURCE_DIR}/c)
 target_compile_options(qrcodegen PRIVATE -O2)
 
+# Monocypher (CC0-1.0 or BSD-2-Clause), Ed25519 with SHA-512 and BLAKE2b: NXDock checks the
+# minisign signature of a new version of itself before it puts it in place. No CMake project: its
+# two files are built here.
+FetchContent_Declare(monocypher
+    GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
+    GIT_TAG 4.0.2
+)
+FetchContent_MakeAvailable(monocypher)
+add_library(monocypher STATIC ${monocypher_SOURCE_DIR}/src/monocypher.c ${monocypher_SOURCE_DIR}/src/optional/monocypher-ed25519.c)
+target_include_directories(monocypher PUBLIC ${monocypher_SOURCE_DIR}/src ${monocypher_SOURCE_DIR}/src/optional)
+target_compile_options(monocypher PRIVATE -O2)
+
+# The public keys of the releases (release.pub, minisign): each line of 56 base64 letters, built
+# into NXDock so it trusts only a new version signed with one of them. None yet: NXDock never
+# updates itself.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/release.pub)
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/release.pub _release_lines)
+set(NXDOCK_RELEASE_KEYS "")
+foreach(_line IN LISTS _release_lines)
+    string(STRIP "${_line}" _line)
+    string(LENGTH "${_line}" _len)
+    if(_len EQUAL 56 AND _line MATCHES "^[A-Za-z0-9+/]+$")
+        if(NXDOCK_RELEASE_KEYS)
+            string(APPEND NXDOCK_RELEASE_KEYS " ")
+        endif()
+        string(APPEND NXDOCK_RELEASE_KEYS "${_line}")
+    endif()
+endforeach()
+
 # USB disks (FAT32 and exFAT) with libusbhsfs (ISC licence), the revision Sphaira uses; NTFS
 # and EXT4 (GPL) are left out.
 set(USBHSFS_GPL OFF)
@@ -172,10 +201,14 @@ add_executable(nxdock
     source/fileops.cpp
     source/i18n_tools.cpp
     source/more_files.cpp
+    source/minisig.cpp
+    source/updater.cpp
+    source/more_update.cpp
 )
 
 target_compile_definitions(nxdock PRIVATE
     NXDOCK_VERSION="${PROJECT_VERSION}"
+    NXDOCK_RELEASE_KEYS="${NXDOCK_RELEASE_KEYS}"
 )
 
 target_compile_options(nxdock PRIVATE -Wall -Wextra -O2)
@@ -194,7 +227,7 @@ find_path(curl_inc curl/curl.h REQUIRED)
 find_library(curl_lib curl REQUIRED)
 find_library(z_lib z REQUIRED)
 target_include_directories(nxdock PRIVATE ${curl_inc} ${zstd_inc})
-target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg libusbhsfs ${deko3d_lib} ${curl_lib} ${z_lib})
+target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg libusbhsfs monocypher ${deko3d_lib} ${curl_lib} ${z_lib})
 
 nx_generate_nacp(
     OUTPUT nxdock.nacp

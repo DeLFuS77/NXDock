@@ -642,7 +642,7 @@ bool App::ToolDialogText(ToolDialog& d) {
             d.cancel = tt.fx_stop;
             return true;
         }
-        default: return false;
+        default: return UpdaterDialogText(d);
     }
 }
 
@@ -652,7 +652,7 @@ bool App::ToolDialogInput(u64 down, u64 /*held*/) {
         if ((down & (HidNpadButton_B | HidNpadButton_A)) && m_fwork) m_fwork->cancel = true;
         return true;
     }
-    return false;
+    return UpdaterDialogInput(down);
 }
 
 void App::ConfirmToolDialog() {
@@ -665,7 +665,7 @@ void App::ConfirmToolDialog() {
             StartFilesWork(0, std::move(paths), {});
             break;
         }
-        default: break;
+        default: ConfirmUpdater(); break;
     }
 }
 

@@ -13,6 +13,12 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # the file list: delete, copy, move, split for FAT32, the folders never touched
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/fileops_test tests/fileops_test.cpp source/fileops.cpp source/file_source.cpp
   /tmp/fileops_test /tmp
+  # the signature of a new version of NXDock (minisign), with Monocypher as the build fetches it
+  M=build/_deps/monocypher-src/src
+  gcc -O1 -c -I$M -o /tmp/monocypher.o $M/monocypher.c
+  gcc -O1 -c -I$M -I$M/optional -o /tmp/monocypher_ed.o $M/optional/monocypher-ed25519.c
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I$M -I$M/optional -o /tmp/minisig_test tests/minisig_test.cpp source/minisig.cpp /tmp/monocypher.o /tmp/monocypher_ed.o
+  /tmp/minisig_test
   # the vault of saves: zips written and read, and the list of the library app
   mkdir -p /tmp/zinc && cp /opt/devkitpro/portlibs/switch/include/zlib.h /opt/devkitpro/portlibs/switch/include/zconf.h /tmp/zinc/
   gcc -O1 -c -o /tmp/yyjson_v.o build/_deps/yyjson-src/src/yyjson.c

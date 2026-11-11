@@ -54,6 +54,13 @@ struct UiPrefs {
     int library_size = 0;       // the covers of the library: 0 large (7 in a row), 1 medium (9), 2 small (12)
     int console_size = 0;       // In the console, of the Installed tab: 0 list, 1 medium covers, 2 large covers
     std::string focus;          // the key of the game in focus in the library, for the next time
+    // the tools of the study of 11/11
+    bool self_update_notice = true;  // at start (at most once a day), say when a new NXDock is out (5A)
+    long long self_update_checked = 0; // when that was last asked, seconds since 1970
+    bool versions_list = true;        // what is missing for games not in the library, from titledb (6A)
+    int mtp_units = 15;               // the folders the computer sees over MTP: 1 installed games, 2 saves, 4 album, 8 USB disk (8A)
+    int save_auto_days = 0;           // copies of the saves every so many days, at start; 0 off (9A)
+    long long save_auto_last = 0;     // when they were last made
 
     static UiPrefs Load();
     bool Save() const;
