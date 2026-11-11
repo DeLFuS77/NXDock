@@ -88,6 +88,9 @@ public:
     uint64_t StoredSize() const { return m_data_size; }
     bool Compressed() const { return !m_entries.empty(); }
     const std::vector<lz4pack::Entry>& Entries() const { return m_entries; }
+    // Nintendo's LZ4 of the block [virt, virt + size) when it has one exactly there: its stored
+    // bytes, checked (mergepack::OldBlockFn)
+    bool StoredBlock(uint64_t virt, uint32_t size, std::vector<uint8_t>& out);
     // blocks of the data level found damaged (or of the wrong base game) so far
     uint64_t Damaged() const { return m_damaged; }
 

@@ -425,6 +425,15 @@ bool Romfs::ReadStored(uint64_t offset, uint8_t* buf, size_t size) {
     return true;
 }
 
+bool Romfs::StoredBlock(uint64_t virt, uint32_t size, std::vector<uint8_t>& out) {
+    auto it = std::lower_bound(m_entries.begin(), m_entries.end(), virt, [](const lz4pack::Entry& e, uint64_t v) { return e.virt < v; });
+    if (it == m_entries.end() || it->virt != virt || it->type != lz4pack::kLz4) return false;
+    const uint64_t next = it + 1 != m_entries.end() ? (it + 1)->virt : m_virt_end;
+    if (next - virt != size || it->size > lz4pack::kBlock) return false;
+    out.resize(it->size);
+    return ReadStored(it->phys, out.data(), out.size());
+}
+
 bool Romfs::Read(uint64_t offset, uint8_t* buf, size_t size) {
     if (offset > m_size || size > m_size - offset) return false;
     if (m_entries.empty()) return ReadStored(offset, buf, size);

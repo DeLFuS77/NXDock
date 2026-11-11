@@ -131,6 +131,8 @@ add_executable(nxdock
     source/resume.cpp
     source/romfs_lz4.cpp
     source/patch_view.cpp
+    source/merge_pack.cpp
+    source/merge_nca.cpp
     source/compress_meta.cpp
     source/cnmt_patch.cpp
     source/compress_nx.cpp

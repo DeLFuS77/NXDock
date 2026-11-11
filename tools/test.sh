@@ -53,6 +53,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # the RomFS of a game with its update, read as the console reads it (25B)
   g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/patch_view_test tests/patch_view_test.cpp source/patch_view.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libcrypto.so.3 -lpthread
   /tmp/patch_view_test
+  # the data level of a merged game, what is held again stored once, and its NCA (25C)
+  g++ -std=c++20 -Wall -Wextra -O2 -Isource -Iinclude -o /tmp/merge_pack_test tests/merge_pack_test.cpp source/merge_pack.cpp source/merge_nca.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o /usr/lib/x86_64-linux-gnu/libcrypto.so.3 -lpthread
+  /tmp/merge_pack_test
   # the list of compressed games, the look for sigpatches and the CNMT made again (24A)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/compress_meta_test tests/compress_meta_test.cpp source/compress_meta.cpp
   /tmp/compress_meta_test
