@@ -48,6 +48,42 @@ std::vector<std::pair<uint64_t, uint64_t>> Missing(const Recipe& r, const std::v
 // The bytes of the base at [phys, phys + size), from the library (false: not there).
 using FetchFn = std::function<bool(uint64_t phys, uint8_t* buf, size_t size)>;
 
+// What the recipe has not of the base: its places, in order. Kept beside the merged game ("the
+// spare", below) when it is little, so a newer update never needs the library; when it is much
+// (the update replaced most of the base), the few bytes a newer update needs are asked of the
+// library instead.
+std::vector<std::pair<uint64_t, uint64_t>> Leftover(const Recipe& r);
+
+// The spare: what the recipe has not of the base, in blocks of up to 64 KiB, each LZ4 HC of
+// Nintendo when it gets smaller, as it is when not, nothing when all zeros. Written in order: a
+// header, the blocks, then their index and where it starts.
+using ReadFn = std::function<bool(uint64_t offset, uint8_t* buf, size_t size)>;
+using OutFn = std::function<bool(const uint8_t* data, size_t size)>;
+using StepFn = std::function<bool(uint64_t done)>;
+bool WriteSpare(const std::vector<std::pair<uint64_t, uint64_t>>& places, const ReadFn& base, const OutFn& out, const StepFn& step,
+                uint64_t& written, int level = 9);
+// What the spare of these places would take, from one block in `every` of them.
+uint64_t EstimateSpare(const std::vector<std::pair<uint64_t, uint64_t>>& places, const ReadFn& base, uint32_t every = 32, int level = 9);
+
+// Reads a spare written by WriteSpare (`file` reads it from its start; `size` its size).
+class Spare {
+public:
+    bool Open(ReadFn file, uint64_t size);
+    // the bytes of the base at [phys, phys + size): false when the spare has not all of them
+    bool Read(uint64_t phys, uint8_t* buf, size_t size);
+    uint64_t Covered() const;
+
+private:
+    struct Block {
+        uint64_t phys = 0, at = 0;
+        uint32_t size = 0, stored = 0; // stored 0: zeros
+        uint8_t type = 0;              // 0 as it is, 3 LZ4
+    };
+    ReadFn m_file;
+    std::vector<Block> m_blocks; // by phys
+    std::vector<uint8_t> m_tmp;
+};
+
 // The base made again: what the recipe has read from the merged game's RomFS (`merged`, the
 // caller's), the rest fetched. Read fails where neither has it.
 class RebuiltBase : public patchview::Section {

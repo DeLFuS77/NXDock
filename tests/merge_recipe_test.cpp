@@ -105,7 +105,58 @@ int main() {
     }, recipe::FetchFn());
     CHECK(alone.Read(0x300000, got.data(), 0x8000) && !alone.Read(0x400000, got.data(), 16) && !alone.Read(base.size() - 8, got.data(), 16));
 
+    // 4. the spare: what the recipe has not, kept compressed; with it the whole base is there
+    // (some of the base made compressible, and a stretch of zeros)
+    for (size_t i = 0x380000; i < base.size(); i++) base[i] = (i >> 4) & 1 ? uint8_t('a' + (i & 7)) : 0;
+    std::memset(base.data() + 0x100000, 0, 0x30000);
+    const auto left = recipe::Leftover(r);
+    uint64_t left_bytes = 0, covered = 0;
+    for (const auto& l : left) left_bytes += l.second;
+    for (const auto& p : r.pieces) covered += p.size;
+    CHECK(left_bytes < base.size() && left.front().first == 0 && left.back().first + left.back().second == base.size());
+    const recipe::ReadFn from_base = [&](uint64_t o, uint8_t* b, size_t n) {
+        if (o + n > base.size()) return false;
+        std::memcpy(b, base.data() + o, n);
+        return true;
+    };
+    Bytes spare_file;
+    uint64_t written = 0;
+    CHECK(recipe::WriteSpare(left, from_base, [&](const uint8_t* d, size_t n) { spare_file.insert(spare_file.end(), d, d + n); return true; }, nullptr,
+                             written));
+    CHECK(written == spare_file.size() && written < left_bytes);
+    const uint64_t estimate = recipe::EstimateSpare(left, from_base, 4);
+    CHECK(estimate > written / 2 && estimate < written * 2);
+    recipe::Spare spare;
+    const recipe::ReadFn spare_read = [&](uint64_t o, uint8_t* b, size_t n) {
+        if (o + n > spare_file.size()) return false;
+        std::memcpy(b, spare_file.data() + o, n);
+        return true;
+    };
+    CHECK(spare.Open(spare_read, spare_file.size()) && spare.Covered() == left_bytes);
+    // the base made again from the merged game and the spare alone, no library: all of it
+    recipe::RebuiltBase whole(r, [&](uint64_t at, uint8_t* b, size_t n) {
+        std::memcpy(b, romfs.data() + at, n);
+        return true;
+    }, [&](uint64_t o, uint8_t* b, size_t n) { return spare.Read(o, b, n); });
+    Bytes all(base.size());
+    // (the recipe's pieces of the base as it was before the bytes above were changed)
+    bool same = whole.Read(0, all.data(), all.size());
+    for (const auto& p : r.pieces) std::memcpy(all.data() + p.phys, base.data() + p.phys, size_t(p.size)); // what the RomFS held then
+    CHECK(same && all == base);
+    // a damaged spare is refused
+    {
+        Bytes bad = spare_file;
+        bad[bad.size() - 1] ^= 1;
+        recipe::Spare s2;
+        CHECK(!s2.Open([&](uint64_t o, uint8_t* b, size_t n) {
+            if (o + n > bad.size()) return false;
+            std::memcpy(b, bad.data() + o, n);
+            return true;
+        }, bad.size()));
+    }
+
     if (failures) std::printf("%d failed\n", failures);
-    else std::printf("merge_recipe: all passed (%zu pieces; a newer update misses %llu bytes)\n", r.pieces.size(), (unsigned long long)miss);
+    else std::printf("merge_recipe: all passed (%zu pieces; a newer update misses %llu bytes; spare of %.1f KB for %.1f KB left)\n", r.pieces.size(),
+                     (unsigned long long)miss, written / 1e3, left_bytes / 1e3);
     return failures ? 1 : 0;
 }

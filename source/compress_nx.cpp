@@ -2,6 +2,9 @@
 // Copyright (C) 2026 DeLFuS77
 #include "compress_nx.hpp"
 
+#include "config.hpp"
+#include "http.hpp"
+
 #include <cstring>
 
 #include "cnmt_patch.hpp"
@@ -412,6 +415,39 @@ std::string RecipePath(u64 app) {
     return path;
 }
 
+std::string SparePath(u64 app) { return RecipePath(app).substr(0, RecipePath(app).size() - 4) + ".spare"; }
+
+// Bytes of the base game of a merged game asked of the library (25E): the app on the computer reads
+// them from the base it holds, decrypted as the update reads them (/install/base/). Every block is
+// checked afterwards with the hashes of the new update. At most this many for one merge.
+constexpr u64 kMaxFetched = 128ull << 20;
+
+bool FetchBase(u64 app, u64 at, u64 size, std::vector<u8>& out) {
+    const Config cfg = Config::Load();
+    if (!cfg.Linked()) return false;
+    out.clear();
+    out.reserve(size_t(size));
+    constexpr u64 kPiece = 16ull << 20;
+    for (u64 done = 0; done < size;) {
+        const u64 n = std::min(kPiece, size - done);
+        char url[64];
+        std::snprintf(url, sizeof(url), "/install/base/%016llX/%llu/%llu", (unsigned long long)app, (unsigned long long)(at + done),
+                      (unsigned long long)n);
+        const size_t before = out.size();
+        const auto r = http::Receive(cfg.url + url, cfg.key, n, [&](const char* d, size_t k) {
+            if (out.size() - before + k > n) return false;
+            out.insert(out.end(), reinterpret_cast<const u8*>(d), reinterpret_cast<const u8*>(d) + k);
+            return true;
+        });
+        if (r.status != 200 || out.size() - before != n) {
+            log_write("[NXDock] merge: the library answered %ld for the base\n", r.status);
+            return false;
+        }
+        done += n;
+    }
+    return true;
+}
+
 bool LoadRecipe(u64 app, recipe::Recipe& r) {
     FILE* f = std::fopen(RecipePath(app).c_str(), "rb");
     if (!f) return false;
@@ -449,7 +485,19 @@ struct Opened {
     patchview::Romfs merged_romfs;
     std::unique_ptr<recipe::RebuiltBase> rebuilt;
     recipe::Recipe recipe;
-    u64 missing = 0; // bytes of the base the new update reads that the merged game has not
+    // the spare kept beside it (what its recipe has not of the base), when it was little
+    FILE* spare_file = nullptr;
+    recipe::Spare spare;
+    bool has_spare = false;
+    // what neither has, asked of the library before the merge starts: by place in the base
+    std::vector<std::pair<u64, std::vector<u8>>> fetched;
+    u64 missing = 0; // bytes of the base the new update reads that neither has
+    Opened() = default;
+    Opened(const Opened&) = delete;
+    Opened& operator=(const Opened&) = delete;
+    ~Opened() {
+        if (spare_file) std::fclose(spare_file);
+    }
 };
 
 bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, mergegame::Merger& m, GameEstimate::Why& why) {
@@ -477,9 +525,28 @@ bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, merge
             return false;
         }
         patchview::Romfs* romfs = &o.merged_romfs;
-        // the few bytes it has not are not fetched yet (from the library, later): the merge waits
+        // what the recipe has not: from the spare when one was kept (the library, for the rest, later)
+        o.spare_file = std::fopen(SparePath(p.base.id).c_str(), "rb");
+        if (o.spare_file) {
+            FILE* f = o.spare_file;
+            fseeko(f, 0, SEEK_END);
+            const u64 size = u64(ftello(f));
+            o.has_spare = o.spare.Open([f](u64 at, u8* b, size_t n) { return fseeko(f, off_t(at), SEEK_SET) == 0 && std::fread(b, 1, n, f) == n; }, size);
+            if (!o.has_spare) log_write("[NXDock] merge: the spare of the merged game is damaged\n");
+        }
+        recipe::Spare* spare = o.has_spare ? &o.spare : nullptr;
+        auto* fetched = &o.fetched;
         o.rebuilt = std::make_unique<recipe::RebuiltBase>(o.recipe, [romfs](u64 at, u8* b, size_t n) { return romfs->Read(at, b, n); },
-                                                          recipe::FetchFn());
+                                                          [spare, fetched](u64 at, u8* b, size_t n) {
+                                                              if (spare && spare->Read(at, b, n)) return true;
+                                                              for (const auto& [from, bytes] : *fetched) {
+                                                                  if (at >= from && at + n <= from + bytes.size()) {
+                                                                      std::memcpy(b, bytes.data() + (at - from), n);
+                                                                      return true;
+                                                                  }
+                                                              }
+                                                              return false;
+                                                          });
         o.from_merged = true;
     }
     mergegame::Input in;
@@ -508,11 +575,34 @@ bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, merge
         u64 end = 0;
         if (!m.Indirect(entries, end)) return false;
         o.missing = 0;
-        for (const auto& gap : recipe::Missing(o.recipe, entries, end)) o.missing += gap.second;
-        if (o.missing) {
-            log_write("[NXDock] merge: the new update reads %llu bytes of the base the merged game has not\n", (unsigned long long)o.missing);
+        std::vector<u8> probe;
+        for (const auto& gap : recipe::Missing(o.recipe, entries, end)) {
+            probe.resize(size_t(std::min<u64>(gap.second, 1 << 20)));
+            bool there = o.has_spare;
+            for (u64 at = 0; there && at < gap.second; at += probe.size()) {
+                const size_t n = size_t(std::min<u64>(probe.size(), gap.second - at));
+                there = o.spare.Read(gap.first + at, probe.data(), n);
+            }
+            if (there) continue;
+            // asked of the library (the app on the computer reads them from the base it holds)
+            std::vector<u8> bytes;
+            if (o.missing + gap.second <= kMaxFetched && FetchBase(p.base.id, gap.first, gap.second, bytes)) {
+                o.fetched.push_back({gap.first, std::move(bytes)});
+            } else {
+                log_write("[NXDock] merge: %llu bytes of the base at 0x%llx are not in the library\n", (unsigned long long)gap.second,
+                          (unsigned long long)gap.first);
+                o.fetched.clear();
+                o.missing = UINT64_MAX;
+                break;
+            }
+            o.missing += gap.second;
+        }
+        if (o.missing == UINT64_MAX) {
+            // not in the merged game, nor kept beside it, nor in the library: nothing is changed
+            why = GameEstimate::Why::Update;
             return false;
         }
+        if (o.missing) log_write("[NXDock] merge: %llu bytes of the base asked of the library\n", (unsigned long long)o.missing);
     }
     why = GameEstimate::Why::None;
     return true;
@@ -589,7 +679,8 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
     mergegame::Merger merger;
     GameEstimate::Why why{};
     if (!OpenMerger(s, k, p, o, merger, why)) {
-        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+        // a newer update over a merged game that needs its base game, which the library has not
+        error = why == GameEstimate::Why::Update ? Packed(m.cz_base_t, m.cz_base_d) : Packed(m.cz_unsupported_t, m.cz_unsupported_d);
         return;
     }
     std::string what;
@@ -615,6 +706,8 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
     const auto drop_ph = [&] {
         if (!keep_ph) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
     };
+    const std::string spare_tmp = SparePath(app) + ".tmp";
+    bool spare_written = false;
     {
         Writer w(s.cs, ph);
         Result wrc = 0;
@@ -628,6 +721,40 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         u8 hash[32];
         w.Hash(hash);
         std::memcpy(&new_program, hash, sizeof(new_program));
+        // what the recipe will not have of the base, kept beside the merged game when it is
+        // little (up to a tenth of it): a newer update then needs nothing from the library (25E)
+        std::remove(spare_tmp.c_str());
+        {
+            std::vector<patchview::IndirectEntry> entries;
+            u64 end = 0;
+            if (!merger.RomfsCompressed() && merger.Indirect(entries, end)) {
+                const auto rc = recipe::FromIndirect(entries, end, merger.DataOffset(), merger.DataSize(), merger.BaseSize(), p.patch.version);
+                const auto left = recipe::Leftover(rc);
+                u64 left_bytes = 0;
+                for (const auto& l : left) left_bytes += l.second;
+                const recipe::ReadFn from_base = [&merger](u64 at, u8* b, size_t n) { return merger.ReadBase(at, b, n); };
+                const u64 estimate = recipe::EstimateSpare(left, from_base);
+                if (estimate != UINT64_MAX && estimate <= new_size / 10) {
+                    mkdir("sdmc:/switch/NXDock/recipes", 0777);
+                    FILE* f = std::fopen(spare_tmp.c_str(), "wb");
+                    u64 written = 0;
+                    spare_written = f && recipe::WriteSpare(left, from_base, [f](const u8* d, size_t n) { return std::fwrite(d, 1, n, f) == n; },
+                                                            [&](u64 d) { progress(3, d, left_bytes); return !stop; }, written);
+                    if (f && std::fclose(f) != 0) spare_written = false;
+                    if (!spare_written) std::remove(spare_tmp.c_str());
+                    log_write("[NXDock] merge %016llX: spare of %llu bytes for %llu left of the base: %s\n", (unsigned long long)app,
+                              (unsigned long long)written, (unsigned long long)left_bytes, spare_written ? "kept" : "not kept");
+                } else {
+                    log_write("[NXDock] merge %016llX: %llu bytes left of the base, too many to keep: a newer update may need the library\n",
+                              (unsigned long long)app, (unsigned long long)left_bytes);
+                }
+            }
+        }
+        if (stop) {
+            std::remove(spare_tmp.c_str());
+            drop_ph();
+            return failed();
+        }
         // its CNMT: the base's, with the version and the contents of the update
         progress(3, 0, 1);
         nca::Header bmh, umh;
@@ -788,6 +915,14 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         } else {
             std::remove(RecipePath(app).c_str());
         }
+        // the spare of the version merged before goes; the new one takes its place
+        if (o.spare_file) {
+            std::fclose(o.spare_file);
+            o.spare_file = nullptr;
+            o.has_spare = false;
+        }
+        std::remove(SparePath(app).c_str());
+        if (spare_written && std::rename(spare_tmp.c_str(), SparePath(app).c_str()) != 0) std::remove(spare_tmp.c_str());
     }
     saved = p.before - new_size;
     log_write("[NXDock] merged %016llX v%u: %llu bytes saved\n", (unsigned long long)app, p.patch.version, (unsigned long long)saved);

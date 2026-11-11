@@ -2,6 +2,8 @@
 // Copyright (C) 2026 DeLFuS77
 #include "merge_recipe.hpp"
 
+#include "lz4nintendo.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -131,6 +133,159 @@ std::vector<std::pair<uint64_t, uint64_t>> Missing(const Recipe& r, const std::v
         }
     }
     return joined;
+}
+
+std::vector<std::pair<uint64_t, uint64_t>> Leftover(const Recipe& r) {
+    std::vector<std::pair<uint64_t, uint64_t>> out;
+    uint64_t at = 0;
+    for (const auto& p : r.pieces) {
+        if (p.phys > at) out.push_back({at, std::min(p.phys, r.base_size) - at});
+        at = std::max(at, p.phys + p.size);
+        if (at >= r.base_size) break;
+    }
+    if (at < r.base_size) out.push_back({at, r.base_size - at});
+    return out;
+}
+
+namespace {
+
+constexpr char kSpareMagic[8] = {'N', 'X', 'D', 'S', 'P', 'R', '0', '1'};
+constexpr uint32_t kSpareBlock = 0x10000;
+
+bool AllZero(const uint8_t* d, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        if (d[i]) return false;
+    }
+    return true;
+}
+
+} // namespace
+
+bool WriteSpare(const std::vector<std::pair<uint64_t, uint64_t>>& places, const ReadFn& base, const OutFn& out, const StepFn& step,
+                uint64_t& written, int level) {
+    written = 0;
+    std::vector<uint8_t> index;
+    std::vector<uint8_t> plain(kSpareBlock), packed(nx_lz4_bound(kSpareBlock)), work(NX_LZ4_WORK_SIZE);
+    std::vector<uint8_t> head(kSpareMagic, kSpareMagic + 8);
+    head.resize(16, 0);
+    if (!out(head.data(), head.size())) return false;
+    written = head.size();
+    uint64_t count = 0, done = 0;
+    for (const auto& [from, size] : places) {
+        for (uint64_t o = 0; o < size;) {
+            const uint32_t n = uint32_t(std::min<uint64_t>(kSpareBlock, size - o));
+            if (!base(from + o, plain.data(), n)) return false;
+            uint8_t type = 0;
+            uint32_t stored = n;
+            const uint8_t* data = plain.data();
+            if (AllZero(plain.data(), n)) {
+                stored = 0;
+            } else {
+                const int64_t k = nx_lz4_compress(plain.data(), n, packed.data(), packed.size(), level, work.data());
+                if (k > 0 && uint64_t(k) + 64 < n) {
+                    type = 3;
+                    stored = uint32_t(k);
+                    data = packed.data();
+                }
+            }
+            if (stored && !out(data, stored)) return false;
+            Put(index, from + o);
+            Put(index, written);
+            Put(index, uint64_t(n) | uint64_t(stored) << 32);
+            index.push_back(type);
+            written += stored;
+            o += n;
+            done += n;
+            count++;
+            if (step && !step(done)) return false;
+        }
+    }
+    const uint64_t index_at = written;
+    std::vector<uint8_t> tail;
+    Put(tail, count);
+    tail.insert(tail.end(), index.begin(), index.end());
+    Put(tail, index_at);
+    tail.insert(tail.end(), kSpareMagic, kSpareMagic + 8);
+    if (!out(tail.data(), tail.size())) return false;
+    written += tail.size();
+    return true;
+}
+
+uint64_t EstimateSpare(const std::vector<std::pair<uint64_t, uint64_t>>& places, const ReadFn& base, uint32_t every, int level) {
+    std::vector<uint8_t> plain(kSpareBlock), packed(nx_lz4_bound(kSpareBlock)), work(NX_LZ4_WORK_SIZE);
+    uint64_t total = 0, sampled = 0, stored = 0, k = 0;
+    for (const auto& [from, size] : places) {
+        for (uint64_t o = 0; o < size; o += kSpareBlock, k++) {
+            const uint32_t n = uint32_t(std::min<uint64_t>(kSpareBlock, size - o));
+            total += n;
+            if (k % std::max<uint32_t>(every, 1)) continue;
+            if (!base(from + o, plain.data(), n)) return UINT64_MAX;
+            sampled += n;
+            if (AllZero(plain.data(), n)) continue;
+            const int64_t c = nx_lz4_compress(plain.data(), n, packed.data(), packed.size(), level, work.data());
+            stored += c > 0 && uint64_t(c) + 64 < n ? uint64_t(c) : n;
+        }
+    }
+    return sampled ? uint64_t(double(total) * double(stored) / double(sampled)) : 0;
+}
+
+bool Spare::Open(ReadFn file, uint64_t size) {
+    m_file = std::move(file);
+    m_blocks.clear();
+    uint8_t foot[16];
+    if (size < 16 + 24 || !m_file(size - 16, foot, 16) || std::memcmp(foot + 8, kSpareMagic, 8) != 0) return false;
+    const uint64_t index_at = Get(foot);
+    uint8_t c[8];
+    if (index_at + 8 > size - 16 || !m_file(index_at, c, 8)) return false;
+    const uint64_t count = Get(c);
+    if (count > (size - 16 - index_at - 8) / 25 || index_at + 8 + count * 25 != size - 16) return false;
+    std::vector<uint8_t> index(size_t(count * 25));
+    if (!m_file(index_at + 8, index.data(), index.size())) return false;
+    for (uint64_t i = 0; i < count; i++) {
+        const uint8_t* p = index.data() + i * 25;
+        Block b;
+        b.phys = Get(p);
+        b.at = Get(p + 8);
+        const uint64_t sizes = Get(p + 16);
+        b.size = uint32_t(sizes);
+        b.stored = uint32_t(sizes >> 32);
+        b.type = p[24];
+        if (b.size == 0 || b.size > kSpareBlock || (b.type != 0 && b.type != 3) || b.at + b.stored > index_at ||
+            (i && b.phys < m_blocks.back().phys + m_blocks.back().size)) {
+            return false;
+        }
+        m_blocks.push_back(b);
+    }
+    return true;
+}
+
+uint64_t Spare::Covered() const {
+    uint64_t n = 0;
+    for (const auto& b : m_blocks) n += b.size;
+    return n;
+}
+
+bool Spare::Read(uint64_t phys, uint8_t* buf, size_t size) {
+    while (size) {
+        auto it = std::upper_bound(m_blocks.begin(), m_blocks.end(), phys, [](uint64_t v, const Block& b) { return v < b.phys; });
+        if (it == m_blocks.begin()) return false;
+        const Block& b = *--it;
+        if (phys >= b.phys + b.size) return false;
+        const size_t off = size_t(phys - b.phys), n = std::min<size_t>(size, b.size - off);
+        if (b.stored == 0) {
+            std::memset(buf, 0, n);
+        } else if (b.type == 0) {
+            if (!m_file(b.at + off, buf, n)) return false;
+        } else {
+            m_tmp.resize(b.stored + size_t(b.size));
+            if (!m_file(b.at, m_tmp.data(), b.stored) || nx_lz4_decompress(m_tmp.data(), b.stored, m_tmp.data() + b.stored, b.size) != 0) return false;
+            std::memcpy(buf, m_tmp.data() + b.stored + off, n);
+        }
+        phys += n;
+        buf += n;
+        size -= n;
+    }
+    return true;
 }
 
 RebuiltBase::RebuiltBase(Recipe r, std::function<bool(uint64_t, uint8_t*, size_t)> merged, FetchFn fetch)
