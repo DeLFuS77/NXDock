@@ -62,6 +62,15 @@ std::string Initial(const std::string& name) {
     return name.substr(0, std::min(len, name.size()));
 }
 
+std::string VersionText(u32 version) {
+    const More& m = TrM();
+    if (version == 0) return m.ver_none;
+    char text[96];
+    // the number of the update (version 196608 is the third); an odd one is shown as it is
+    std::snprintf(text, sizeof(text), m.ver_update_fmt, (version >> 16) ? version >> 16 : version);
+    return text;
+}
+
 // A colour for the placeholder of a cover, the same for a game every time.
 unsigned PlaceholderColor(const std::string& key) {
     static constexpr unsigned kColors[] = {0xc8743a, 0x2e7d6b, 0x6a4ae0, 0x3a6fc8, 0xb8406e, 0x8a8f2a, 0x2a8fb0,
@@ -383,9 +392,9 @@ bool App::Init() {
         const More& m = TrM();
         char note[160];
         switch (why) {
-            case 0: std::snprintf(note, sizeof(note), m.sc_note_update, ("v" + std::to_string(to)).c_str()); break;
+            case 0: std::snprintf(note, sizeof(note), m.sc_note_update, VersionText(to).c_str()); break;
             case 1: std::snprintf(note, sizeof(note), "%s", m.sc_note_repair); break;
-            case 3: std::snprintf(note, sizeof(note), m.sc_note_back, ("v" + std::to_string(to)).c_str()); break;
+            case 3: std::snprintf(note, sizeof(note), m.sc_note_back, VersionText(to).c_str()); break;
             default: std::snprintf(note, sizeof(note), "%s", m.sc_note_remove); break;
         }
         return CopySavesBefore(c.url, c.key, app, current, note, progress);
@@ -1856,7 +1865,9 @@ void App::UpdateLibrary(u64 down, u64 held) {
         }
     }
     if (down & HidNpadButton_X) {
-        if (m_catalog.GetState() == Catalog::State::Failed) {
+        if (m_catalog.GetState() == Catalog::State::Failed ||
+            (m_games.empty() && !m_shop_active && m_catalog.GetState() == Catalog::State::Ready)) {
+            // again: after an error, or an empty library that may have games now
             const Config c = m_link.CurrentConfig();
             m_catalog.Load(c.url, c.key);
         } else if (m_games.empty() && m_catalog.GetState() == Catalog::State::Loading) {
@@ -2185,7 +2196,27 @@ void App::DrawLibrary(NVGcontext* vg) {
     const Catalog::State state = m_catalog.GetState();
 
     if (m_games.empty()) {
-        // loading, or it could not be read
+        // loading, or it could not be read, or there is nothing in it
+        if (m_wifi == -1 && state != Catalog::State::Loading) {
+            DrawNoNetwork(vg, s.retry);
+            return;
+        }
+        if (state == Catalog::State::Ready && !m_shop_active) {
+            // the library answered with no game at all: say so, and how to fill it
+            const More& m = TrM();
+            ui::Text(vg, kWidth / 2, 300, 24, t.text, m.lb_empty_t, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgSave(vg);
+            nvgFontFace(vg, "ui");
+            nvgFontSize(vg, 17);
+            nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+            nvgTextLineHeight(vg, 1.3f);
+            nvgFillColor(vg, t.muted);
+            nvgTextBox(vg, kWidth / 2 - 330, 330, 660, m.lb_empty, nullptr);
+            nvgRestore(vg);
+            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, m.lb_reload, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+                        m_hint_rects);
+            return;
+        }
         if (state == Catalog::State::Failed) {
             TextBox(vg, kWidth / 2 - 300, 300, 600, 18, t.warn, m_catalog.Error().c_str());
             ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.retry, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
@@ -2447,7 +2478,7 @@ void App::DrawDetail(NVGcontext* vg) {
     struct Fact { const char* label; std::string value; NVGcolor color; };
     std::vector<Fact> facts;
     if (newest) {
-        facts.push_back({s.version, "v" + std::to_string(newest->version), t.text});
+        facts.push_back({s.version, VersionText(newest->version), t.text});
     }
     facts.push_back({s.format, FormatOf(g), t.text});
     facts.push_back({s.will_take, SizeText(picked_size), t.text});
@@ -2461,7 +2492,7 @@ void App::DrawDetail(NVGcontext* vg) {
         return c.app_id == g.title_id;
     });
     if (g.installed.base) {
-        facts.push_back({s.on_console, g.installed.patch ? "v" + std::to_string(g.installed.patch) : std::string("v0"), t.ok});
+        facts.push_back({s.on_console, VersionText(g.installed.patch), t.ok});
     } else {
         facts.push_back({s.on_console, "—", t.muted});
     }
@@ -2525,7 +2556,7 @@ void App::DrawDetail(NVGcontext* vg) {
         switch (f.kind) {
             case CatalogFile::Kind::Game: label = s.base_game; installed = g.installed.base; break;
             case CatalogFile::Kind::Update:
-                label = std::string(s.update_word) + " v" + std::to_string(f.version);
+                label = VersionText(f.version);
                 fresh = g.installed.base && f.version > g.installed.patch;
                 installed = g.installed.base && f.version <= g.installed.patch;
                 break;
@@ -2672,7 +2703,7 @@ void App::EnqueuePicked() {
             std::string label;
             switch (f.kind) {
                 case CatalogFile::Kind::Game: label = s.base_game; break;
-                case CatalogFile::Kind::Update: label = std::string(s.update_word) + " v" + std::to_string(f.version); break;
+                case CatalogFile::Kind::Update: label = VersionText(f.version); break;
                 case CatalogFile::Kind::Dlc: label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
             }
             // a newer firmware than the console's is told by the check before installing (2A)
@@ -2720,7 +2751,7 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
     job.game = g.name;
     switch (f.kind) {
         case CatalogFile::Kind::Game: job.label = s.base_game; break;
-        case CatalogFile::Kind::Update: job.label = std::string(s.update_word) + " v" + std::to_string(f.version); break;
+        case CatalogFile::Kind::Update: job.label = VersionText(f.version); break;
         case CatalogFile::Kind::Dlc: job.label = f.dlc_name.empty() ? f.name : f.dlc_name; break;
     }
     job.version = f.version;
@@ -2759,7 +2790,7 @@ std::vector<InstallJob> App::PendingUpdates() {
             continue; // the console cannot run it yet
         }
         InstallJob job = JobFor(g, *f);
-        job.label = std::string(Tr().update_word) + " v" + std::to_string(g.installed.patch) + " → v" + std::to_string(f->version);
+        job.label = VersionText(g.installed.patch) + " → " + VersionText(f->version);
         job.nand = g.installed.base_nand;
         jobs.push_back(std::move(job));
     }
@@ -2770,7 +2801,7 @@ std::string App::ContentLabel(const Game& g, const NcmContentMetaKey& key) const
     const auto& s = Tr();
     switch (key.type) {
         case NcmContentMetaType_Application: return s.base_game;
-        case NcmContentMetaType_Patch: return std::string(s.update_word) + " v" + std::to_string(key.version);
+        case NcmContentMetaType_Patch: return VersionText(key.version);
         default:
             for (const auto& f : g.files) {
                 if (f.kind == CatalogFile::Kind::Dlc && f.title_id == key.id) {
@@ -2999,7 +3030,7 @@ void App::FollowPush() {
             if (!found) {
                 const auto& s = Tr();
                 job.game = p.game;
-                job.label = p.kind == "update" ? std::string(s.update_word) + " v" + std::to_string(p.version)
+                job.label = p.kind == "update" ? VersionText(p.version)
                           : p.kind == "dlc" ? p.name : std::string(s.base_game);
                 job.color_key = p.game;
                 job.file_id = p.file_id;
@@ -3701,10 +3732,46 @@ void App::DrawSettings(NVGcontext* vg) {
                 m_hint_rects);
 }
 
+void App::DrawNoNetwork(NVGcontext* vg, const char* retry) {
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    // the fan of the WiFi, empty, and what to do
+    const float cx = kWidth / 2, cy = 270;
+    NVGcolor c = t.muted;
+    for (int i = 1; i <= 3; i++) {
+        nvgBeginPath(vg);
+        nvgArc(vg, cx, cy + 22, 14.f * float(i), -2.36f, -0.79f, NVG_CW);
+        nvgStrokeColor(vg, c);
+        nvgStrokeWidth(vg, 4);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgStroke(vg);
+    }
+    nvgBeginPath(vg);
+    nvgCircle(vg, cx, cy + 22, 4);
+    nvgFillColor(vg, c);
+    nvgFill(vg);
+    ui::Text(vg, cx, cy + 74, 24, t.text, m.nn_title, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgSave(vg);
+    nvgFontFace(vg, "ui");
+    nvgFontSize(vg, 17);
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+    nvgTextLineHeight(vg, 1.3f);
+    nvgFillColor(vg, t.muted);
+    nvgTextBox(vg, cx - 330, cy + 100, 660, m.wf_none_hint, nullptr);
+    nvgRestore(vg);
+    ui::HintBar(vg, t, nullptr, {{ui::glyph::X, retry, HidNpadButton_X}, {ui::glyph::Plus, Tr().exit, HidNpadButton_Plus}},
+                m_hint_rects);
+}
+
 void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     const Theme& t = m_theme;
     const auto& s = Tr();
     using State = Link::State;
+    if (m_wifi == -1 && v.state != State::Waiting) {
+        // no network: nothing below can work, said in large
+        DrawNoNetwork(vg, s.search_again);
+        return;
+    }
     const float top = 100, ph = 520;
     const float lx = 48, lw = 560, rx = 640, rw = kWidth - 640 - 48;
 
@@ -4496,8 +4563,8 @@ void App::DrawDialog(NVGcontext* vg) {
                     if (oid && TitleKind(oid) == 1 && (oid & ~u64(0xFFF)) == app) have = std::max(have, ov);
                 }
                 if (j.dlc_needs <= have) continue;
-                char right[120];
-                std::snprintf(right, sizeof(right), m.dn_line_fmt, j.dlc_needs, have);
+                char right[200];
+                std::snprintf(right, sizeof(right), m.dn_line_fmt, VersionText(j.dlc_needs).c_str(), VersionText(have).c_str());
                 lines.push_back({j.game + " · " + j.label, "", right, t.orange});
             }
             title = m.dn_title;
@@ -4591,7 +4658,7 @@ void App::DrawDialog(NVGcontext* vg) {
             for (int r = first; r < int(rows.size()) && r < first + 5; r++) {
                 const CatalogFile& f = g.files[rows[r]];
                 const bool here = f.version == g.installed.patch;
-                Line l{std::string(s.update_word) + " v" + std::to_string(f.version), here ? s.installed_tag : "",
+                Line l{VersionText(f.version), here ? s.installed_tag : "",
                        Upper(f.format) + " \xC2\xB7 " + SizeText(f.size), t.text};
                 l.focus = r == m_dialog.entry;
                 l.hit = r;
@@ -4603,11 +4670,11 @@ void App::DrawDialog(NVGcontext* vg) {
                 primary = m.ver_installed;
                 can = false;
             } else if (chosen.version < g.installed.patch) {
-                std::snprintf(text, sizeof(text), m.ver_back_fmt, ("v" + std::to_string(chosen.version)).c_str());
+                std::snprintf(text, sizeof(text), m.ver_back_fmt, VersionText(chosen.version).c_str());
                 primary = text;
                 note = m.ver_note;
             } else {
-                std::snprintf(text, sizeof(text), m.ver_install_fmt, ("v" + std::to_string(chosen.version)).c_str());
+                std::snprintf(text, sizeof(text), m.ver_install_fmt, VersionText(chosen.version).c_str());
                 primary = text;
             }
             break;
@@ -4615,10 +4682,10 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::Downgrade: {
             const More& m = TrM();
             char text[200];
-            std::snprintf(text, sizeof(text), m.dg_title_fmt, m_dialog.jobs.empty() ? "" : ("v" + std::to_string(m_dialog.jobs[0].version)).c_str());
+            std::snprintf(text, sizeof(text), m.dg_title_fmt, m_dialog.jobs.empty() ? "" : VersionText(m_dialog.jobs[0].version).c_str());
             title = text;
-            std::snprintf(text, sizeof(text), m.dg_body_fmt, ("v" + std::to_string(m_dialog.size)).c_str(),
-                          m_dialog.jobs.empty() ? "" : ("v" + std::to_string(m_dialog.jobs[0].version)).c_str());
+            std::snprintf(text, sizeof(text), m.dg_body_fmt, VersionText(u32(m_dialog.size)).c_str(),
+                          m_dialog.jobs.empty() ? "" : VersionText(m_dialog.jobs[0].version).c_str());
             body = text;
             note = m.ver_note;
             primary = m.dg_go;

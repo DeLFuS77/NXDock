@@ -378,7 +378,7 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
         std::string name = a.name, where, size;
         if (m_pick_kind == 2) {
             const auto& c = a.contents[size_t(m_pick_rows[size_t(i)].second)];
-            name += c.type == NcmContentMetaType_Patch          ? std::string(" · ") + s.update_word + " v" + std::to_string(c.version)
+            name += c.type == NcmContentMetaType_Patch          ? std::string(" · ") + VersionText(c.version)
                     : c.type == NcmContentMetaType_AddOnContent ? std::string(" · ") + s.dlc_prefix + std::to_string(c.id & 0xFFF)
                                                                 : std::string(" · ") + m.game_word;
             where = c.nand ? s.internal_short : "SD";

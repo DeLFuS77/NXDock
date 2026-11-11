@@ -37,6 +37,8 @@ namespace nxdock {
 // The colour of a cover without a picture and its initial (app.cpp).
 unsigned PlaceholderColor(const std::string& key);
 std::string Initial(const std::string& name);
+// A version as people say it: "Update 3" (the number of the update), "No updates" for 0.
+std::string VersionText(u32 version);
 
 enum class Tab { Library, Shops, Queue, Installed, More, Settings };
 
@@ -288,6 +290,8 @@ private:
     void Notice(const std::string& text);
     void NoticeOk(const std::string& text); // in green, with a tick: something was done
     void DrawPairing(NVGcontext* vg, const Link::View& v);
+    // Without network: said in large, in place of what needs it (the pairing, the library).
+    void DrawNoNetwork(NVGcontext* vg, const char* retry);
     void UpdatePairing(u64 down, u64 held, const Link::View& v);
     void ActivatePairRow(int row, const Link::View& v);
     void DrawQueue(NVGcontext* vg);

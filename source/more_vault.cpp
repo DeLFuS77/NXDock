@@ -175,9 +175,7 @@ void App::DrawVault(NVGcontext* vg) {
         const std::string sub = When(c.when) + (c.console.empty() ? "" : " · " + c.console);
         ui::Text(vg, rx + 48, y + 41, 13, t.muted, sub.c_str());
         nvgRestore(vg);
-        char ver[24];
-        std::snprintf(ver, sizeof(ver), "v%u", c.version);
-        ui::Text(vg, rx + rw - 120, y + 29, 14, t.muted, ver, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, rx + rw - 120, y + 29, 14, t.muted, VersionText(c.version).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         ui::Text(vg, rx + rw - 18, y + 29, 14, t.muted, draw::Size(c.size).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     }
     if (m_vault_side == 1 && !copies.empty()) ui::Focus(vg, t, rx, m_glide_side.Step(118 + m_vault_copy * 66.f), rw, 58, 10, m_time);

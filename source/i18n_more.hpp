@@ -117,6 +117,8 @@ struct More {
     const char *wf_title, *wf_cable, *wf_none, *wf_none_hint, *wf_network, *wf_coverage, *wf_level_fmt, *wf_l0, *wf_l1, *wf_l2, *wf_l3, *wf_console, *wf_library, *wf_weak;
     // questions before cancelling, leaving and forgetting; the hints of a shop, pairing and MTP
     const char *qc_title, *qc_body, *quit_title, *quit_body, *quit_go, *quit_stay, *fg_title, *fg_body, *fg_go, *sh_shop_hint, *sh_shops_hint, *pr_remember, *nand_sd_button, *mtp_sd_only;
+    // versions as people say them, an empty library, no network
+    const char *ver_update_fmt, *ver_none, *lb_empty_t, *lb_empty, *lb_reload, *nn_title;
 };
 
 const More& TrM();

@@ -152,7 +152,7 @@ void App::DrawMods(NVGcontext* vg) {
     const float lx = 48, rx = 664, cw = 568;
     // the cheats
     char head[96];
-    std::snprintf(head, sizeof(head), m.cm_cheats_head_fmt, m_mods_version);
+    std::snprintf(head, sizeof(head), m.cm_cheats_head_fmt, VersionText(m_mods_version).c_str());
     draw::Section(vg, t, lx, 138, head);
     bool found, done;
     std::string build;

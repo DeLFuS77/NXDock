@@ -95,14 +95,8 @@ std::string App::ContentLabel(const InstalledApp::Content& c, unsigned long long
     const auto& s = Tr();
     const More& m = TrM();
     char text[200];
-    if (c.type == NcmContentMetaType_Application) {
-        std::snprintf(text, sizeof(text), "%s · v%u", m.game_word, c.version);
-        return text;
-    }
-    if (c.type == NcmContentMetaType_Patch) {
-        std::snprintf(text, sizeof(text), "%s · v%u", m.ic_update_word, c.version);
-        return text;
-    }
+    if (c.type == NcmContentMetaType_Application) return m.game_word;
+    if (c.type == NcmContentMetaType_Patch) return VersionText(c.version);
     // a DLC: its name from the library when it is there, else its number
     std::string name;
     if (const Game* g = LibraryGame(app)) {
@@ -201,8 +195,7 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
         std::string sub;
         if (!a.archived) {
             char text[160];
-            std::snprintf(text, sizeof(text), "v%u", GameVersion(a));
-            sub = text;
+            sub = VersionText(GameVersion(a));
             if (dlc) {
                 std::snprintf(text, sizeof(text), m.ic_dlc_fmt, dlc);
                 sub += std::string(" · ") + text;
@@ -289,8 +282,7 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
             int dlc = 0;
             for (const auto& ct : a.contents) dlc += ct.type == NcmContentMetaType_AddOnContent;
             char text[160];
-            std::snprintf(text, sizeof(text), "v%u", GameVersion(a));
-            std::string sub = text;
+            std::string sub = VersionText(GameVersion(a));
             if (dlc) {
                 std::snprintf(text, sizeof(text), m.ic_dlc_fmt, dlc);
                 sub += std::string(" · ") + text;
@@ -344,7 +336,7 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
         ui::Text(vg, x0, 150, 15, t.muted, m.ic_archived_sub);
         Paragraph(vg, x0, 200, w, 16, t.muted, m.ic_archived_note);
     } else {
-        std::snprintf(text, sizeof(text), m.ic_meta_fmt, draw::Size(a.Bytes()).c_str(), WhereOf(a, s), GameVersion(a));
+        std::snprintf(text, sizeof(text), m.ic_meta_fmt, draw::Size(a.Bytes()).c_str(), WhereOf(a, s), VersionText(GameVersion(a)).c_str());
         ui::Text(vg, x0, 150, 15, t.muted, text);
     }
 
@@ -376,7 +368,7 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
         nvgScissor(vg, x0 + 52, y, w - 52 - 190, pitch);
         float x = ui::Text(vg, x0 + 52, cy, 17, t.text, ContentLabel(c, a.app_id).c_str()) + 12;
         if (NeedsNewer(a, c)) {
-            std::snprintf(text, sizeof(text), m.ic_needs_fmt, c.required);
+            std::snprintf(text, sizeof(text), m.ic_needs_fmt, VersionText(c.required).c_str());
             x = Tag(vg, x, cy, text, t.orange);
         }
         nvgRestore(vg);

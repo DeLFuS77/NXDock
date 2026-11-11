@@ -268,12 +268,12 @@ void App::DrawCompress(NVGcontext* vg) {
             const char* tag = nullptr;
             NVGcolor tag_col = t.violet;
             if (waiting) {
-                std::snprintf(text, sizeof(text), m.cz_update_sub_fmt, e.patch);
+                std::snprintf(text, sizeof(text), m.cz_update_sub_fmt, VersionText(e.patch).c_str());
                 sub += std::string(" \xC2\xB7 ") + text;
                 tag = m.cz_update_tag;
                 tag_col = t.orange;
             } else if (e.merge) {
-                std::snprintf(text, sizeof(text), m.cz_merge_sub_fmt, e.patch);
+                std::snprintf(text, sizeof(text), m.cz_merge_sub_fmt, VersionText(e.patch).c_str());
                 sub += std::string(" \xC2\xB7 ") + text;
                 tag = m.cz_merge_tag;
             } else if (merged_ours) {
