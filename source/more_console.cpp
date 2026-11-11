@@ -10,9 +10,13 @@
 #include "draw.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
+#include "yati/nx/es.hpp"
+#include "yati/nx/ns.hpp"
 
 #include <algorithm>
 #include <cstdio>
+#include <ctime>
 
 namespace nxdock {
 
@@ -118,26 +122,34 @@ std::string App::ContentLabel(const InstalledApp::Content& c, unsigned long long
 void App::ReadConsole() {
     if (m_installed_view != 0) return;
     if (!m_space) m_space = std::make_unique<Space>();
+    if (!m_versions) {
+        // what titledb knows of updates and DLC, for the games not in the library (6A)
+        m_versions = std::make_unique<VersionsList>();
+        m_versions->Start(m_ui.versions_list);
+    }
     const unsigned version = m_queue ? m_queue->Version() : 0;
     if (m_console_scanned_for != version && !m_space->Busy() && m_space->StartScan()) m_console_scanned_for = version;
 }
 
-void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
+void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
     const Theme& t = m_theme;
     const auto& s = Tr();
     const More& m = TrM();
+    const Tools& tt = TrT();
     FollowSpace();
+    FollowMissing(all);
     if (m_console_app) {
-        DrawConsolePage(vg, v);
+        DrawConsolePage(vg, all);
         return;
     }
+    const Space::View v = ConsoleView(all);
     if (!v.scanned) {
         ui::Spinner(vg, kWidth / 2, 320, 14, t.work, m_time);
         ui::Text(vg, kWidth / 2, 366, 18, t.muted, m.ic_reading, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         ui::HintBar(vg, t, nullptr, {{Glyphs(), s.view_switch, HidNpadButton_ZR}, {ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
         return;
     }
-    if (v.apps.empty()) {
+    if (all.apps.empty()) {
         ui::Text(vg, kWidth / 2, 340, 20, t.muted, m.ic_empty, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         ui::HintBar(vg, t, nullptr, {{Glyphs(), s.view_switch, HidNpadButton_ZR}, {ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
         return;
@@ -158,6 +170,23 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
             AddHit(x - 2, 72, w + 4, 48, HitKind::ConsoleSize, i); // 48 px for a finger
             x -= 6;
         }
+        // the filter: only the games missing an update or a DLC (6A)
+        int missing = 0;
+        for (const auto& a : all.apps) missing += !a.archived && MissingOf(a.app_id).Any();
+        char text[96];
+        std::snprintf(text, sizeof(text), tt.ms_filter_fmt, missing);
+        const float w = ui::TextWidth(vg, 13, text) + 22;
+        x -= 18 + w;
+        if (m_console_missing) ui::FillRound(vg, x, 80, w, 24, 12, t.cyan);
+        else ui::StrokeRound(vg, x, 80, w, 24, 12, t.line, 1.f);
+        ui::Text(vg, x + w / 2, 92, 13, m_console_missing ? t.on_work : t.muted, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        AddHit(x - 2, 72, w + 4, 48, HitKind::ConsoleMissing, 0);
+    }
+    if (v.apps.empty()) {
+        // the filter on, and nothing missing
+        ui::Text(vg, kWidth / 2, 340, 20, t.muted, tt.ms_nothing, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::HintBar(vg, t, nullptr, ConsoleHints(), m_hint_rects);
+        return;
     }
     if (m_ui.console_size != 0) {
         DrawConsoleGrid(vg, v, library);
@@ -204,7 +233,17 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
         } else {
             sub = m.ic_archived_sub;
         }
-        ui::Text(vg, 134, y + 47, 14, t.muted, sub.c_str());
+        float px = ui::Text(vg, 134, y + 47, 14, t.muted, sub.c_str()) + 12;
+        if (!a.archived) {
+            // what is missing, in cyan and violet (6A)
+            const Missing& ms = MissingOf(a.app_id);
+            char pill[96];
+            if (ms.update) px = Tag(vg, px, y + 47, VersionText(ms.update).c_str(), t.cyan);
+            if (ms.dlc) {
+                std::snprintf(pill, sizeof(pill), tt.ms_dlc_fmt, ms.dlc);
+                px = Tag(vg, px, y + 47, pill, t.violet);
+            }
+        }
         nvgRestore(vg);
         const bool marking = !m_console_picked.empty();
         if (marking && !a.archived) draw::TickBox(vg, t, 1196, y + 33, m_console_picked.count(a.app_id) > 0, "cpick:" + std::to_string(a.app_id));
@@ -271,6 +310,15 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
         if (library && !g) badge(m.ic_not_lib, t.orange);
         if (newer) badge(m.ic_dlc_needs_tag, t.orange);
         if (a.archived) badge(m.archived_tag, t.muted);
+        if (!a.archived) {
+            const Missing& ms = MissingOf(a.app_id);
+            if (ms.update) badge(VersionText(ms.update).c_str(), t.cyan);
+            if (ms.dlc) {
+                char pill[96];
+                std::snprintf(pill, sizeof(pill), TrT().ms_dlc_fmt, ms.dlc);
+                badge(pill, t.violet);
+            }
+        }
         nvgSave(vg);
         nvgIntersectScissor(vg, x, y + cover, cover, below + 4);
         if (i == m_console_focus) {
@@ -325,6 +373,42 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
     if (!image) image = m_covers.Get(IconPath(a.app_id));
     ui::Cover(vg, t, 48, 100, 300, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, 16, image);
+    const Tools& tt = TrT();
+    const Missing& ms = MissingOf(a.app_id);
+    if (!a.archived) {
+        // what it lacks, and where it could come from (6A)
+        const float cx = 48, cw = 300;
+        float cy0 = 418;
+        draw::Panel(vg, t, cx, cy0, cw, 216, 12);
+        ui::Text(vg, cx + 16, cy0 + 24, 16, ms.Any() ? t.text : t.muted, ms.Any() ? tt.ms_card : tt.ms_nothing);
+        cy0 += 52;
+        char line[200];
+        if (ms.update) {
+            std::snprintf(line, sizeof(line), tt.ms_update_fmt, VersionText(ms.update).c_str(), VersionText(GameVersion(a)).c_str());
+            ui::Text(vg, cx + 16, cy0, 14, t.cyan, line);
+            ui::Text(vg, cx + 16, cy0 + 20, 13, ms.update_lib ? t.ok : t.muted, ms.update_lib ? tt.ms_in_lib : tt.ms_not_lib);
+            cy0 += 48;
+        }
+        if (ms.dlc) {
+            std::snprintf(line, sizeof(line), tt.ms_dlc_of_fmt, ms.dlc, ms.dlc_known);
+            ui::Text(vg, cx + 16, cy0, 14, t.violet, (std::string(tt.ms_dlc) + " · " + line).c_str());
+            if (ms.dlc_lib) std::snprintf(line, sizeof(line), tt.ms_some_lib_fmt, ms.dlc_lib);
+            ui::Text(vg, cx + 16, cy0 + 20, 13, ms.dlc_lib ? t.ok : t.muted, ms.dlc_lib ? line : tt.ms_not_lib);
+            cy0 += 48;
+        }
+        // where the versions come from
+        std::string list = tt.ms_list_none;
+        if (m_versions && m_versions->Made() > 0 && m_ui.versions_list) {
+            const std::time_t when = std::time_t(m_versions->Made());
+            std::tm tm{};
+            localtime_r(&when, &tm);
+            char date[32];
+            std::strftime(date, sizeof(date), "%d/%m %H:%M", &tm);
+            std::snprintf(line, sizeof(line), tt.ms_list_fmt, date);
+            list = line;
+        }
+        ui::Text(vg, cx + 16, 418 + 216 - 18, 12, t.muted, (std::string(tt.ms_list) + " · " + list).c_str());
+    }
 
     const float x0 = 384, w = kWidth - 48 - x0;
     nvgSave(vg);
@@ -386,10 +470,11 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     // as everywhere: Y marks, − deletes what is marked
     std::vector<ui::Hint> hints;
     if (!items.empty()) {
+        hints.push_back({ui::glyph::A, tt.cd_hint, HidNpadButton_A});
         hints.push_back({ui::glyph::Y, m.ic_mark, HidNpadButton_Y});
         if (marked) hints.push_back({ui::glyph::Minus, m.ic_remove_marked, HidNpadButton_Minus});
     }
-    if (g) hints.push_back({ui::glyph::X, m.ic_from_library, HidNpadButton_X});
+    if (g) hints.push_back({ui::glyph::X, ms.Any() && (ms.update_lib || ms.dlc_lib) ? tt.ms_install_hint : m.ic_from_library, HidNpadButton_X});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, v.task == Space::Task::Remove ? m.ic_removing : nullptr, hints, m_hint_rects);
 }
@@ -424,6 +509,8 @@ std::vector<ui::Hint> App::ConsoleHints() {
         std::snprintf(text, sizeof(text), m.ic_rm_picked_fmt, int(m_console_picked.size()));
         many = text;
         hints.push_back({ui::glyph::Minus, many.c_str(), HidNpadButton_Minus});
+    } else {
+        hints.push_back({ui::glyph::Minus, m_console_missing ? TrT().ms_hint_all : TrT().ms_hint_filter, HidNpadButton_Minus});
     }
     hints.push_back({ui::glyph::X, m.ic_size, HidNpadButton_X});
     hints.push_back({Glyphs(), s.view_switch, HidNpadButton_ZR});
@@ -450,8 +537,15 @@ void App::AskConsoleRemoveMany(const Space::View& v) {
 
 void App::UpdateConsole(u64 down, u64 held) {
     if (!m_space) return;
-    const auto v = m_space->Snapshot();
+    const auto all = m_space->Snapshot();
     if (!m_console_app) {
+        if ((down & HidNpadButton_Minus) && m_console_picked.empty()) {
+            // the filter of what is missing (6A)
+            m_console_missing = !m_console_missing;
+            m_console_focus = 0;
+            return;
+        }
+        const auto v = ConsoleView(all);
         if (down & HidNpadButton_X) {
             // the size: list, medium covers, large covers; kept for the next time
             m_ui.console_size = (m_ui.console_size + 1) % 3;
@@ -500,6 +594,7 @@ void App::UpdateConsole(u64 down, u64 held) {
         }
         return;
     }
+    const auto& v = all;
     const InstalledApp* found = nullptr;
     for (const auto& a : v.apps) {
         if (a.app_id == m_console_app) found = &a;
@@ -514,9 +609,13 @@ void App::UpdateConsole(u64 down, u64 held) {
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_item > 0) m_console_item--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_item < int(items.size()) - 1) m_console_item++;
     m_console_item = std::clamp(m_console_item, 0, std::max(0, int(items.size()) - 1));
-    if ((down & (HidNpadButton_A | HidNpadButton_Y)) && !items.empty()) {
-        // a line has nothing to open: A marks it too
+    if ((down & HidNpadButton_Y) && !items.empty()) {
         m_console_marks[size_t(m_console_item)] = !m_console_marks[size_t(m_console_item)];
+    }
+    if ((down & HidNpadButton_A) && !items.empty()) {
+        // the details of the line: its ticket and the version the console asks for (7A)
+        OpenContentDetails(*found, items[size_t(m_console_item)]);
+        return;
     }
     if (down & HidNpadButton_X) {
         // the game in the library, to install what it lacks; B comes back here
@@ -554,6 +653,208 @@ void App::UpdateConsole(u64 down, u64 held) {
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::ConsoleRemove;
         m_dialog.text = found->name;
+    }
+}
+
+// ---- what is missing (6A) ----
+
+const App::Missing& App::MissingOf(unsigned long long app) {
+    static const Missing none;
+    const auto it = m_missing.find(app);
+    return it == m_missing.end() ? none : it->second;
+}
+
+void App::FollowMissing(const Space::View& v) {
+    if (!v.scanned) return;
+    const long long made = m_versions && m_ui.versions_list ? m_versions->Made() : 0;
+    const std::string key = std::to_string(v.apps.size()) + ":" + std::to_string(m_games_version) + ":" + std::to_string(made) + ":" +
+                            std::to_string(m_console_scanned_for) + ":" + std::to_string(m_games.size());
+    if (key == m_missing_key) return;
+    m_missing_key = key;
+    m_missing.clear();
+    const bool list = m_versions && m_ui.versions_list && m_versions->Ready();
+    for (const auto& a : v.apps) {
+        if (a.archived) continue;
+        Missing ms;
+        const unsigned have = GameVersion(a);
+        std::set<unsigned long long> have_dlc;
+        for (const auto& c : a.contents) {
+            if (c.type == NcmContentMetaType_AddOnContent) have_dlc.insert(c.id);
+        }
+        unsigned lib_update = 0;
+        std::set<unsigned long long> lib_dlc, known;
+        if (const Game* g = LibraryGame(a.app_id)) {
+            for (const auto& f : g->files) {
+                if (f.kind == CatalogFile::Kind::Update) lib_update = std::max(lib_update, unsigned(f.version));
+                if (f.kind == CatalogFile::Kind::Dlc) lib_dlc.insert(f.title_id);
+            }
+        }
+        known = lib_dlc;
+        unsigned newest = lib_update;
+        if (list) {
+            newest = std::max(newest, unsigned(m_versions->LatestUpdate(a.app_id)));
+            for (const auto id : m_versions->Dlcs(a.app_id)) known.insert(id);
+        }
+        if (newest > have) {
+            ms.update = newest;
+            ms.update_lib = lib_update > have;
+        }
+        ms.dlc_known = int(known.size());
+        for (const auto id : known) {
+            if (have_dlc.count(id)) continue;
+            ms.dlc++;
+            if (lib_dlc.count(id)) ms.dlc_lib++;
+        }
+        if (ms.Any()) m_missing[a.app_id] = ms;
+    }
+}
+
+Space::View App::ConsoleView(const Space::View& v) {
+    if (!m_console_missing) return v;
+    FollowMissing(v);
+    Space::View out = v;
+    out.apps.clear();
+    for (const auto& a : v.apps) {
+        if (!a.archived && MissingOf(a.app_id).Any()) out.apps.push_back(a);
+    }
+    return out;
+}
+
+// ---- the details of a content (7A) ----
+
+namespace {
+
+std::string FwText(u32 v) {
+    char text[32];
+    std::snprintf(text, sizeof(text), "%u.%u.%u", (v >> 26) & 0x3F, (v >> 20) & 0x3F, (v >> 16) & 0xF);
+    return text;
+}
+
+} // namespace
+
+void App::OpenContentDetails(const InstalledApp& a, const InstalledApp::Content& c) {
+    const Tools& tt = TrT();
+    const auto& s = Tr();
+    m_tool = ToolDialog{};
+    char text[300];
+    std::snprintf(text, sizeof(text), tt.cd_title_fmt, ContentLabel(c, a.app_id).c_str());
+    m_tool.title = text;
+    std::snprintf(text, sizeof(text), "%016llX", c.id);
+    m_tool.lines.push_back({tt.cd_id, text});
+    std::snprintf(text, sizeof(text), "v%u", c.version);
+    m_tool.lines.push_back({tt.cd_version, c.type == NcmContentMetaType_Patch ? VersionText(c.version) + " (" + text + ")" : std::string(text)});
+    m_tool.lines.push_back({tt.cd_where, std::string(c.nand ? s.internal : s.sd_card) + " · " + draw::Size(c.bytes)});
+
+    // what the console has of it: its rights, the firmware it asks for
+    const NcmStorageId storage = c.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard;
+    NcmContentMetaDatabase db{};
+    NcmContentStorage cs{};
+    bool ticket_missing = false;
+    if (R_SUCCEEDED(ncmOpenContentMetaDatabase(&db, storage))) {
+        if (R_SUCCEEDED(ncmOpenContentStorage(&cs, storage))) {
+            NcmContentMetaKey key{};
+            key.id = c.id;
+            key.version = c.version;
+            key.type = c.type;
+            key.install_type = NcmContentInstallType_Full;
+            NcmContentId cid{};
+            const NcmContentType kind = c.type == NcmContentMetaType_AddOnContent ? NcmContentType_Data : NcmContentType_Program;
+            NcmRightsId rid{};
+            if (R_SUCCEEDED(ncmContentMetaDatabaseGetContentIdByType(&db, &cid, &key, kind)) &&
+                R_SUCCEEDED(ncmContentStorageGetRightsIdFromContentId(&cs, &rid, &cid, FsContentAttributes_All))) {
+                std::string ticket = tt.cd_t_none;
+                if (sphaira::es::IsRightsIdValid(rid.rights_id)) {
+                    bool common = false, personal = false;
+                    if (R_SUCCEEDED(sphaira::es::Initialize())) {
+                        sphaira::es::IsRightsIdCommon(rid.rights_id, &common);
+                        sphaira::es::IsRightsIdPersonalised(rid.rights_id, &personal);
+                    }
+                    ticket = common ? tt.cd_t_common : personal ? tt.cd_t_personal : tt.cd_t_missing;
+                    ticket_missing = !common && !personal;
+                }
+                m_tool.lines.push_back({tt.cd_ticket, ticket, ticket_missing});
+                const int gen = rid.key_generation ? int(rid.key_generation) : -1;
+                if (gen >= 0) {
+                    if (m_sysinfo.key_generation >= 0) {
+                        std::snprintf(text, sizeof(text), tt.cd_keys_fmt, gen, m_sysinfo.key_generation);
+                    } else {
+                        std::snprintf(text, sizeof(text), tt.cd_keys_one_fmt, gen);
+                    }
+                    m_tool.lines.push_back({tt.cd_keys, text, m_sysinfo.key_generation >= 0 && gen > m_sysinfo.key_generation});
+                }
+            }
+            u32 required = 0;
+            if (c.type == NcmContentMetaType_AddOnContent) {
+                if (R_SUCCEEDED(ncmContentMetaDatabaseGetRequiredApplicationVersion(&db, &required, &key)) && required) {
+                    m_tool.lines.push_back({tt.cd_needs_app, VersionText(required), required > GameVersion(a)});
+                }
+            } else if (R_SUCCEEDED(ncmContentMetaDatabaseGetRequiredSystemVersion(&db, &required, &key)) && required) {
+                std::string fw = FwText(required);
+                if (m_sysinfo.firmware) {
+                    std::snprintf(text, sizeof(text), tt.cd_firmware_fmt, FwText(required).c_str(), FwText(m_sysinfo.firmware).c_str());
+                    fw = text;
+                }
+                m_tool.lines.push_back({tt.cd_firmware, fw, m_sysinfo.firmware && required > m_sysinfo.firmware});
+            }
+            ncmContentStorageClose(&cs);
+        }
+        ncmContentMetaDatabaseClose(&db);
+    }
+    // the version the console asks for before it opens the game
+    bool asks_more = false;
+    if (R_SUCCEEDED(avmInitialize())) {
+        u32 asks = 0;
+        if (R_SUCCEEDED(avmGetLaunchRequiredVersion(a.app_id, &asks)) && asks > GameVersion(a)) {
+            std::snprintf(text, sizeof(text), tt.cd_asks_fmt, VersionText(asks).c_str());
+            m_tool.lines.push_back({tt.cd_asks, text, true});
+            asks_more = true;
+        }
+        avmExit();
+    }
+    if (ticket_missing) m_tool.note = tt.cd_missing_note;
+    m_tool.primary = tt.cd_version_go;
+    m_tool.can = asks_more;
+    m_tool.cancel = s.close;
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::ContentDetails;
+    m_dialog.ids = {a.app_id, c.id, c.version, c.type, c.nand ? 1ull : 0ull};
+    m_dialog.text = a.name;
+}
+
+void App::ConsoleTicketBack() {
+    if (m_dialog.ids.size() < 5) return;
+    const unsigned long long app = m_dialog.ids[0], id = m_dialog.ids[1];
+    const u32 version = u32(m_dialog.ids[2]);
+    const bool nand = m_dialog.ids[4] != 0;
+    const Game* g = LibraryGame(app);
+    const CatalogFile* file = nullptr;
+    if (g) {
+        for (const auto& f : g->files) {
+            if (f.title_id == id && f.version == version) file = &f;
+        }
+    }
+    m_dialog = Dialog{};
+    if (!g || !file) {
+        Notice(TrT().cd_no_lib);
+        return;
+    }
+    // its parts are on the console and stay; only its ticket (and its record) is written again
+    InstallJob job = JobFor(*g, *file);
+    job.ticket_only = true;
+    job.reinstall_ok = true;
+    job.nand = nand;
+    job.label += std::string(" · ") + TrT().cd_ticket_label;
+    AddJobs({job});
+}
+
+void App::ConsoleVersionReset() {
+    if (m_dialog.ids.empty()) return;
+    const unsigned long long app = m_dialog.ids[0];
+    // the version of what is installed, as the console reads it from its records
+    if (R_SUCCEEDED(sphaira::ns::Initialize()) && R_SUCCEEDED(sphaira::ns::SetLowestLaunchVersion(app))) {
+        NoticeOk(TrT().cd_version_done);
+    } else {
+        Notice(TrT().cd_version_fail);
     }
 }
 

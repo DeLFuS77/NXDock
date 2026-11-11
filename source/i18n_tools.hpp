@@ -27,6 +27,10 @@ struct Tools {
     const char *fa_switch, *fa_sub, *fa_tag, *fa_done_fmt;
     // NXDock updating itself (5A)
     const char *st_g_nxdock, *up_row, *up_have_fmt, *up_have_new_fmt, *up_notice_row, *up_back_row, *up_back_kept, *up_back_none, *up_checking, *up_title_fmt, *up_body_fmt, *up_note_fmt, *up_go, *up_later, *up_latest_t, *up_latest_fmt, *up_downloading, *up_done, *up_failed_t, *up_err_network, *up_err_none, *up_err_keys, *up_err_sig, *up_err_sum, *up_err_write, *up_busy, *up_out_fmt, *up_back_title, *up_back_body, *up_back_go, *up_back_failed, *up_wiz;
+    // what is missing for the games on the console (6A)
+    const char *ms_filter_fmt, *ms_dlc_fmt, *ms_card, *ms_update_fmt, *ms_update, *ms_dlc, *ms_dlc_of_fmt, *ms_in_lib, *ms_some_lib_fmt, *ms_not_lib, *ms_list, *ms_list_fmt, *ms_list_none, *ms_nothing, *ms_install_hint, *ms_row, *ms_hint_filter, *ms_hint_all;
+    // the details of a content, its ticket and the version the console asks for (7A)
+    const char *cd_title_fmt, *cd_id, *cd_version, *cd_where, *cd_ticket, *cd_t_common, *cd_t_personal, *cd_t_missing, *cd_t_none, *cd_keys, *cd_keys_fmt, *cd_keys_one_fmt, *cd_firmware, *cd_firmware_fmt, *cd_needs_app, *cd_asks, *cd_asks_fmt, *cd_ticket_go, *cd_version_go, *cd_no_lib, *cd_version_done, *cd_version_fail, *cd_ticket_label, *cd_hint, *cd_missing_note;
 };
 
 const Tools& TrT();

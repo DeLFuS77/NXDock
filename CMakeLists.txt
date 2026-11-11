@@ -204,6 +204,7 @@ add_executable(nxdock
     source/minisig.cpp
     source/updater.cpp
     source/more_update.cpp
+    source/versions_list.cpp
 )
 
 target_compile_definitions(nxdock PRIVATE

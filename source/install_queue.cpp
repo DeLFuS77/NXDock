@@ -816,6 +816,8 @@ void InstallQueue::RunJob(InstallJob& job) {
                 config.allow_newer_firmware = job.firmware_ok;
                 // going back to an older version, asked for on the page of the game (20A)
                 if (job.downgrade) config.allow_downgrade = true;
+                // the ticket of what is installed, put back: its parts are there and are kept (7A)
+                if (job.ticket_only) config.ticket_only = true;
                 if (journaled) {
                     const bool sd = !job.nand;
                     config.resume.part = [&journal, &journal_mutex, sd](const NcmContentId& cid, const NcmPlaceHolderId& ph, s64 size, bool checked,

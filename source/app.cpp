@@ -212,7 +212,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 // Settings, in groups: the library, installing, notices, the look, the wizard, the HOME menu,
 // connecting by hand.
 enum SettingRow {
-    kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowSpeed,
+    kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
     kRowDest, kRowPick, kRowSaveCopy, kRowScreen, kRowCompress,
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowSounds, kRowAnim,
@@ -742,6 +742,10 @@ void App::ActivateSetting(int row) {
             m_ui.check_updates = !m_ui.check_updates;
             m_ui.Save();
             break;
+        case kRowVersionsList:
+            m_ui.versions_list = !m_ui.versions_list;
+            m_ui.Save();
+            break;
         case kRowSaveCopy:
             m_ui.save_copy = !m_ui.save_copy;
             m_ui.Save();
@@ -1214,6 +1218,10 @@ void App::Tap(float x, float y, u64& down) {
                 FilesDo(it->index);
                 break;
             case HitKind::FilesMenuBack: m_files_menu = false; break;
+            case HitKind::ConsoleMissing:
+                m_console_missing = !m_console_missing;
+                m_console_focus = 0;
+                break;
             case HitKind::FilesView:
                 if (m_files_all != (it->index == 1)) FilesDo(kFaView);
                 break;
@@ -3903,6 +3911,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.forget, "", false},
         {s.share_row, yes(m_prefs.share_installed == 1), m_prefs.share_installed == 1},
         {m.st_updates, yes(m_ui.check_updates), m_ui.check_updates},
+        {TrT().ms_row, yes(m_ui.versions_list), m_ui.versions_list},
         {s.speed_test, running ? s.cancel : s.start, linked},
         {m.st_dest, m_ui.dest == 2 ? s.wiz_ask_each : s.sd_card, true},
         {m.st_pick, picks[std::clamp(m_ui.pick, 0, 2)], true},
@@ -5332,7 +5341,8 @@ void App::DrawDialog(NVGcontext* vg) {
         // a third choice, between the two: the internal memory (Where), the SD card instead (Nand),
         // leaving some out (DlcNeeds, Reinstall), discarding (Resume)
         const More& m = TrM();
-        const char* label = m_dialog.kind == DialogKind::Where       ? s.internal
+        const char* label = m_dialog.kind == DialogKind::ContentDetails ? TrT().cd_ticket_go
+                            : m_dialog.kind == DialogKind::Where     ? s.internal
                             : m_dialog.kind == DialogKind::Nand      ? m.nand_sd_button
                             : m_dialog.kind == DialogKind::DlcNeeds  ? m.dn_skip
                             : m_dialog.kind == DialogKind::Reinstall ? m.ri_skip
@@ -5459,11 +5469,16 @@ int App::DialogExtra(u64& mask) const {
         case DialogKind::DlcNeeds:
         case DialogKind::Reinstall:
         case DialogKind::Resume: mask = HidNpadButton_X; return 2;
+        case DialogKind::ContentDetails: mask = HidNpadButton_X; return 2;
         default: mask = 0; return -1;
     }
 }
 
 void App::DialogExtraChosen() {
+    if (m_dialog.kind == DialogKind::ContentDetails) {
+        ConsoleTicketBack();
+        return;
+    }
     if (m_dialog.kind == DialogKind::Resume) {
         // discarding is asked once more, Back in focus
         m_dialog.kind = DialogKind::ResumeDiscard;

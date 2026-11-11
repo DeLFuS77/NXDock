@@ -604,7 +604,8 @@ bool App::ToolDialogText(ToolDialog& d) {
     const Tools& tt = TrT();
     switch (m_dialog.kind) {
         case DialogKind::FilesDelete:
-        case DialogKind::FilesProps: {
+        case DialogKind::FilesProps:
+        case DialogKind::ContentDetails: {
             const std::string cancel = d.cancel;
             d = m_tool;
             if (d.cancel.empty()) d.cancel = cancel;
@@ -665,6 +666,7 @@ void App::ConfirmToolDialog() {
             StartFilesWork(0, std::move(paths), {});
             break;
         }
+        case DialogKind::ContentDetails: ConsoleVersionReset(); break;
         default: ConfirmUpdater(); break;
     }
 }

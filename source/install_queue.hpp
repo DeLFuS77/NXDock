@@ -65,6 +65,7 @@ struct InstallJob {
     // the new tools); a failed or cancelled install keeps it
     bool delete_after = false;
     bool source_deleted = false; // it was
+    bool ticket_only = false;    // the ticket of a content installed, put back (7A)
 };
 
 // Reads what each file of the SD card or a USB disk needs (the firmware, and for a DLC the version

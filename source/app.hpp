@@ -12,6 +12,7 @@
 #include "file_source.hpp"
 #include "fileops.hpp"
 #include "updater.hpp"
+#include "versions_list.hpp"
 #include "forwarder.hpp"
 #include "config.hpp"
 #include "covers.hpp"
@@ -67,7 +68,7 @@ private:
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
-                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter };
+                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -212,6 +213,23 @@ private:
     bool m_update_has_old = false;  // NXDock.nro.old is there, to go back to
     double m_update_old_at = -100, m_update_done_at = -100;
     bool m_update_started = false;
+    // what is missing for the games on the console (6A) and the details of a content (7A), more_console.cpp
+    struct Missing {
+        unsigned update = 0;     // a newer update than the one installed, 0 none
+        bool update_lib = false; // the library has it (or one newer than what is installed)
+        int dlc = 0, dlc_known = 0, dlc_lib = 0; // DLC not installed, all known, the missing ones the library has
+        bool Any() const { return update || dlc; }
+    };
+    const Missing& MissingOf(unsigned long long app);
+    void FollowMissing(const Space::View& v);
+    Space::View ConsoleView(const Space::View& v); // only those missing something, when the filter is on
+    void OpenContentDetails(const InstalledApp& a, const InstalledApp::Content& c);
+    void ConsoleTicketBack();
+    void ConsoleVersionReset();
+    std::unique_ptr<VersionsList> m_versions;
+    std::map<unsigned long long, Missing> m_missing;
+    std::string m_missing_key;    // what the missing were worked out from
+    bool m_console_missing = false; // the filter: only the games missing something
     // the vault of saves (6A, more_vault.cpp)
     void OpenVault();
     std::vector<LibrarySave> VaultCopies();
@@ -561,7 +579,7 @@ private:
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
-                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack };
+                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

@@ -98,6 +98,9 @@ struct ConfigOverride {
     // NXDock: see Config::repair.
     std::optional<bool> repair{};
 
+    // NXDock: the ticket of a content installed, put back without its parts (7A of the new tools).
+    std::optional<bool> ticket_only{};
+
     // NXDock: an older update in place of the one installed (20A); the launch version goes back
     // with it.
     std::optional<bool> allow_downgrade{};
