@@ -198,6 +198,10 @@ std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list)
     NcmContentMetaDatabase sd_db{}, nand_db{};
     const bool sd_open = ncm && R_SUCCEEDED(ncmOpenContentMetaDatabase(&sd_db, NcmStorageId_SdCard));
     const bool nand_open = ncm && R_SUCCEEDED(ncmOpenContentMetaDatabase(&nand_db, NcmStorageId_BuiltInUser));
+    // the contents themselves: another tool may remove them and leave their meta behind
+    NcmContentStorage sd_cs{}, nand_cs{};
+    const bool sd_cs_open = sd_open && R_SUCCEEDED(ncmOpenContentStorage(&sd_cs, NcmStorageId_SdCard));
+    const bool nand_cs_open = nand_open && R_SUCCEEDED(ncmOpenContentStorage(&nand_cs, NcmStorageId_BuiltInUser));
     const auto present = [&](const NsApplicationContentMetaStatus& m) {
         NcmContentMetaDatabase* db = nullptr;
         if (m.storageID == NcmStorageId_SdCard && sd_open) db = &sd_db;
@@ -215,7 +219,15 @@ std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list)
         key.type = m.meta_type;
         key.install_type = NcmContentInstallType_Full;
         bool has = false;
-        return R_SUCCEEDED(ncmContentMetaDatabaseHas(db, &has, &key)) && has;
+        if (R_FAILED(ncmContentMetaDatabaseHas(db, &has, &key)) || !has) return false;
+        // a meta whose program (or data, for a DLC) is gone from the storage is not installed
+        NcmContentStorage* cs = db == &sd_db ? (sd_cs_open ? &sd_cs : nullptr) : (nand_cs_open ? &nand_cs : nullptr);
+        if (!cs) return true;
+        NcmContentId id{};
+        const NcmContentType type = m.meta_type == NcmContentMetaType_AddOnContent ? NcmContentType_Data : NcmContentType_Program;
+        if (R_FAILED(ncmContentMetaDatabaseGetContentIdByType(db, &id, &key, type))) return true; // not told: as it was
+        bool there = false;
+        return R_FAILED(ncmContentStorageHas(cs, &there, &id)) || there;
     };
     std::vector<NsApplicationRecord> records(64);
     s32 offset = 0;
@@ -259,6 +271,8 @@ std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list)
             break;
         }
     }
+    if (sd_cs_open) ncmContentStorageClose(&sd_cs);
+    if (nand_cs_open) ncmContentStorageClose(&nand_cs);
     if (sd_open) ncmContentMetaDatabaseClose(&sd_db);
     if (nand_open) ncmContentMetaDatabaseClose(&nand_db);
     if (ncm) ncmExit();
