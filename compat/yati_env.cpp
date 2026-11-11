@@ -8,6 +8,8 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
+#include <switch.h>
 #include <mutex>
 
 namespace sphaira::env {
@@ -61,6 +63,9 @@ bool IsFileBaseEmummc() {
 namespace {
 std::mutex g_log_mutex;
 FILE* g_log = nullptr;
+// each line starts with the seconds since the job began: what takes long shows at once
+u64 g_log_start = 0;
+bool g_log_line_start = true;
 } // namespace
 
 extern "C" void nxdock_log_open(const char* path) {
@@ -69,6 +74,8 @@ extern "C" void nxdock_log_open(const char* path) {
         std::fclose(g_log);
     }
     g_log = std::fopen(path, "w");
+    g_log_start = armGetSystemTick();
+    g_log_line_start = true;
 }
 
 extern "C" void nxdock_log_close() {
@@ -81,9 +88,23 @@ extern "C" void nxdock_log_close() {
 
 extern "C" void log_write_arg(const char* s, va_list* v) {
     std::lock_guard lock(g_log_mutex);
-    if (g_log) {
-        std::vfprintf(g_log, s, *v);
+    if (!g_log) {
+        return;
     }
+    char text[1024];
+    std::vsnprintf(text, sizeof(text), s, *v);
+    const double seconds = double(armTicksToNs(armGetSystemTick() - g_log_start)) / 1e9;
+    for (const char* p = text; *p;) {
+        if (g_log_line_start) {
+            std::fprintf(g_log, "[%7.2f] ", seconds);
+        }
+        const char* nl = std::strchr(p, '\n');
+        const size_t n = nl ? size_t(nl - p + 1) : std::strlen(p);
+        std::fwrite(p, 1, n, g_log);
+        g_log_line_start = nl != nullptr;
+        p += n;
+    }
+    std::fflush(g_log);
 }
 
 extern "C" void log_write(const char* s, ...) {

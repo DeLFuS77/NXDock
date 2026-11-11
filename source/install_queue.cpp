@@ -770,8 +770,10 @@ void InstallQueue::RunJob(InstallJob& job) {
         switch (job.origin) {
             case InstallJob::Origin::Library: {
                 auto http = std::make_unique<HttpSource>(job.url, job.key, options, &box);
+                log_write("[NXDock] asking the library for the file\n");
                 rc = http->Open();
                 size = http->Size();
+                log_write("[NXDock] the library answered: 0x%X, %lld bytes\n", rc, (long long)size);
                 holder = std::move(http);
                 break;
             }
