@@ -208,18 +208,21 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
     return true;
 }
 
-// Settings, in groups: the library, installing, notices, the look, the wizard, connecting by hand.
+// Settings, in groups: the library, installing, notices, the look, the wizard, the HOME menu,
+// connecting by hand.
 enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowSpeed,
     kRowDest, kRowPick, kRowSaveCopy, kRowScreen, kRowCompress,
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowSounds, kRowAnim,
     kRowWizard,
+    kRowHome, kRowHomeRemove,
     kRowAddress, kRowKey,
     kSettingRows
 };
 // the first row of each group
-constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowAddress};
+constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowHome, kRowAddress};
+constexpr int kGroups = int(std::size(kGroupStarts));
 // the levels of the notice of little battery; 0 is off
 constexpr int kBatterySteps[] = {0, 10, 15, 20, 30};
 
@@ -443,10 +446,52 @@ bool App::Init() {
     m_sysinfo = ReadSystemInfo();
     m_time = Now();
     m_last_input = m_time;
+    m_home = forwarder::Query();
     if (!m_ui.wizard_done) {
         OpenWizard(); // only the first time; repeated from Settings
+    } else if (net::IsAppletMode() && !m_home.installed && m_home.nro_found) {
+        Notice(TrM().hm_applet_tip);
+        m_notice_until = m_time + 8;
     }
     return true;
+}
+
+void App::AskHomeShortcut(bool remove) {
+    m_home = forwarder::Query();
+    const More& m = TrM();
+    if (m_home.running_from) {
+        Notice(m.hm_in_use_note);
+        return;
+    }
+    if (remove && !m_home.installed) {
+        return;
+    }
+    if (!remove && !m_home.nro_found) {
+        Notice(m.hm_no_nro);
+        return;
+    }
+    m_dialog = Dialog{};
+    m_dialog.kind = remove ? DialogKind::HomeRemove : DialogKind::HomeAdd;
+}
+
+void App::DoHomeShortcut(bool remove) {
+    const More& m = TrM();
+    const bool was = m_home.installed;
+    const Result rc = remove ? forwarder::Remove() : forwarder::Install();
+    m_home = forwarder::Query();
+    if (R_SUCCEEDED(rc)) {
+        NoticeOk(remove ? m.hm_done_remove : was ? m.hm_done_update : m.hm_done_add);
+        return;
+    }
+    if (rc == forwarder::kResultNoNro) {
+        Notice(m.hm_no_nro);
+    } else if (rc == forwarder::kResultRunning) {
+        Notice(m.hm_in_use_note);
+    } else {
+        char text[200];
+        std::snprintf(text, sizeof(text), m.hm_failed_fmt, unsigned(rc));
+        Notice(text);
+    }
 }
 
 void App::Exit() {
@@ -631,6 +676,12 @@ void App::ActivateSetting(int row) {
             break;
         case kRowWizard:
             OpenWizard();
+            break;
+        case kRowHome:
+            AskHomeShortcut(false);
+            break;
+        case kRowHomeRemove:
+            AskHomeShortcut(true);
             break;
         case kRowScreen: {
             // normal, dimmed after a minute, off for a long queue (and dimmed for a short one)
@@ -3815,10 +3866,12 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.sounds_row, yes(m_ui.sounds), m_ui.sounds},
         {m.anim_row, m_ui.anim == 2 ? m.anim_none : m_ui.anim == 1 ? m.anim_soft : m.anim_full, m_ui.anim != 2},
         {s.wiz_row, s.wiz_repeat, true},
+        {m.hm_row, m_home.running_from ? m.hm_in_use : m_home.installed ? m.hm_on : s.no_word, m_home.installed},
+        {m.hm_remove_row, "", false},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
     };
-    const char* groups[] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, m.st_g_manual};
+    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, m.st_g_home, m.st_g_manual};
     const float x = 48, w = 540, h = 56, gap = 8, head = 34;
     // where each row goes: a title before the first of each group
     float top_of[kSettingRows];
@@ -3844,11 +3897,13 @@ void App::DrawSettings(NVGcontext* vg) {
     int group = 0;
     for (int i = 0; i < kSettingRows; i++) {
         const float y = y0 + top_of[i];
-        if (group < 6 && kGroupStarts[group] == i) {
+        if (group < kGroups && kGroupStarts[group] == i) {
             draw::Section(vg, t, x + 6, y - 13, groups[group]);
             group++;
         }
-        const bool dim = (i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked;
+        const bool dim = ((i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked) ||
+                         (i == kRowHomeRemove && (!m_home.installed || m_home.running_from)) ||
+                         (i == kRowHome && m_home.running_from);
         nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
         Panel(vg, t, x, y, w, h, 14);
         if (i == m_setting) {
@@ -3886,6 +3941,8 @@ void App::DrawSettings(NVGcontext* vg) {
     else if (m_setting == kRowLibrary || m_setting == kRowWizard) act = m.open;
     else if (m_setting == kRowForget) act = m.fg_go;
     else if (m_setting == kRowSpeed) act = running ? s.cancel : s.start;
+    else if (m_setting == kRowHome) act = m_home.installed ? m.hm_update : m.hm_make;
+    else if (m_setting == kRowHomeRemove) act = m.hm_remove_go;
     ui::HintBar(vg, t, nullptr,
                 {{ui::glyph::A, act, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},
                  {ui::glyph::B, s.back, HidNpadButton_B}},
@@ -4899,6 +4956,16 @@ void App::DrawDialog(NVGcontext* vg) {
             body = TrM().fg_body;
             primary = TrM().fg_go;
             break;
+        case DialogKind::HomeAdd:
+            title = m_home.installed ? TrM().hm_update_title : TrM().hm_add_title;
+            body = TrM().hm_add_body;
+            primary = m_home.installed ? TrM().hm_update : TrM().hm_make;
+            break;
+        case DialogKind::HomeRemove:
+            title = TrM().hm_remove_title;
+            body = TrM().hm_remove_body;
+            primary = TrM().hm_remove_go;
+            break;
         case DialogKind::ResumeDiscard: {
             const More& m = TrM();
             title = m.rd_title;
@@ -5436,6 +5503,10 @@ void App::ConfirmDialog() {
             m_speed.Cancel();
             m_link.Forget();
             m_tab = Tab::Library;
+            break;
+        case DialogKind::HomeAdd:
+        case DialogKind::HomeRemove:
+            DoHomeShortcut(m_dialog.kind == DialogKind::HomeRemove);
             break;
         case DialogKind::CompressIntro:
         case DialogKind::CompressGo:

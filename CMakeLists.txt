@@ -168,6 +168,7 @@ add_executable(nxdock
     source/precheck.cpp
     source/system_info.cpp
     source/ui.cpp
+    source/forwarder.cpp
 )
 
 target_compile_definitions(nxdock PRIVATE
@@ -175,6 +176,14 @@ target_compile_definitions(nxdock PRIVATE
 )
 
 target_compile_options(nxdock PRIVATE -Wall -Wextra -O2)
+
+# The loader of the HOME menu shortcut (hbl/, nx-hbloader as Sphaira changed it, ISC): built as an
+# ExeFS (main and main.npdm) that forwarder.cpp carries with #embed.
+add_subdirectory(hbl)
+add_dependencies(nxdock hbl_nso hbl_npdm)
+set_source_files_properties(source/forwarder.cpp PROPERTIES
+    COMPILE_OPTIONS "--embed-dir=${CMAKE_BINARY_DIR}/hbl"
+    OBJECT_DEPENDS "${CMAKE_BINARY_DIR}/hbl/exefs/main;${CMAKE_BINARY_DIR}/hbl/exefs/main.npdm")
 
 find_library(deko3d_lib deko3d REQUIRED)
 # libcurl and zlib from devkitPro's portlibs (switch-curl, switch-zlib)

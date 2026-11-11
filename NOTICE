@@ -101,3 +101,14 @@ libcurl
   https://curl.se
   Copyright (c) Daniel Stenberg and many contributors.
   curl licence (MIT/X style). Linked from devkitPro's portlibs (switch-curl).
+
+The HOME menu shortcut, from Sphaira (commit a3b850a, 10 November 2026)
+  https://github.com/NaGaa95/sphaira
+  - source/forwarder.cpp is based on Sphaira's owo.cpp by ITotalJustice and the
+    Sphaira contributors (GPL-3.0), itself based on hacbrewpack. Changed for
+    NXDock on 11 November 2026: only an Application to the SD card, with the
+    name, author and icon of NXDock.nro; no logo, start-up movie or core launch;
+    the RomFS laid out from the order of its files.
+  - hbl/ is nx-hbloader as Sphaira changed it (ISC licence, see
+    hbl/nx-hbloader.LICENSE.md), Copyright 2017-2018 nx-hbloader Authors. Its
+    notice text names NXDock's shortcut.

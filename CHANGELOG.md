@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A shortcut on the HOME menu (Settings › HOME menu): NXDock opens from it with
+  all the memory and the network of a game. Made on the console, to the SD card;
+  made again, it is updated; it can be removed.
 - The WiFi in the top bar, with its coverage; tap it (or press the right stick)
   for the network, the coverage and the addresses.
 - Large libraries: the catalog comes compressed, the last one is kept on the SD

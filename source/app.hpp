@@ -9,6 +9,7 @@
 #include <vector>
 #include "catalog.hpp"
 #include "file_source.hpp"
+#include "forwarder.hpp"
 #include "config.hpp"
 #include "covers.hpp"
 #include "gfx.hpp"
@@ -238,6 +239,9 @@ private:
     std::string m_mods_name;
     // the screen off while installing (11A, screen_off.cpp)
     void AskScreenOff();
+    // the shortcut on the HOME menu (Settings): asked first, then made, updated or taken away
+    void AskHomeShortcut(bool remove);
+    void DoHomeShortcut(bool remove);
     void ScreenOn();
     bool FollowScreenOff(u64& down, bool new_touch);
     void DrawScreenOff(NVGcontext* vg);
@@ -481,7 +485,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -525,6 +529,7 @@ private:
     std::string m_mods_after_name;
     // emuMMC and 90DNS, read once; the warning comes before the first install of a session
     std::unique_ptr<Safety> m_safety;
+    forwarder::Status m_home; // where NXDock is and whether its HOME menu shortcut is there
     SystemInfo m_sysinfo;           // the firmware and Atmosphère, for the check before installing
     bool m_risk_ok = false;
     std::string m_update_hint;
