@@ -521,6 +521,7 @@ constexpr More kEnglish{
     .lb_size = "Size of the covers",
     .lb_size_big = "Large",
     .lb_size_small = "Small",
+    .lb_checking = "Checking what is installed…",
 };
 
 constexpr More kSpanish{
@@ -1035,6 +1036,7 @@ constexpr More kSpanish{
     .lb_size = "Tamaño de las carátulas",
     .lb_size_big = "Grande",
     .lb_size_small = "Pequeña",
+    .lb_checking = "Comprobando lo instalado…",
 };
 
 constexpr More kFrench{
@@ -1549,6 +1551,7 @@ constexpr More kFrench{
     .lb_size = "Taille des jaquettes",
     .lb_size_big = "Grande",
     .lb_size_small = "Petite",
+    .lb_checking = "Vérification de l'installé…",
 };
 
 constexpr More kGerman{
@@ -2063,6 +2066,7 @@ constexpr More kGerman{
     .lb_size = "Größe der Cover",
     .lb_size_big = "Groß",
     .lb_size_small = "Klein",
+    .lb_checking = "Installiertes wird geprüft…",
 };
 
 constexpr More kItalian{
@@ -2577,6 +2581,7 @@ constexpr More kItalian{
     .lb_size = "Dimensione delle copertine",
     .lb_size_big = "Grande",
     .lb_size_small = "Piccola",
+    .lb_checking = "Controllo dell'installato…",
 };
 
 constexpr More kPortuguese{
@@ -3091,6 +3096,7 @@ constexpr More kPortuguese{
     .lb_size = "Tamanho das capas",
     .lb_size_big = "Grande",
     .lb_size_small = "Pequena",
+    .lb_checking = "A verificar o instalado…",
 };
 
 constexpr More kDutch{
@@ -3605,6 +3611,7 @@ constexpr More kDutch{
     .lb_size = "Grootte van de covers",
     .lb_size_big = "Groot",
     .lb_size_small = "Klein",
+    .lb_checking = "Geïnstalleerde wordt gecontroleerd…",
 };
 
 constexpr More kRussian{
@@ -4119,6 +4126,7 @@ constexpr More kRussian{
     .lb_size = "Размер обложек",
     .lb_size_big = "Крупные",
     .lb_size_small = "Мелкие",
+    .lb_checking = "Проверка установленного…",
 };
 
 constexpr More kJapanese{
@@ -4633,6 +4641,7 @@ constexpr More kJapanese{
     .lb_size = "カバーの大きさ",
     .lb_size_big = "大",
     .lb_size_small = "小",
+    .lb_checking = "インストール済みを確認中…",
 };
 
 constexpr More kKorean{
@@ -5147,6 +5156,7 @@ constexpr More kKorean{
     .lb_size = "표지 크기",
     .lb_size_big = "크게",
     .lb_size_small = "작게",
+    .lb_checking = "설치된 항목 확인 중…",
 };
 
 constexpr More kChinese{
@@ -5661,6 +5671,7 @@ constexpr More kChinese{
     .lb_size = "封面大小",
     .lb_size_big = "大",
     .lb_size_small = "小",
+    .lb_checking = "正在检查已安装内容…",
 };
 
 // In the order of LanguageName in i18n.cpp.

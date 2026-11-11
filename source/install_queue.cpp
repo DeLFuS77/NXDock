@@ -168,6 +168,7 @@ InstallQueue::~InstallQueue() {
     }
     m_cv.notify_all();
     m_thread.join();
+    if (m_read_thread.joinable()) m_read_thread.join();
 }
 
 void InstallQueue::SetOptions(int connections, bool download_test) {
@@ -384,12 +385,17 @@ int InstallQueue::Waiting() {
 }
 
 void InstallQueue::ReadInstalledAgain() {
-    auto installed = ReadInstalled();
-    {
-        std::lock_guard lock(m_mutex);
-        m_installed = std::move(installed);
-    }
-    m_version++;
+    if (m_reading.exchange(true)) return; // one at a time
+    if (m_read_thread.joinable()) m_read_thread.join();
+    m_read_thread = std::thread([this] {
+        auto installed = ReadInstalled();
+        {
+            std::lock_guard lock(m_mutex);
+            m_installed = std::move(installed);
+        }
+        m_version++;
+        m_reading = false;
+    });
 }
 
 std::map<u64, InstalledState> InstallQueue::Installed() {

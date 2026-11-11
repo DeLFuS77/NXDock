@@ -132,8 +132,10 @@ public:
     // Changes when a job ends: the interface reads what is installed again then.
     unsigned Version() const { return m_version.load(); }
     std::map<u64, InstalledState> Installed();
-    // Reads what is installed again (after something was taken off the console elsewhere).
+    // Reads what is installed again (after something was taken off the console elsewhere), on a
+    // thread of its own: with many games it takes a while, and the screen goes on meanwhile.
     void ReadInstalledAgain();
+    bool ReadingInstalled() const { return m_reading.load(); }
 
     // What was installed in this session, the latest first.
     std::vector<SessionItem> Session();
@@ -192,6 +194,8 @@ private:
     bool m_download_test = false;
     bool m_paused = false;
     std::atomic<unsigned> m_version{0};
+    std::atomic<bool> m_reading{false};
+    std::thread m_read_thread;
     std::map<u64, InstalledState> m_installed;
     std::vector<SessionItem> m_session;
     std::vector<int> m_undo_jobs;

@@ -1042,7 +1042,11 @@ bool App::Frame() {
         // the Library again: what the console has now, also what DBI or the HOME menu changed
         if (m_tab_seen == Tab::Shops) LeaveShopsTab();
         if (m_tab == Tab::Shops) EnterShopsTab();
-        if (m_tab == Tab::Library && m_queue && !m_queue->Busy()) m_queue->ReadInstalledAgain();
+        // on a thread of its own, at most every few seconds: going through the tab never waits for it
+        if (m_tab == Tab::Library && m_queue && !m_queue->Busy() && m_time - m_installed_read_at > 4) {
+            m_installed_read_at = m_time;
+            m_queue->ReadInstalledAgain();
+        }
         m_tab_seen = m_tab;
     }
     PlaySounds(down, focus_before);
@@ -1970,6 +1974,13 @@ void App::DrawLibrary(NVGcontext* vg) {
     if (!m_search.empty()) {
         const std::string label = "“" + m_search + "”";
         ui::Chip(vg, t, x + 10, 92, label.c_str(), true);
+    }
+    // checking what the console has: a small sign, the marks come when it ends
+    if (m_queue && m_queue->ReadingInstalled()) {
+        const char* checking = TrM().lb_checking;
+        const float cw = ui::TextWidth(vg, 13, checking);
+        ui::Spinner(vg, kWidth - kGridX - cw - 150, 109, 6, t.work, m_time);
+        ui::Text(vg, kWidth - kGridX - cw - 138, 109, 13, t.muted, checking);
     }
     // the order, on the right (changed in Options)
     const char* sorts[] = {s.sort_az, s.sort_size, s.sort_missing, s.sort_recent};

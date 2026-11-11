@@ -106,6 +106,7 @@ struct More {
     const char *ic_rm_many_fmt, *ic_with_fmt, *ic_whole_game, *ic_done_many_fmt, *ic_done_one_fmt, *ic_picked_fmt, *ic_rm_picked_fmt;
     // the Library: what is installed, and the size of its covers
     const char *lb_installed, *lb_installed_tag, *lb_needs_update, *lb_needs_dlc, *lb_size, *lb_size_big, *lb_size_small;
+    const char *lb_checking;
 };
 
 const More& TrM();

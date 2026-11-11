@@ -309,6 +309,7 @@ private:
     void DrawConsolePage(NVGcontext* vg, const Space::View& v);
     void DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library);
     void InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s);
+    double m_installed_read_at = -100; // when the Library last read what is installed
     Tab m_tab_seen = Tab::Library; // the tab of the last frame: the Library reads what is installed again
     void UpdateConsole(u64 down, u64 held);
     void ReadConsole();
