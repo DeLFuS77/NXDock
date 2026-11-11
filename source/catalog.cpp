@@ -8,6 +8,8 @@
 
 #include <yyjson.h>
 #include <algorithm>
+#include <sys/stat.h>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include "http.hpp"
@@ -282,7 +284,53 @@ std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list)
 #endif
 
 #ifdef __SWITCH__
+namespace {
+
+// The last catalog of the library, kept on the SD card: shown at once the next time, while the
+// library gives the new one. The first line is the address it came from.
+constexpr const char* kCatalogCache = "sdmc:/switch/NXDock/catalog-cache.json";
+constexpr size_t kCatalogMax = 128u * 1024 * 1024;
+
+bool ReadCatalogCache(const std::string& url, std::string& body) {
+    FILE* f = std::fopen(kCatalogCache, "rb");
+    if (!f) return false;
+    std::fseek(f, 0, SEEK_END);
+    const long size = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    bool ok = size > 0 && size_t(size) < kCatalogMax;
+    std::string all;
+    if (ok) {
+        all.resize(size_t(size));
+        ok = std::fread(all.data(), 1, all.size(), f) == all.size();
+    }
+    std::fclose(f);
+    const size_t nl = all.find('\n');
+    if (!ok || nl == std::string::npos || all.compare(0, nl, url) != 0) return false;
+    body = all.substr(nl + 1);
+    return true;
+}
+
+void WriteCatalogCache(const std::string& url, const std::string& body) {
+    mkdir("sdmc:/switch", 0777);
+    mkdir("sdmc:/switch/NXDock", 0777);
+    const std::string temp = std::string(kCatalogCache) + ".tmp";
+    FILE* f = std::fopen(temp.c_str(), "wb");
+    if (!f) return;
+    bool ok = std::fwrite(url.data(), 1, url.size(), f) == url.size() && std::fputc('\n', f) != EOF &&
+              std::fwrite(body.data(), 1, body.size(), f) == body.size();
+    ok = std::fclose(f) == 0 && ok;
+    if (ok) {
+        std::remove(kCatalogCache);
+        std::rename(temp.c_str(), kCatalogCache);
+    } else {
+        std::remove(temp.c_str());
+    }
+}
+
+} // namespace
+
 Catalog::~Catalog() {
+    m_cancel = true;
     if (m_thread.joinable()) {
         m_thread.join();
     }
@@ -295,6 +343,8 @@ void Catalog::Load(const std::string& url, const std::string& key) {
     if (m_thread.joinable()) {
         m_thread.join();
     }
+    m_cancel = false;
+    m_preparing = false;
     m_state = State::Loading;
     m_thread = std::thread(&Catalog::Run, this, url, key);
 }
@@ -309,16 +359,7 @@ std::vector<Game> Catalog::Games() {
     return m_games;
 }
 
-void Catalog::Run(std::string url, std::string key) {
-    const auto r = http::GetLarge(url + "/install/catalog?ncz=native", key, 20000, 16 * 1024 * 1024);
-    std::vector<Game> games;
-    if (r.status != 200 || !ParseCatalog(r.body, games)) {
-        std::lock_guard lock(m_mutex);
-        m_error = r.status == 401 ? Tr().err_key : r.status == 404 ? Tr().err_off
-                : r.status == 0 ? std::string(Tr().err_connect) + " (" + r.error + ")" : "HTTP " + std::to_string(r.status);
-        m_state = State::Failed;
-        return;
-    }
+void Catalog::Publish(std::vector<Game> games) {
     const auto installed = ReadInstalled();
     for (auto& game : games) {
         const auto it = installed.find(game.title_id);
@@ -329,10 +370,70 @@ void Catalog::Run(std::string url, std::string key) {
     {
         std::lock_guard lock(m_mutex);
         m_games = std::move(games);
-        m_error.clear();
     }
     m_version++;
-    m_state = State::Ready;
+}
+
+void Catalog::Run(std::string url, std::string key) {
+    // 1. the list kept on the SD card, at once
+    bool shown = false;
+    {
+        std::string cached;
+        std::vector<Game> games;
+        if (ReadCatalogCache(url, cached) && ParseCatalog(cached, games) && !games.empty()) {
+            Publish(std::move(games));
+            shown = true;
+            m_stale = true;
+        }
+    }
+    const auto fail = [&](std::string error) {
+        m_preparing = false;
+        {
+            std::lock_guard lock(m_mutex);
+            m_error = std::move(error);
+        }
+        // with the kept list on screen, it stays usable; the error only tells it is not new
+        m_state = shown ? State::Ready : State::Failed;
+    };
+
+    // 2. the catalog of the library; a large one may first be prepared: the app says so with
+    // 503 and Retry-After, and is asked again until it is ready
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(15);
+    while (!m_cancel) {
+        const auto r = http::GetLarge(url + "/install/catalog?ncz=native", key, 180000, kCatalogMax, &m_cancel);
+        if (m_cancel) break;
+        if (r.status == 503 && http::JsonBool(r.body, "preparing")) {
+            m_done = int(http::JsonNumber(r.body, "done", 0));
+            m_total = int(http::JsonNumber(r.body, "total", 0));
+            m_preparing = true;
+            if (std::chrono::steady_clock::now() > deadline) {
+                fail(Tr().err_connect);
+                return;
+            }
+            const long wait_ms = std::clamp(r.retry_after > 0 ? r.retry_after : 5L, 2L, 15L) * 1000;
+            for (long waited = 0; waited < wait_ms && !m_cancel; waited += 100) {
+                svcSleepThread(100'000'000);
+            }
+            continue;
+        }
+        m_preparing = false;
+        std::vector<Game> games;
+        if (r.status == 200 && ParseCatalog(r.body, games)) {
+            WriteCatalogCache(url, r.body);
+            Publish(std::move(games));
+            {
+                std::lock_guard lock(m_mutex);
+                m_error.clear();
+            }
+            m_stale = false;
+            m_state = State::Ready;
+            return;
+        }
+        fail(r.status == 401 ? Tr().err_key : r.status == 404 ? Tr().err_off
+             : r.status == 0 ? std::string(Tr().err_connect) + " (" + r.error + ")" : "HTTP " + std::to_string(r.status));
+        return;
+    }
+    fail(Tr().cancelled);
 }
 
 #endif

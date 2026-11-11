@@ -30,7 +30,34 @@ size_t OnBody(char* data, size_t size, size_t count, void* user) {
     return n;
 }
 
-Response Request(const std::string& url, const std::string* json, const std::string& key, long timeout_ms, size_t max_bytes = kMaxBody) {
+// Retry-After of a 503 that asks to come back later (the library preparing its catalog).
+size_t OnHeader(char* data, size_t size, size_t count, void* user) {
+    auto* r = static_cast<Response*>(user);
+    const size_t n = size * count;
+    static constexpr char kName[] = "retry-after:";
+    if (n > sizeof(kName) - 1) {
+        bool match = true;
+        for (size_t i = 0; i < sizeof(kName) - 1; i++) {
+            if (std::tolower(static_cast<unsigned char>(data[i])) != kName[i]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            const long v = std::strtol(std::string(data + sizeof(kName) - 1, n - (sizeof(kName) - 1)).c_str(), nullptr, 10);
+            r->retry_after = std::clamp(v, 0L, 120L);
+        }
+    }
+    return n;
+}
+
+int OnCancel(void* user, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+    const auto* cancel = static_cast<const std::atomic<bool>*>(user);
+    return cancel && cancel->load() ? 1 : 0;
+}
+
+Response Request(const std::string& url, const std::string* json, const std::string& key, long timeout_ms, size_t max_bytes = kMaxBody,
+                 const std::atomic<bool>* cancel = nullptr) {
     Response r;
     Sink sink{&r.body, max_bytes};
     CURL* curl = curl_easy_init();
@@ -47,6 +74,15 @@ Response Request(const std::string& url, const std::string* json, const std::str
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "NXDock/" NXDOCK_VERSION);
+    // gzip and deflate when the app offers them: a catalog of thousands of games is a tenth of its size
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, OnHeader);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &r);
+    if (cancel) {
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, OnCancel);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, const_cast<std::atomic<bool>*>(cancel));
+    }
     if (!key.empty()) {
         static thread_local std::string user, pass;
         SplitKey(key, user, pass);
@@ -230,8 +266,8 @@ Response Get(const std::string& url, const std::string& key, long timeout_ms) {
     return Request(url, nullptr, key, timeout_ms);
 }
 
-Response GetLarge(const std::string& url, const std::string& key, long timeout_ms, size_t max_bytes) {
-    return Request(url, nullptr, key, timeout_ms, max_bytes);
+Response GetLarge(const std::string& url, const std::string& key, long timeout_ms, size_t max_bytes, const std::atomic<bool>* cancel) {
+    return Request(url, nullptr, key, timeout_ms, max_bytes, cancel);
 }
 
 Response PostJson(const std::string& url, const std::string& json, const std::string& key, long timeout_ms) {

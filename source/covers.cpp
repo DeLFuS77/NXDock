@@ -28,6 +28,10 @@ namespace {
 
 constexpr int kWorkers = 2;
 constexpr int kUploadsPerFrame = 3;
+// images kept on the GPU at most (a cover is at most 400 px a side, ~640 KB): about two screens
+constexpr size_t kMaxImages = 96;
+// covers waiting to be fetched: scrolling fast through a large library keeps only the newest
+constexpr size_t kMaxWanted = 48;
 // the largest a cover is drawn is 330 px, on the page of a game: kept at most this big
 constexpr int kMaxSide = 400;
 constexpr const char* kCacheDir = "sdmc:/switch/NXDock/covers";
@@ -103,6 +107,7 @@ int Covers::Get(const std::string& path) {
     std::lock_guard lock(m_mutex);
     const auto it = m_images.find(path);
     if (it != m_images.end()) {
+        if (it->second) m_used[path] = m_frame;
         return it->second;
     }
     if (m_threads.empty() && path.rfind("ns:", 0) == 0) {
@@ -114,12 +119,39 @@ int Covers::Get(const std::string& path) {
         m_asked.insert(path);
         // the newest asked first: what is on screen now
         m_wanted.push_front(path);
+        while (m_wanted.size() > kMaxWanted) {
+            // gone from the screen before it was fetched: asked again if it comes back
+            m_asked.erase(m_wanted.back());
+            m_wanted.pop_back();
+        }
         m_wake.notify_one();
     }
     return 0;
 }
 
 void Covers::Upload(NVGcontext* vg) {
+    {
+        // too many images: free the ones not drawn for longest (never one of this frame or the last)
+        std::lock_guard lock(m_mutex);
+        m_frame++;
+        size_t loaded = 0;
+        for (const auto& [path, image] : m_images) loaded += image != 0;
+        while (loaded > kMaxImages) {
+            auto oldest = m_used.end();
+            for (auto it = m_used.begin(); it != m_used.end(); ++it) {
+                if (oldest == m_used.end() || it->second < oldest->second) oldest = it;
+            }
+            if (oldest == m_used.end() || oldest->second + 1 >= m_frame) break;
+            const auto img = m_images.find(oldest->first);
+            if (img != m_images.end()) {
+                if (img->second) nvgDeleteImage(vg, img->second);
+                m_images.erase(img);
+            }
+            m_asked.erase(oldest->first);
+            m_used.erase(oldest);
+            loaded--;
+        }
+    }
     for (int i = 0; i < kUploadsPerFrame; i++) {
         Decoded d;
         {
@@ -131,6 +163,7 @@ void Covers::Upload(NVGcontext* vg) {
         const int image = nvgCreateImageRGBA(vg, d.width, d.height, 0, d.rgba.data());
         std::lock_guard lock(m_mutex);
         m_images[d.path] = image;
+        m_used[d.path] = m_frame;
     }
 }
 
@@ -141,6 +174,7 @@ void Covers::Free(NVGcontext* vg) {
     }
     m_images.clear();
     m_asked.clear();
+    m_used.clear();
 }
 
 bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes) {

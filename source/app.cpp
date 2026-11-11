@@ -1690,6 +1690,9 @@ void App::UpdateLibrary(u64 down, u64 held) {
         if (m_catalog.GetState() == Catalog::State::Failed) {
             const Config c = m_link.CurrentConfig();
             m_catalog.Load(c.url, c.key);
+        } else if (m_games.empty() && m_catalog.GetState() == Catalog::State::Loading) {
+            // a library that takes long to prepare its catalog: stop waiting
+            m_catalog.Cancel();
         } else {
             m_tab = Tab::Queue;
         }
@@ -2007,10 +2010,44 @@ void App::DrawLibrary(NVGcontext* vg) {
                         m_hint_rects);
         } else {
             ui::Spinner(vg, kWidth / 2, 330, 20, t.work, m_time);
-            ui::Text(vg, kWidth / 2, 384, 20, t.muted, s.loading_library, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::Plus, s.exit, HidNpadButton_Plus}}, m_hint_rects);
+            int done = 0, total = 0;
+            if (m_catalog.Preparing(done, total)) {
+                // a large library prepares its catalog the first time: how far it is
+                char line[160];
+                if (total > 0) {
+                    std::snprintf(line, sizeof(line), TrM().cat_preparing_fmt, done, total);
+                } else {
+                    std::snprintf(line, sizeof(line), "%s", TrM().cat_preparing);
+                }
+                ui::Text(vg, kWidth / 2, 384, 20, t.muted, line, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                ui::Progress(vg, t, kWidth / 2 - 240, 414, 480, 8, total > 0 ? float(done) / float(total) : 0.f, t.work, m_time,
+                             total <= 0);
+            } else {
+                ui::Text(vg, kWidth / 2, 384, 20, t.muted, s.loading_library, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            }
+            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.cancel, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+                        m_hint_rects);
         }
         return;
+    }
+    {
+        // the list kept on the SD card is on screen: say whether a new one is coming or did not come
+        int done = 0, total = 0;
+        const bool refreshing = state == Catalog::State::Loading;
+        if (refreshing || m_catalog.Stale()) {
+            char line[200];
+            if (refreshing && m_catalog.Preparing(done, total) && total > 0) {
+                std::snprintf(line, sizeof(line), TrM().cat_preparing_fmt, done, total);
+            } else if (refreshing) {
+                std::snprintf(line, sizeof(line), "%s", s.loading_library);
+            } else {
+                std::snprintf(line, sizeof(line), "%s", TrM().cat_stale);
+            }
+            const float w = ui::TextWidth(vg, 14, line);
+            const float x0 = kWidth - 48 - w;
+            if (refreshing) ui::Spinner(vg, x0 - 16, 111, 7, t.work, m_time);
+            ui::Text(vg, kWidth - 48, 111, 14, refreshing ? t.muted : t.warn, line, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
     }
 
     // Filters, with what each shows; in a shop, a pill for each shop

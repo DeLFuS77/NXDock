@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Large libraries: the catalog comes compressed, the last one is kept on the SD
+  card and shown at once, and while the library prepares it NXDock says how far
+  it is and can stop waiting. Covers no longer pile up in memory.
 - First build: NXDock starts and shows its version.
 - The interface base, drawn on the GPU: library as a grid of covers, the
   queue with the four stages of an install, dark and light themes, the

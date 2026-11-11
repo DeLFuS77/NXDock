@@ -2,6 +2,7 @@
 // Copyright (C) 2026 DeLFuS77
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -13,6 +14,7 @@ struct Response {
     long status = 0;   // 0: no answer
     std::string body;
     std::string error; // why there was no answer
+    long retry_after = 0; // seconds the app asks to wait (Retry-After), 0 when not said
 };
 
 // The origin of an address, "scheme://host:port" in lower case with the port of the scheme when
@@ -25,7 +27,10 @@ bool SameOrigin(const std::string& a, const std::string& b);
 // authentication, as DBI sends it. Bodies are small JSON answers, cut at 64 KB.
 Response Get(const std::string& url, const std::string& key = "", long timeout_ms = 4000);
 // A larger answer: the catalog, a cover. Cut at max_bytes.
-Response GetLarge(const std::string& url, const std::string& key, long timeout_ms, size_t max_bytes);
+// The answer may come compressed with gzip (curl inflates it; max_bytes counts the inflated body).
+// `cancel`, when given, stops the transfer as soon as it turns true.
+Response GetLarge(const std::string& url, const std::string& key, long timeout_ms, size_t max_bytes,
+                  const std::atomic<bool>* cancel = nullptr);
 Response PostJson(const std::string& url, const std::string& json, const std::string& key = "", long timeout_ms = 4000);
 
 // Large bodies, sent or received in pieces, for saves and dumps. No time limit while bytes keep

@@ -44,6 +44,10 @@ private:
     std::set<std::string> m_asked;
     std::deque<Decoded> m_decoded;
     std::map<std::string, int> m_images;
+    // the frame each image was last drawn in: in a library of thousands, the ones not seen for
+    // longest are freed when there are too many
+    std::map<std::string, unsigned long> m_used;
+    unsigned long m_frame = 0;
     std::atomic<bool> m_stop{false};
 };
 

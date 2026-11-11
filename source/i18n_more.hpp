@@ -111,6 +111,8 @@ struct More {
     const char *dc_free_fmt, *dc_left_fmt, *dc_install_sd_fmt, *dc_install_nand_fmt, *dc_switch, *dc_once, *marked_short_fmt;
     // what files need, read before they are queued
     const char *pf_title, *pf_body, *dn_title, *dn_body, *dn_line_fmt, *dn_go, *dn_skip;
+    // a large library: its catalog prepared, the list kept on the SD card
+    const char *cat_preparing_fmt, *cat_preparing, *cat_stale;
 };
 
 const More& TrM();

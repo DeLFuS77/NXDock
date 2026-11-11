@@ -64,11 +64,24 @@ public:
     // says when to take a new copy.
     unsigned Version() const { return m_version.load(); }
     std::vector<Game> Games();
+    // Stops a load that waits on the library; what was shown stays.
+    void Cancel() { m_cancel = true; }
+    // The library is still preparing its catalog (a large one, the first time): how far it is.
+    bool Preparing(int& done, int& total) const {
+        done = m_done.load();
+        total = m_total.load();
+        return m_preparing.load();
+    }
+    // The games shown are the list kept on the SD card, the library did not give a new one.
+    bool Stale() const { return m_stale.load(); }
 
 private:
     void Run(std::string url, std::string key);
+    void Publish(std::vector<Game> games);
 
     std::thread m_thread;
+    std::atomic<bool> m_cancel{false}, m_preparing{false}, m_stale{false};
+    std::atomic<int> m_done{0}, m_total{0};
     std::atomic<State> m_state{State::Empty};
     std::atomic<unsigned> m_version{0};
     std::mutex m_mutex;

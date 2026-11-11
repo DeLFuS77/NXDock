@@ -536,6 +536,9 @@ constexpr More kEnglish{
     .dn_line_fmt = "needs v%u · the game has v%u",
     .dn_go = "Install anyway",
     .dn_skip = "Leave these DLC out",
+    .cat_preparing_fmt = "Your library is preparing its catalog… %d of %d",
+    .cat_preparing = "Your library is preparing its catalog…",
+    .cat_stale = "This is the list kept on the SD card: your library did not give a new one.",
 };
 
 constexpr More kSpanish{
@@ -1065,6 +1068,9 @@ constexpr More kSpanish{
     .dn_line_fmt = "pide la v%u · el juego tiene la v%u",
     .dn_go = "Instalar igualmente",
     .dn_skip = "Dejar fuera estos DLC",
+    .cat_preparing_fmt = "Tu biblioteca está preparando el catálogo… %d de %d",
+    .cat_preparing = "Tu biblioteca está preparando el catálogo…",
+    .cat_stale = "Es la lista guardada en la SD: tu biblioteca no ha dado una nueva.",
 };
 
 constexpr More kFrench{
@@ -1594,6 +1600,9 @@ constexpr More kFrench{
     .dn_line_fmt = "demande v%u · le jeu a v%u",
     .dn_go = "Installer quand même",
     .dn_skip = "Laisser ces DLC",
+    .cat_preparing_fmt = "Ta bibliothèque prépare son catalogue… %d sur %d",
+    .cat_preparing = "Ta bibliothèque prépare son catalogue…",
+    .cat_stale = "C'est la liste gardée sur la carte SD : ta bibliothèque n'en a pas donné de nouvelle.",
 };
 
 constexpr More kGerman{
@@ -2123,6 +2132,9 @@ constexpr More kGerman{
     .dn_line_fmt = "braucht v%u · das Spiel hat v%u",
     .dn_go = "Trotzdem installieren",
     .dn_skip = "Diese DLC weglassen",
+    .cat_preparing_fmt = "Deine Bibliothek bereitet ihren Katalog vor… %d von %d",
+    .cat_preparing = "Deine Bibliothek bereitet ihren Katalog vor…",
+    .cat_stale = "Das ist die auf der SD-Karte gespeicherte Liste: Deine Bibliothek hat keine neue geliefert.",
 };
 
 constexpr More kItalian{
@@ -2652,6 +2664,9 @@ constexpr More kItalian{
     .dn_line_fmt = "chiede v%u · il gioco ha v%u",
     .dn_go = "Installa comunque",
     .dn_skip = "Lascia fuori questi DLC",
+    .cat_preparing_fmt = "La tua libreria sta preparando il catalogo… %d di %d",
+    .cat_preparing = "La tua libreria sta preparando il catalogo…",
+    .cat_stale = "È l'elenco salvato sulla SD: la tua libreria non ne ha dato uno nuovo.",
 };
 
 constexpr More kPortuguese{
@@ -3181,6 +3196,9 @@ constexpr More kPortuguese{
     .dn_line_fmt = "pede a v%u · o jogo tem a v%u",
     .dn_go = "Instalar mesmo assim",
     .dn_skip = "Deixar estes DLC de fora",
+    .cat_preparing_fmt = "A tua biblioteca está a preparar o catálogo… %d de %d",
+    .cat_preparing = "A tua biblioteca está a preparar o catálogo…",
+    .cat_stale = "É a lista guardada no SD: a tua biblioteca não deu uma nova.",
 };
 
 constexpr More kDutch{
@@ -3710,6 +3728,9 @@ constexpr More kDutch{
     .dn_line_fmt = "vraagt v%u · het spel heeft v%u",
     .dn_go = "Toch installeren",
     .dn_skip = "Deze DLC weglaten",
+    .cat_preparing_fmt = "Je bibliotheek maakt de catalogus klaar… %d van %d",
+    .cat_preparing = "Je bibliotheek maakt de catalogus klaar…",
+    .cat_stale = "Dit is de lijst op de SD-kaart: je bibliotheek gaf geen nieuwe.",
 };
 
 constexpr More kRussian{
@@ -4239,6 +4260,9 @@ constexpr More kRussian{
     .dn_line_fmt = "нужна v%u · у игры v%u",
     .dn_go = "Всё равно установить",
     .dn_skip = "Не ставить эти DLC",
+    .cat_preparing_fmt = "Библиотека готовит каталог… %d из %d",
+    .cat_preparing = "Библиотека готовит каталог…",
+    .cat_stale = "Это список, сохранённый на SD-карте: библиотека не дала новый.",
 };
 
 constexpr More kJapanese{
@@ -4768,6 +4792,9 @@ constexpr More kJapanese{
     .dn_line_fmt = "v%u が必要 · ゲームは v%u",
     .dn_go = "そのままインストール",
     .dn_skip = "これらの DLC を外す",
+    .cat_preparing_fmt = "ライブラリがカタログを準備中… %d / %d",
+    .cat_preparing = "ライブラリがカタログを準備中…",
+    .cat_stale = "SDカードに保存したリストです。ライブラリから新しいリストを受け取れませんでした。",
 };
 
 constexpr More kKorean{
@@ -5297,6 +5324,9 @@ constexpr More kKorean{
     .dn_line_fmt = "v%u 필요 · 게임은 v%u",
     .dn_go = "그래도 설치",
     .dn_skip = "이 DLC 빼기",
+    .cat_preparing_fmt = "라이브러리가 카탈로그를 준비 중… %d / %d",
+    .cat_preparing = "라이브러리가 카탈로그를 준비 중…",
+    .cat_stale = "SD 카드에 저장된 목록입니다. 라이브러리에서 새 목록을 받지 못했습니다.",
 };
 
 constexpr More kChinese{
@@ -5826,6 +5856,9 @@ constexpr More kChinese{
     .dn_line_fmt = "需要 v%u · 游戏为 v%u",
     .dn_go = "仍然安装",
     .dn_skip = "不装这些 DLC",
+    .cat_preparing_fmt = "游戏库正在准备目录… %d / %d",
+    .cat_preparing = "游戏库正在准备目录…",
+    .cat_stale = "这是保存在 SD 卡上的列表：游戏库没有提供新的列表。",
 };
 
 // In the order of LanguageName in i18n.cpp.
