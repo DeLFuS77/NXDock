@@ -28,15 +28,15 @@ namespace {
 
 constexpr int kWorkers = 2;
 constexpr int kUploadsPerFrame = 3;
-// images kept on the GPU at most (a cover is at most 288 px a side, ~330 KB): a screen and a half
+// covers kept on the GPU at once (288 x 288, ~330 KB each): a screen and a half. They are slots made once
+// and filled again: creating and freeing images while scrolling fast broke the memory pool of nanovg-deko3d
 constexpr size_t kMaxImages = 64;
 // covers waiting to be fetched: scrolling fast through a large library keeps only the newest
 constexpr size_t kMaxWanted = 48;
-// every cover is scaled down to fit this, whatever its size: a library of 799 px pictures kept them
-// whole (2.5 MB each on the GPU) and filled the memory while scrolling
+// every cover is cut to a square (it is drawn as one) and scaled to this side, whatever its size
 constexpr int kMaxSide = 288;
-// frames an image dropped from the screen waits before it is freed: the GPU may still be drawing it
-constexpr unsigned long kTrashFrames = 4;
+// frames a slot must not have been drawn in before it takes another cover: the GPU may still be drawing it
+constexpr unsigned long kReuseFrames = 4;
 constexpr const char* kCacheDir = "sdmc:/switch/NXDock/covers";
 
 // The file a cover is kept in: its address hashed, so any name of the app is a safe file name.
@@ -134,58 +134,62 @@ int Covers::Get(const std::string& path) {
 
 void Covers::Upload(NVGcontext* vg) {
     {
-        // too many images: free the ones not drawn for longest (never one of this frame or the last)
         std::lock_guard lock(m_mutex);
         m_frame++;
-        size_t loaded = 0;
-        for (const auto& [path, image] : m_images) loaded += image != 0;
-        while (loaded > kMaxImages) {
-            auto oldest = m_used.end();
-            for (auto it = m_used.begin(); it != m_used.end(); ++it) {
-                if (oldest == m_used.end() || it->second < oldest->second) oldest = it;
-            }
-            if (oldest == m_used.end() || oldest->second + 1 >= m_frame) break;
-            const auto img = m_images.find(oldest->first);
-            if (img != m_images.end()) {
-                if (img->second) m_trash.emplace_back(img->second, m_frame);
-                m_images.erase(img);
-            }
-            m_asked.erase(oldest->first);
-            m_used.erase(oldest);
-            loaded--;
-        }
-        while (!m_trash.empty() && m_trash.front().second + kTrashFrames <= m_frame) {
-            nvgDeleteImage(vg, m_trash.front().first);
-            m_trash.pop_front();
-        }
     }
     for (int i = 0; i < kUploadsPerFrame; i++) {
         Decoded d;
+        int slot = 0;
         {
             std::lock_guard lock(m_mutex);
             if (m_decoded.empty()) return;
+            if (!m_free.empty()) {
+                slot = m_free.back();
+                m_free.pop_back();
+            } else if (m_slots.size() < kMaxImages) {
+                slot = -1; // a new slot
+            } else {
+                // the slot not drawn for longest, if it has not been drawn for a few frames
+                auto oldest = m_used.end();
+                for (auto it = m_used.begin(); it != m_used.end(); ++it) {
+                    if (oldest == m_used.end() || it->second < oldest->second) oldest = it;
+                }
+                if (oldest == m_used.end() || oldest->second + kReuseFrames > m_frame) return;
+                slot = m_images[oldest->first];
+                m_images.erase(oldest->first);
+                m_asked.erase(oldest->first);
+                m_used.erase(oldest);
+            }
             d = std::move(m_decoded.front());
             m_decoded.pop_front();
         }
-        const int image = nvgCreateImageRGBA(vg, d.width, d.height, 0, d.rgba.data());
+        if (slot < 0) {
+            slot = nvgCreateImageRGBA(vg, kMaxSide, kMaxSide, 0, d.rgba.data());
+            if (!slot) return;
+            m_slots.push_back(slot);
+        } else {
+            nvgUpdateImage(vg, slot, d.rgba.data());
+        }
         std::lock_guard lock(m_mutex);
-        m_images[d.path] = image;
+        if (const auto old = m_images.find(d.path); old != m_images.end() && old->second && old->second != slot) {
+            // decoded twice: the older slot is free again
+            m_used.erase(d.path);
+            m_free.push_back(old->second);
+        }
+        m_images[d.path] = slot;
         m_used[d.path] = m_frame;
     }
 }
 
 void Covers::Free(NVGcontext* vg) {
-    // the frame on its way may still draw them: they go to the trash, freed a few frames later (on
-    // leaving, the renderer frees whatever is left)
+    // the slots stay, to be filled with the covers of the next library (on leaving, the renderer frees them)
     (void)vg;
     std::lock_guard lock(m_mutex);
-    for (const auto& [path, image] : m_images) {
-        if (image) m_trash.emplace_back(image, m_frame);
-    }
     m_images.clear();
     m_asked.clear();
     m_used.clear();
     m_decoded.clear(); // decoded for the library just left
+    m_free = m_slots;
 }
 
 bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes) {
@@ -244,31 +248,28 @@ void Covers::Work() {
             int channels = 0;
             unsigned char* pixels = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &channels, 4);
             if (pixels) {
-                // scaled down to fit kMaxSide: each new pixel is the average of the source pixels it covers
-                const int side = std::max(w, h);
-                d.width = side > kMaxSide ? std::max(1, w * kMaxSide / side) : w;
-                d.height = side > kMaxSide ? std::max(1, h * kMaxSide / side) : h;
-                if (d.width == w && d.height == h) {
-                    d.rgba.assign(pixels, pixels + size_t(w) * h * 4);
-                } else {
-                    d.rgba.resize(size_t(d.width) * d.height * 4);
-                    for (int y = 0; y < d.height; y++) {
-                        const int y0 = y * h / d.height;
-                        const int y1 = std::max(y0 + 1, (y + 1) * h / d.height);
-                        for (int x = 0; x < d.width; x++) {
-                            const int x0 = x * w / d.width;
-                            const int x1 = std::max(x0 + 1, (x + 1) * w / d.width);
-                            unsigned sum[4] = {0, 0, 0, 0};
-                            for (int sy = y0; sy < y1; sy++) {
-                                const unsigned char* row = pixels + (size_t(sy) * w + size_t(x0)) * 4;
-                                for (int sx = 0; sx < x1 - x0; sx++) {
-                                    for (int c = 0; c < 4; c++) sum[c] += row[sx * 4 + c];
-                                }
+                // the centre square (covers are drawn as squares), scaled to kMaxSide: each new pixel is the
+                // average of the source pixels it covers
+                const int side = std::min(w, h);
+                const int ox = (w - side) / 2, oy = (h - side) / 2;
+                d.width = d.height = kMaxSide;
+                d.rgba.resize(size_t(kMaxSide) * kMaxSide * 4);
+                for (int y = 0; y < kMaxSide; y++) {
+                    const int y0 = oy + y * side / kMaxSide;
+                    const int y1 = std::max(y0 + 1, oy + (y + 1) * side / kMaxSide);
+                    for (int x = 0; x < kMaxSide; x++) {
+                        const int x0 = ox + x * side / kMaxSide;
+                        const int x1 = std::max(x0 + 1, ox + (x + 1) * side / kMaxSide);
+                        unsigned sum[4] = {0, 0, 0, 0};
+                        for (int sy = y0; sy < y1; sy++) {
+                            const unsigned char* row = pixels + (size_t(sy) * w + size_t(x0)) * 4;
+                            for (int sx = 0; sx < x1 - x0; sx++) {
+                                for (int c = 0; c < 4; c++) sum[c] += row[sx * 4 + c];
                             }
-                            const unsigned n = unsigned((y1 - y0) * (x1 - x0));
-                            unsigned char* out = d.rgba.data() + (size_t(y) * d.width + x) * 4;
-                            for (int c = 0; c < 4; c++) out[c] = static_cast<unsigned char>(sum[c] / n);
                         }
+                        const unsigned n = unsigned((y1 - y0) * (x1 - x0));
+                        unsigned char* out = d.rgba.data() + (size_t(y) * kMaxSide + x) * 4;
+                        for (int c = 0; c < 4; c++) out[c] = static_cast<unsigned char>(sum[c] / n);
                     }
                 }
                 stbi_image_free(pixels);
