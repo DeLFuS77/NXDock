@@ -200,3 +200,17 @@
   compressed with the LZ4 layer of the NCA; a game with its update merged
   with it into one and compressed; its DLC in the same step; newer updates
   merged by themselves; Undo from the library. See docs/compress-games.md.
+- Shops on https keep the key of their certificate the first time they open,
+  and refuse another one after.
+- A new icon: a game card going into the dock.
+
+### Security
+
+- The key of the library or of a shop is sent only to its own server, and a
+  library on https is never looked for over plain http.
+- XCI and XCZ installs check every NCA against its SHA-256.
+- Clean leftovers never removes anything when the console's lists cannot be
+  read, and Clean, Archive and Move wait for the queue to end.
+- Game files, zips, MTP transfers and saves are read within their limits.
+- Compress games and the queue never change the same game at once, and the
+  original goes only after the new copy is read back from the SD card.
