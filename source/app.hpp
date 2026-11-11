@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #pragma once
+#include <future>
 #include <set>
 
 #include <switch.h>
@@ -312,7 +313,11 @@ private:
     // Where it installs, in large: the SD card and the internal memory side by side, each with its
     // free space; `kind` is the touch that chooses one (Dest for a game, FilesDest for the files).
     void DestCards(NVGcontext* vg, float x, float y, float w, float h, bool nand, unsigned long long need, HitKind kind);
-    double m_installed_read_at = -100; // when the Library last read what is installed
+    double m_installed_read_at = -100;
+    // the files of the SD card or a USB disk, read before they are queued (PreflightFiles)
+    std::future<std::vector<InstallJob>> m_preflight;
+    bool m_preflight_dropped = false;
+    void FollowPreflight(); // when the Library last read what is installed
     Tab m_tab_seen = Tab::Library; // the tab of the last frame: the Library reads what is installed again
     void UpdateConsole(u64 down, u64 held);
     void ReadConsole();
@@ -436,7 +441,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

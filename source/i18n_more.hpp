@@ -109,6 +109,8 @@ struct More {
     const char *lb_checking;
     // where it installs, in large
     const char *dc_free_fmt, *dc_left_fmt, *dc_install_sd_fmt, *dc_install_nand_fmt, *dc_switch, *dc_once, *marked_short_fmt;
+    // what files need, read before they are queued
+    const char *pf_title, *pf_body, *dn_title, *dn_body, *dn_line_fmt, *dn_go, *dn_skip;
 };
 
 const More& TrM();

@@ -114,6 +114,10 @@ struct ConfigOverride {
     // NXDock: installs content that needs a newer firmware than the console's, after the
     // check before installing warned about it and the user went on.
     bool allow_newer_firmware{};
+
+    // NXDock: reads the CNMTs only (they are small) and tells in the box what the contents need:
+    // the firmware, and for a DLC the version of its game. Nothing is installed.
+    bool check_only{};
 };
 
 Result InstallFromContainer(ui::ProgressBox* pbox, container::Base* container, const ConfigOverride& override = {});

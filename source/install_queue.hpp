@@ -43,6 +43,9 @@ struct InstallJob {
     u32 required_system = 0; // the firmware it needs, from the library (cnmt form), 0 unknown
     bool checked = false;     // the check before installing was shown for it (2A)
     bool reinstall_ok = false; // installed already, the same version: the user chose to install it over
+    bool preflighted = false;  // a file: what it needs was read before it was queued
+    u32 dlc_needs = 0;         // a DLC: the version of its game it needs (0: any)
+    bool dlc_ok = false;       // the game is older than the DLC asks: the user chose to install it anyway
     bool firmware_ok = false; // the user chose to install it although the firmware is older
     std::vector<NcmContentId> repair; // a repair: these damaged parts go, and only what is missing comes
     u32 version = 0;          // an update: its version
@@ -59,6 +62,12 @@ struct InstallJob {
     u64 merge_saved = 0;   // what that saved
     std::string merge_error; // why it was not (the update stays installed, for Compress games)
 };
+
+// Reads what each file of the SD card or a USB disk needs (the firmware, and for a DLC the version
+// of its game) from its CNMTs, before it is queued: the check before installing then warns of all
+// of them at once, instead of one failing half way through the queue. Slow on many files: run it
+// on a thread of its own.
+void PreflightFiles(std::vector<InstallJob>& jobs);
 
 // What NXDock installed since it was opened, for "Undo what was installed in this session".
 struct SessionItem {

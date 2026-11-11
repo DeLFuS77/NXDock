@@ -111,6 +111,29 @@ Result OpenContainer(sphaira::yati::source::Base& source, std::unique_ptr<sphair
     }
 }
 
+} // namespace
+
+void PreflightFiles(std::vector<InstallJob>& jobs) {
+    for (auto& j : jobs) {
+        if (j.origin != InstallJob::Origin::File || j.preflighted) continue;
+        j.preflighted = true;
+        FileSource file(j.parts);
+        if (R_FAILED(file.GetOpenResult())) continue;
+        std::unique_ptr<sphaira::yati::container::Base> container;
+        const char* kind = "";
+        if (R_FAILED(OpenContainer(file, container, kind))) continue;
+        ProgressBox box;
+        sphaira::yati::ConfigOverride config;
+        config.check_only = true;
+        config.sd_card_install = !j.nand;
+        if (R_FAILED(sphaira::yati::InstallFromContainer(&box, container.get(), config))) continue;
+        j.required_system = std::max(j.required_system, box.FirmwareSeen());
+        j.dlc_needs = std::max(j.dlc_needs, box.DlcNeeds());
+    }
+}
+
+namespace {
+
 // Deletes the damaged parts of a content before it is repaired.
 Result DeleteParts(NcmStorageId storage, const std::vector<NcmContentId>& ids) {
     R_TRY(ncmInitialize());

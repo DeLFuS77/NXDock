@@ -2126,6 +2126,26 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
     }
     R_UNLESS(std::ranges::count(skips, 0) > 0, Result_YatiNcaNotFound);
 
+    if (override.check_only) {
+        // NXDock: what it needs, before it is queued; nothing more is read
+        u32 firmware = 0, dlc_needs = 0;
+        for (size_t i = 0; i < cnmts.size(); i++) {
+            if (skips[i]) continue;
+            const auto& cnmt = cnmts[i];
+            const auto ext = (const ncm::ExtendedHeader*)cnmt.extended_header.data();
+            if (cnmt.key.type == NcmContentMetaType_Application && cnmt.extended_header.size() >= sizeof(ext->application)) {
+                firmware = std::max(firmware, ext->application.required_system_version);
+            } else if (cnmt.key.type == NcmContentMetaType_Patch && cnmt.extended_header.size() >= sizeof(ext->patch)) {
+                firmware = std::max(firmware, ext->patch.required_system_version);
+            } else if (cnmt.key.type == NcmContentMetaType_AddOnContent && cnmt.extended_header.size() >= sizeof(ext->addon)) {
+                dlc_needs = std::max(dlc_needs, ext->addon.required_application_version);
+            }
+        }
+        log_write("[NXDock] check: firmware 0x%X, a DLC needs v%u of its game\n", firmware, dlc_needs);
+        pbox->SetSeen(firmware, dlc_needs);
+        R_SUCCEED();
+    }
+
     // 2. room and firmware.
     R_TRY(yati->CheckBeforeInstall(cnmts, skips));
 

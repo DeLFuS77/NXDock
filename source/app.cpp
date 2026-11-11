@@ -621,6 +621,14 @@ void App::InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float 
     }
 }
 
+void App::FollowPreflight() {
+    if (!m_preflight.valid() || m_preflight.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+    auto jobs = m_preflight.get();
+    if (m_dialog.kind == DialogKind::Preflight) m_dialog = Dialog{};
+    if (m_preflight_dropped) return;
+    AddJobs(std::move(jobs));
+}
+
 void App::DestCards(NVGcontext* vg, float x, float y, float w, float h, bool nand, unsigned long long need, HitKind kind) {
     const Theme& t = m_theme;
     const auto& s = Tr();
@@ -1092,6 +1100,7 @@ bool App::Frame() {
     ReadTouch(down);
     GridSize(m_ui.library_size);
     Update(down, held);
+    FollowPreflight();
     if (m_tab != m_tab_seen) {
         // the Library again: what the console has now, also what DBI or the HOME menu changed
         if (m_tab_seen == Tab::Shops) LeaveShopsTab();
@@ -2203,7 +2212,9 @@ void App::DrawDetail(NVGcontext* vg) {
         if (m_detail_pick[i]) picked_size += g.files[i].size;
     }
     u32 firmware = 0;
-    for (const auto& f : g.files) firmware = std::max(firmware, f.required_system);
+    for (const auto& f : g.files) {
+        if (f.kind != CatalogFile::Kind::Dlc) firmware = std::max(firmware, f.required_system); // a DLC's is its game's version
+    }
     struct Fact { const char* label; std::string value; NVGcolor color; };
     std::vector<Fact> facts;
     if (newest) {
@@ -2491,7 +2502,11 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
     job.kind = f.kind;
     job.title_id = f.title_id;
     job.size = f.size;
-    job.required_system = f.required_system;
+    if (f.kind == CatalogFile::Kind::Dlc) {
+        job.dlc_needs = f.required_system; // for a DLC, the version of its game it needs
+    } else {
+        job.required_system = f.required_system;
+    }
     return job;
 }
 
@@ -2828,6 +2843,55 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
             if (j.title_id == 0) j.title_id = id;
             break;
         }
+    }
+    // the files of the SD card or a USB disk: what each needs, read before anything (on a thread)
+    if (std::any_of(jobs.begin(), jobs.end(), [](const InstallJob& j) { return j.origin == InstallJob::Origin::File && !j.preflighted; })) {
+        m_preflight_dropped = false;
+        m_preflight = std::async(std::launch::async, [jobs]() mutable {
+            PreflightFiles(jobs);
+            return jobs;
+        });
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Preflight;
+        m_dialog.single = true;
+        return;
+    }
+    // a DLC whose game is older than it asks (neither installed nor coming in this queue)
+    {
+        const auto installed = m_queue ? m_queue->Installed() : std::map<u64, InstalledState>{};
+        const auto idof = [](const InstallJob& j) {
+            u64 id = j.title_id;
+            u32 v = 0;
+            if (j.origin != InstallJob::Origin::Library) TitleFromName(j.game + " " + j.label, id, v);
+            return id;
+        };
+        std::map<u64, u32> coming;
+        for (const auto& j : jobs) {
+            const u64 id = idof(j);
+            if (id && TitleKind(id) == 1) {
+                u64 named = 0;
+                u32 v = j.version;
+                if (j.origin != InstallJob::Origin::Library) TitleFromName(j.game + " " + j.label, named, v);
+                coming[id & ~u64(0xFFF)] = std::max(coming[id & ~u64(0xFFF)], v);
+            }
+        }
+        bool any = false;
+        for (const auto& j : jobs) {
+            const u64 id = idof(j);
+            if (!j.dlc_needs || j.dlc_ok || !id || TitleKind(id) != 2) continue;
+            const u64 app = (id - 0x1000) & ~u64(0xFFF);
+            u32 have = coming.count(app) ? coming[app] : 0;
+            const auto it = installed.find(app);
+            if (it != installed.end()) have = std::max(have, it->second.patch);
+            if (j.dlc_needs > have) any = true;
+        }
+        if (any) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::DlcNeeds;
+            m_dialog.jobs = std::move(jobs);
+            return;
+        }
+        for (auto& j : jobs) j.dlc_ok = true;
     }
     // the same version installed already: asked first, as it would end at once and change nothing
     {
@@ -4156,6 +4220,40 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::SpaceDump:
             SpaceDialogText(title, body, primary);
             break;
+        case DialogKind::Preflight:
+            title = TrM().pf_title;
+            body = TrM().pf_body;
+            cancel_label = s.cancel;
+            break;
+        case DialogKind::DlcNeeds: {
+            const More& m = TrM();
+            const auto installed = m_queue ? m_queue->Installed() : std::map<u64, InstalledState>{};
+            for (const auto& j : m_dialog.jobs) {
+                u64 id = j.title_id;
+                u32 v = 0;
+                if (j.origin != InstallJob::Origin::Library) TitleFromName(j.game + " " + j.label, id, v);
+                if (!j.dlc_needs || !id || TitleKind(id) != 2) continue;
+                const u64 app = (id - 0x1000) & ~u64(0xFFF);
+                u32 have = 0;
+                const auto it = installed.find(app);
+                if (it != installed.end()) have = it->second.patch;
+                for (const auto& o : m_dialog.jobs) {
+                    u64 oid = o.title_id;
+                    u32 ov = o.version;
+                    if (o.origin != InstallJob::Origin::Library) TitleFromName(o.game + " " + o.label, oid, ov);
+                    if (oid && TitleKind(oid) == 1 && (oid & ~u64(0xFFF)) == app) have = std::max(have, ov);
+                }
+                if (j.dlc_needs <= have) continue;
+                char right[120];
+                std::snprintf(right, sizeof(right), m.dn_line_fmt, j.dlc_needs, have);
+                lines.push_back({j.game + " · " + j.label, "", right, t.orange});
+            }
+            title = m.dn_title;
+            body = m.dn_body;
+            primary = m.dn_go;
+            cancel_label = m.dn_skip;
+            break;
+        }
         case DialogKind::Reinstall: {
             const More& m = TrM();
             int count = 0;
@@ -4635,6 +4733,43 @@ void App::UpdateDialog(u64 down, u64 held) {
         if (Repeat(down, held, HidNpadButton_AnyLeft)) m_dialog.focus = 0;
         if (Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.focus = 1; // a disabled action falls back when drawn
     }
+    if (m_dialog.kind == DialogKind::Preflight && (down & HidNpadButton_B)) {
+        // not waited for: what it reads is dropped
+        m_preflight_dropped = true;
+        m_dialog = Dialog{};
+        return;
+    }
+    if (m_dialog.kind == DialogKind::DlcNeeds && ((down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0))) {
+        // those DLC stay out; the rest goes on
+        std::vector<InstallJob> rest;
+        const auto installed = m_queue ? m_queue->Installed() : std::map<u64, InstalledState>{};
+        for (auto& j : m_dialog.jobs) {
+            u64 id = j.title_id;
+            u32 v = 0;
+            if (j.origin != InstallJob::Origin::Library) TitleFromName(j.game + " " + j.label, id, v);
+            bool behind = false;
+            if (j.dlc_needs && id && TitleKind(id) == 2) {
+                const u64 app = (id - 0x1000) & ~u64(0xFFF);
+                u32 have = 0;
+                const auto it = installed.find(app);
+                if (it != installed.end()) have = it->second.patch;
+                for (const auto& o : m_dialog.jobs) {
+                    u64 oid = o.title_id;
+                    u32 ov = o.version;
+                    if (o.origin != InstallJob::Origin::Library) TitleFromName(o.game + " " + o.label, oid, ov);
+                    if (oid && TitleKind(oid) == 1 && (oid & ~u64(0xFFF)) == app) have = std::max(have, ov);
+                }
+                behind = j.dlc_needs > have;
+            }
+            if (!behind) {
+                j.dlc_ok = true;
+                rest.push_back(std::move(j));
+            }
+        }
+        m_dialog = Dialog{};
+        if (!rest.empty()) AddJobs(std::move(rest));
+        return;
+    }
     if (m_dialog.kind == DialogKind::Reinstall && ((down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0))) {
         // skipped: those installed stay out, the rest goes on
         std::vector<InstallJob> rest;
@@ -4770,6 +4905,13 @@ void App::ConfirmDialog() {
         case DialogKind::SpaceDump:
             ConfirmSpaceDialog();
             break;
+        case DialogKind::DlcNeeds: {
+            auto jobs = std::move(m_dialog.jobs);
+            for (auto& j : jobs) j.dlc_ok = true;
+            m_dialog = Dialog{};
+            AddJobs(std::move(jobs));
+            return;
+        }
         case DialogKind::Reinstall: {
             auto jobs = std::move(m_dialog.jobs);
             for (auto& j : jobs) j.reinstall_ok = true;

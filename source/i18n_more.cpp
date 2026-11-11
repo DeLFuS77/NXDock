@@ -529,6 +529,13 @@ constexpr More kEnglish{
     .dc_switch = "SD card or internal memory",
     .dc_once = "For this install only. The next one goes to the SD card again.",
     .marked_short_fmt = "%d marked · %s",
+    .pf_title = "Checking the files…",
+    .pf_body = "NXDock reads what each file needs before it starts: the firmware, and the version of the game for a DLC.",
+    .dn_title = "These DLC need a newer version of their game",
+    .dn_body = "They install, but the game will not open them until it has that version: install its update first.",
+    .dn_line_fmt = "needs v%u · the game has v%u",
+    .dn_go = "Install anyway",
+    .dn_skip = "Leave these DLC out",
 };
 
 constexpr More kSpanish{
@@ -1051,6 +1058,13 @@ constexpr More kSpanish{
     .dc_switch = "Tarjeta SD o memoria interna",
     .dc_once = "Solo para esta instalación. La siguiente vuelve a la tarjeta SD.",
     .marked_short_fmt = "%d marcados · %s",
+    .pf_title = "Comprobando los archivos…",
+    .pf_body = "NXDock lee lo que pide cada archivo antes de empezar: el firmware y, en un DLC, la versión del juego.",
+    .dn_title = "Estos DLC piden una versión más nueva de su juego",
+    .dn_body = "Se instalan, pero el juego no los abrirá hasta tener esa versión: instala antes su actualización.",
+    .dn_line_fmt = "pide la v%u · el juego tiene la v%u",
+    .dn_go = "Instalar igualmente",
+    .dn_skip = "Dejar fuera estos DLC",
 };
 
 constexpr More kFrench{
@@ -1573,6 +1587,13 @@ constexpr More kFrench{
     .dc_switch = "Carte SD ou mémoire interne",
     .dc_once = "Pour cette installation seulement. La suivante revient sur la carte SD.",
     .marked_short_fmt = "%d cochés · %s",
+    .pf_title = "Vérification des fichiers…",
+    .pf_body = "NXDock lit ce que demande chaque fichier avant de commencer : le firmware et, pour un DLC, la version du jeu.",
+    .dn_title = "Ces DLC demandent une version plus récente de leur jeu",
+    .dn_body = "Ils s'installent, mais le jeu ne les ouvrira pas avant cette version : installez d'abord sa mise à jour.",
+    .dn_line_fmt = "demande v%u · le jeu a v%u",
+    .dn_go = "Installer quand même",
+    .dn_skip = "Laisser ces DLC",
 };
 
 constexpr More kGerman{
@@ -2095,6 +2116,13 @@ constexpr More kGerman{
     .dc_switch = "SD-Karte oder interner Speicher",
     .dc_once = "Nur für diese Installation. Die nächste geht wieder auf die SD-Karte.",
     .marked_short_fmt = "%d markiert · %s",
+    .pf_title = "Dateien werden geprüft…",
+    .pf_body = "NXDock liest vor dem Start, was jede Datei braucht: die Firmware und bei einem DLC die Version des Spiels.",
+    .dn_title = "Diese DLC brauchen eine neuere Version ihres Spiels",
+    .dn_body = "Sie werden installiert, aber das Spiel öffnet sie erst mit dieser Version: installiere zuerst sein Update.",
+    .dn_line_fmt = "braucht v%u · das Spiel hat v%u",
+    .dn_go = "Trotzdem installieren",
+    .dn_skip = "Diese DLC weglassen",
 };
 
 constexpr More kItalian{
@@ -2617,6 +2645,13 @@ constexpr More kItalian{
     .dc_switch = "Scheda SD o memoria interna",
     .dc_once = "Solo per questa installazione. La prossima torna sulla scheda SD.",
     .marked_short_fmt = "%d segnati · %s",
+    .pf_title = "Controllo dei file…",
+    .pf_body = "NXDock legge cosa chiede ogni file prima di iniziare: il firmware e, per un DLC, la versione del gioco.",
+    .dn_title = "Questi DLC chiedono una versione più recente del loro gioco",
+    .dn_body = "Si installano, ma il gioco non li aprirà finché non ha quella versione: installa prima il suo aggiornamento.",
+    .dn_line_fmt = "chiede v%u · il gioco ha v%u",
+    .dn_go = "Installa comunque",
+    .dn_skip = "Lascia fuori questi DLC",
 };
 
 constexpr More kPortuguese{
@@ -3139,6 +3174,13 @@ constexpr More kPortuguese{
     .dc_switch = "Cartão SD ou memória interna",
     .dc_once = "Só para esta instalação. A seguinte volta ao cartão SD.",
     .marked_short_fmt = "%d marcados · %s",
+    .pf_title = "A verificar os ficheiros…",
+    .pf_body = "O NXDock lê o que cada ficheiro pede antes de começar: o firmware e, num DLC, a versão do jogo.",
+    .dn_title = "Estes DLC pedem uma versão mais nova do jogo",
+    .dn_body = "Instalam-se, mas o jogo não os abre até ter essa versão: instala antes a atualização.",
+    .dn_line_fmt = "pede a v%u · o jogo tem a v%u",
+    .dn_go = "Instalar mesmo assim",
+    .dn_skip = "Deixar estes DLC de fora",
 };
 
 constexpr More kDutch{
@@ -3661,6 +3703,13 @@ constexpr More kDutch{
     .dc_switch = "SD-kaart of intern geheugen",
     .dc_once = "Alleen voor deze installatie. De volgende gaat weer naar de SD-kaart.",
     .marked_short_fmt = "%d gemarkeerd · %s",
+    .pf_title = "Bestanden controleren…",
+    .pf_body = "NXDock leest vooraf wat elk bestand nodig heeft: de firmware en, voor een DLC, de versie van het spel.",
+    .dn_title = "Deze DLC vragen een nieuwere versie van hun spel",
+    .dn_body = "Ze worden geïnstalleerd, maar het spel opent ze pas met die versie: installeer eerst de update.",
+    .dn_line_fmt = "vraagt v%u · het spel heeft v%u",
+    .dn_go = "Toch installeren",
+    .dn_skip = "Deze DLC weglaten",
 };
 
 constexpr More kRussian{
@@ -4183,6 +4232,13 @@ constexpr More kRussian{
     .dc_switch = "SD-карта или внутренняя память",
     .dc_once = "Только для этой установки. Следующая снова пойдёт на SD-карту.",
     .marked_short_fmt = "Отмечено: %d · %s",
+    .pf_title = "Проверка файлов…",
+    .pf_body = "NXDock заранее читает, что нужно каждому файлу: прошивку, а для DLC — версию игры.",
+    .dn_title = "Этим DLC нужна более новая версия игры",
+    .dn_body = "Они установятся, но игра не откроет их без этой версии: сначала установите обновление.",
+    .dn_line_fmt = "нужна v%u · у игры v%u",
+    .dn_go = "Всё равно установить",
+    .dn_skip = "Не ставить эти DLC",
 };
 
 constexpr More kJapanese{
@@ -4705,6 +4761,13 @@ constexpr More kJapanese{
     .dc_switch = "SDカードか本体保存メモリー",
     .dc_once = "今回のインストールだけです。次はSDカードに戻ります。",
     .marked_short_fmt = "%d 件選択 · %s",
+    .pf_title = "ファイルを確認中…",
+    .pf_body = "NXDock は始める前に各ファイルが必要とするものを読みます: ファームウェアと、DLC ならゲームのバージョン。",
+    .dn_title = "これらの DLC はゲームの新しいバージョンが必要です",
+    .dn_body = "インストールはできますが、そのバージョンになるまでゲームは開けません。先に更新データをインストールしてください。",
+    .dn_line_fmt = "v%u が必要 · ゲームは v%u",
+    .dn_go = "そのままインストール",
+    .dn_skip = "これらの DLC を外す",
 };
 
 constexpr More kKorean{
@@ -5227,6 +5290,13 @@ constexpr More kKorean{
     .dc_switch = "SD 카드 또는 본체 저장 메모리",
     .dc_once = "이번 설치만 해당합니다. 다음은 다시 SD 카드로 갑니다.",
     .marked_short_fmt = "%d개 선택 · %s",
+    .pf_title = "파일 확인 중…",
+    .pf_body = "NXDock은 시작하기 전에 각 파일이 필요로 하는 것을 읽습니다: 펌웨어와 DLC의 경우 게임 버전.",
+    .dn_title = "이 DLC는 더 새 게임 버전이 필요합니다",
+    .dn_body = "설치는 되지만 그 버전이 될 때까지 게임이 열지 않습니다. 먼저 업데이트를 설치하세요.",
+    .dn_line_fmt = "v%u 필요 · 게임은 v%u",
+    .dn_go = "그래도 설치",
+    .dn_skip = "이 DLC 빼기",
 };
 
 constexpr More kChinese{
@@ -5749,6 +5819,13 @@ constexpr More kChinese{
     .dc_switch = "SD 卡或主机内存",
     .dc_once = "仅本次安装。下一次仍安装到 SD 卡。",
     .marked_short_fmt = "已选 %d 个 · %s",
+    .pf_title = "正在检查文件…",
+    .pf_body = "NXDock 会在开始前读取每个文件的需求：固件，以及 DLC 需要的游戏版本。",
+    .dn_title = "这些 DLC 需要更新的游戏版本",
+    .dn_body = "可以安装，但游戏达到该版本前不会打开它们：请先安装更新。",
+    .dn_line_fmt = "需要 v%u · 游戏为 v%u",
+    .dn_go = "仍然安装",
+    .dn_skip = "不装这些 DLC",
 };
 
 // In the order of LanguageName in i18n.cpp.

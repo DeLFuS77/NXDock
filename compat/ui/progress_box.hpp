@@ -48,6 +48,14 @@ public:
     // bytes not downloaded because the console had them already (16A)
     u64 SavedBytes() const { return m_saved.load(); }
     u32 NeededFirmware() const { return m_needed_fw.load(); }
+    // a check only (ConfigOverride::check_only): the firmware the contents need, and for a DLC the
+    // version of its game it needs
+    u32 FirmwareSeen() const { return m_fw_seen.load(); }
+    u32 DlcNeeds() const { return m_dlc_needs.load(); }
+    void SetSeen(u32 firmware, u32 dlc_needs) {
+        m_fw_seen = firmware;
+        m_dlc_needs = dlc_needs;
+    }
     std::string Current() {
         std::lock_guard lock(m_mutex);
         return m_what;
@@ -94,7 +102,7 @@ private:
     std::atomic<bool> m_cancel{false};
     std::atomic<Phase> m_phase{Phase::Starting};
     std::atomic<u64> m_net{0}, m_ready{0}, m_done_bytes{0}, m_current{0}, m_total{0}, m_needed{0}, m_saved{0};
-    std::atomic<u32> m_checked{0}, m_ncas{0}, m_needed_fw{0};
+    std::atomic<u32> m_checked{0}, m_ncas{0}, m_needed_fw{0}, m_fw_seen{0}, m_dlc_needs{0};
     std::atomic<int> m_threads{-1};
     std::mutex m_mutex;
     std::string m_what;
