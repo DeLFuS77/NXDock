@@ -4,6 +4,7 @@
 
 #include <nanovg.h>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <map>
@@ -23,6 +24,8 @@ public:
     void Stop();
     // The image of a cover, or 0 while it is not ready (asking for it puts it in the line).
     int Get(const std::string& path);
+    // True while a cover is still on its way (not yet fetched, or fetched again after a failure).
+    bool Loading(const std::string& path);
     // Makes the decoded covers into images; call once per frame on the drawing thread.
     void Upload(NVGcontext* vg);
     void Free(NVGcontext* vg);
@@ -34,7 +37,7 @@ private:
         std::vector<unsigned char> rgba;
     };
     void Work();
-    bool Fetch(const std::string& path, std::vector<unsigned char>& bytes);
+    bool Fetch(const std::string& path, std::vector<unsigned char>& bytes, bool& retry);
 
     std::string m_url, m_key;
     std::vector<std::thread> m_threads;
@@ -50,6 +53,8 @@ private:
     unsigned long m_frame = 0;
     // the images on the GPU, made once and filled with one cover after another; the ones holding none
     std::vector<int> m_slots, m_free;
+    // covers whose download failed, and when they may be asked again
+    std::map<std::string, std::chrono::steady_clock::time_point> m_retry;
     std::atomic<bool> m_stop{false};
 };
 

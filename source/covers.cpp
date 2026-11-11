@@ -2,6 +2,8 @@
 // Copyright (C) 2026 DeLFuS77
 #include "covers.hpp"
 
+#include <chrono>
+
 #include <sys/stat.h>
 #include <cstdio>
 #include <algorithm>
@@ -113,6 +115,11 @@ int Covers::Get(const std::string& path) {
         if (it->second) m_used[path] = m_frame;
         return it->second;
     }
+    if (const auto retry = m_retry.find(path); retry != m_retry.end()) {
+        // its download failed a moment ago: asked again after a short wait, not every frame
+        if (std::chrono::steady_clock::now() < retry->second) return 0;
+        m_retry.erase(retry);
+    }
     if (m_threads.empty() && path.rfind("ns:", 0) == 0) {
         // the icons of the console need no library: the workers start for them too
         m_stop = false;
@@ -181,6 +188,12 @@ void Covers::Upload(NVGcontext* vg) {
     }
 }
 
+bool Covers::Loading(const std::string& path) {
+    if (path.empty()) return false;
+    std::lock_guard lock(m_mutex);
+    return !m_images.count(path) && !m_threads.empty();
+}
+
 void Covers::Free(NVGcontext* vg) {
     // the slots stay, to be filled with the covers of the next library (on leaving, the renderer frees them)
     (void)vg;
@@ -188,11 +201,13 @@ void Covers::Free(NVGcontext* vg) {
     m_images.clear();
     m_asked.clear();
     m_used.clear();
+    m_retry.clear();
     m_decoded.clear(); // decoded for the library just left
     m_free = m_slots;
 }
 
-bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes) {
+bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes, bool& retry) {
+    retry = false;
     // the icon a game has on the console (In the console, of the Installed tab)
     if (path.rfind("ns:", 0) == 0) {
         const u64 app = std::strtoull(path.c_str() + 3, nullptr, 16);
@@ -221,6 +236,8 @@ bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes) {
     }
     const auto r = http::GetLarge(m_url + path, m_key, 10000, 4 * 1024 * 1024);
     if (r.status != 200 || r.body.empty()) {
+        // no answer, a busy or failing app: tried again later; a 404 is a game without a cover
+        retry = r.status == 0 || r.status == 429 || r.status >= 500;
         return false;
     }
     bytes.assign(r.body.begin(), r.body.end());
@@ -243,7 +260,8 @@ void Covers::Work() {
         d.path = path;
         int w = 0, h = 0, comp = 0;
         // a small file may say it is a huge picture: those are left out before decoding
-        if (Fetch(path, bytes) && stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &comp) && w > 0 && h > 0 && w <= 4096 &&
+        bool retry = false;
+        if (Fetch(path, bytes, retry) && stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &comp) && w > 0 && h > 0 && w <= 4096 &&
             h <= 4096) {
             int channels = 0;
             unsigned char* pixels = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &channels, 4);
@@ -276,7 +294,11 @@ void Covers::Work() {
             }
         }
         std::lock_guard lock(m_mutex);
-        if (d.rgba.empty()) {
+        if (d.rgba.empty() && retry) {
+            // the download failed (often while scrolling fast): asked again when it is on screen again
+            m_asked.erase(path);
+            m_retry[path] = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        } else if (d.rgba.empty()) {
             // no cover: remembered as none, the placeholder stays
             m_images[path] = 0;
         } else {

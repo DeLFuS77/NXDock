@@ -497,6 +497,19 @@ void App::CheckBattery() {
     }
 }
 
+// A cover still on its way (as chosen, A): a small blue circle turning at its corner, over the placeholder.
+void App::CoverLoading(NVGcontext* vg, float x, float y, float size, const std::string& path) {
+    if (size < 30 || !m_covers.Loading(path)) return;
+    const float r = std::clamp(size * 0.06f, 5.f, 11.f);
+    const float m = std::max(5.f, size * 0.05f);
+    const float cx = x + size - m - r - 3, cy = y + size - m - r - 3;
+    nvgBeginPath(vg);
+    nvgCircle(vg, cx, cy, r + 4);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.35f));
+    nvgFill(vg);
+    ui::Spinner(vg, cx, cy, r, m_theme.work, m_time);
+}
+
 void App::CheckWifi() {
     if (!m_nifm || m_time - m_wifi_checked < 3) {
         return;
@@ -1602,6 +1615,7 @@ void App::DrawTransitions(NVGcontext* vg) {
     nvgFill(vg);
     ui::Cover(vg, m_theme, x, y, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10 + 4 * k,
               m_covers.Get(g.cover));
+    CoverLoading(vg, x, y, s, g.cover);
 }
 
 void App::InitRumble() {
@@ -2410,6 +2424,7 @@ void App::DrawLibrary(NVGcontext* vg) {
         const std::string format = FormatOf(g);
         ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), g_cover >= 110 ? format.c_str() : nullptr, false,
                   false, 10, m_covers.Get(g.cover));
+        CoverLoading(vg, cx, cy, g_cover, g.cover);
         InstalledBadge(vg, g, cx, cy, g_cover);
     }
     if (m_focus >= 0 && m_focus < int(m_view.size())) {
@@ -2496,6 +2511,7 @@ void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float
     const std::string format = FormatOf(g);
     ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), s >= 110 ? format.c_str() : nullptr, false, false, 10,
               m_covers.Get(g.cover));
+    CoverLoading(vg, 0, 0, s, g.cover);
     InstalledBadge(vg, g, 0, 0, s);
     // a light that passes once over it
     if (age > 0.08 && age < 0.75) {
@@ -2538,6 +2554,7 @@ void App::DrawDetail(NVGcontext* vg) {
         nvgFillPaint(vg, nvgBoxGradient(vg, cx, cy + 14, cs, cs, 14, 30, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
         nvgFill(vg);
         ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, m_covers.Get(g.cover));
+        CoverLoading(vg, cx, cy, cs, g.cover);
     }
 
     // name and facts
@@ -3421,6 +3438,7 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     // as chosen (1A): the picture, the name and how many wait, the bar, then the figures
     ui::Cover(vg, t, 54, qy + 10, 34, PlaceholderColor(it->color_key), Initial(it->game).c_str(), nullptr, false, false, 7,
               m_covers.Get(it->cover));
+    CoverLoading(vg, 54, qy + 10, 34, it->cover);
     char title[160];
     std::snprintf(title, sizeof(title), s.installing_name, it->game.c_str());
     std::string head = title;
@@ -3497,6 +3515,7 @@ void App::DrawQueue(NVGcontext* vg) {
         AddHit(px, py, pw, ph, HitKind::QueueRow, 0);
         ui::Cover(vg, t, px + 24, py + 24, 120, PlaceholderColor(j.color_key), Initial(j.game).c_str(), nullptr, false, false, 10,
                   m_covers.Get(j.cover));
+        CoverLoading(vg, px + 24, py + 24, 120, j.cover);
         const float cx = px + 168;
         nvgSave(vg);
         nvgScissor(vg, cx, py + 16, pw - 168 - 140, 48);
@@ -3675,6 +3694,7 @@ void App::DrawQueue(NVGcontext* vg) {
         AddHit(54, y - 5, kWidth - 108, 54, HitKind::QueueRow, r);
         nvgGlobalAlpha(vg, waiting ? 0.55f : 1.f);
         ui::Cover(vg, t, 62, y, 44, PlaceholderColor(j.color_key), Initial(j.game).c_str(), nullptr, false, false, 8, m_covers.Get(j.cover));
+        CoverLoading(vg, 62, y, 44, j.cover);
         nvgSave(vg);
         nvgScissor(vg, 122, y, 600, 44);
         ui::Marquee(vg, 122, y + 22, 590, 17, t.text, FileLabel(j).c_str(), m_time);
@@ -4284,6 +4304,7 @@ void App::DrawSession(NVGcontext* vg) {
         const bool gone = i.state == SessionItem::State::Removed;
         nvgGlobalAlpha(vg, gone ? 0.5f : 1.f);
         ui::Cover(vg, t, 62, y + 5, 56, PlaceholderColor(i.color_key), Initial(i.game).c_str(), nullptr, false, false, 9, m_covers.Get(i.cover));
+        CoverLoading(vg, 62, y + 5, 56, i.cover);
         nvgSave(vg);
         nvgScissor(vg, 134, y, 540, pitch);
         ui::Text(vg, 134, y + 23, 18, t.text, i.game.c_str());

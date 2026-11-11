@@ -421,6 +421,7 @@ private:
     double m_battery_checked = -100;
     // the WiFi in the top bar (1A): its coverage read every few seconds; a tap or the right stick
     // opens a card with the network, the coverage and the addresses
+    void CoverLoading(NVGcontext* vg, float x, float y, float size, const std::string& path);
     void CheckWifi();
     void DrawWifiCard(NVGcontext* vg);
     bool m_nifm = false;
