@@ -5,6 +5,7 @@
 // real HTTPS server taken with the right pin and refused with another.
 // Usage: tls_pin_test <cert.pem> <expected pin> [<https url> <cert of another key>]
 #include "tls_pin.hpp"
+#include "http.hpp"
 
 #include <curl/curl.h>
 #include <cstdio>
@@ -59,6 +60,16 @@ int main(int argc, char** argv) {
     Sha256(reinterpret_cast<const uint8_t*>("abc"), 3, h);
     Check(Base64Encode(h, 32) == "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=", "SHA-256 of abc");
     Check(PinOfPem("not a certificate").empty(), "no pin without a certificate");
+
+    // a key goes only to the origin it belongs to
+    using nxdock::http::Origin;
+    using nxdock::http::SameOrigin;
+    Check(Origin("http://192.168.1.5:3000/install/f/1") == "http://192.168.1.5:3000", "origin with a port");
+    Check(Origin("HTTPS://Lib.Example") == "https://lib.example:443" && Origin("http://lib") == "http://lib:80", "origin: case and default port");
+    Check(SameOrigin("http://lib:80/a", "http://lib/b") && !SameOrigin("http://lib/a", "https://lib/a"), "same origin: port and scheme");
+    Check(!SameOrigin("http://192.168.1.5:3000@evil:80/x", "http://192.168.1.5:3000"), "a user in the address is another host");
+    Check(!SameOrigin("http://192.168.1.5:3000.evil.com/x", "http://192.168.1.5:3000"), "a longer host is another host");
+    Check(Origin("ftp://lib/x").empty() && Origin("/install/f/1").empty() && !SameOrigin("", ""), "no origin without http");
 
     if (argc < 3) {
         std::printf("%s\n", g_failed ? "FAILED" : "all passed");

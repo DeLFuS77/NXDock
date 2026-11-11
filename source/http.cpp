@@ -5,6 +5,7 @@
 
 #include <curl/curl.h>
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 
@@ -188,6 +189,41 @@ Response Receive(const std::string& url, const std::string& key, uint64_t max_by
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &s);
     curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
     return Finish(curl, curl_easy_perform(curl));
+}
+
+std::string Origin(const std::string& url) {
+    std::string lower;
+    for (char c : url) lower += char(std::tolower(static_cast<unsigned char>(c)));
+    std::string scheme, port;
+    size_t at;
+    if (lower.rfind("http://", 0) == 0) {
+        scheme = "http";
+        port = "80";
+        at = 7;
+    } else if (lower.rfind("https://", 0) == 0) {
+        scheme = "https";
+        port = "443";
+        at = 8;
+    } else {
+        return "";
+    }
+    const size_t end = lower.find_first_of("/?#", at);
+    std::string authority = lower.substr(at, end == std::string::npos ? std::string::npos : end - at);
+    // a user in the address would send the key to another host than the one it seems
+    if (authority.empty() || authority.find('@') != std::string::npos || authority.find('\\') != std::string::npos) return "";
+    std::string host = authority;
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos && authority.find(']', colon) == std::string::npos) {
+        host = authority.substr(0, colon);
+        port = authority.substr(colon + 1);
+        if (port.empty() || port.find_first_not_of("0123456789") != std::string::npos) return "";
+    }
+    return scheme + "://" + host + ":" + port;
+}
+
+bool SameOrigin(const std::string& a, const std::string& b) {
+    const std::string x = Origin(a);
+    return !x.empty() && x == Origin(b);
 }
 
 Response Get(const std::string& url, const std::string& key, long timeout_ms) {

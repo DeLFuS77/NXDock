@@ -27,7 +27,8 @@ private:
 
 class FileSink final : public Sink {
 public:
-    FileSink(FILE* f, std::string path) : m_f(f), m_path(std::move(path)) {
+    // writes to path + ".part"; the real name only when the whole file arrived
+    FileSink(FILE* f, std::string path) : m_f(f), m_path(std::move(path)), m_part(m_path + ".part") {
         m_buf.resize(1024 * 1024);
         std::setvbuf(m_f, m_buf.data(), _IOFBF, m_buf.size());
     }
@@ -38,13 +39,19 @@ public:
     bool Close(bool ok) override {
         const bool closed = std::fclose(m_f) == 0;
         m_f = nullptr;
-        if (!ok || !closed) std::remove(m_path.c_str()); // never half a file
-        return ok && closed;
+        if (!ok || !closed) {
+            std::remove(m_part.c_str()); // never half a file, and the old one stays
+            return false;
+        }
+        if (std::rename(m_part.c_str(), m_path.c_str()) == 0) return true;
+        // the SD card does not rename over a file: take the old one away first
+        std::remove(m_path.c_str());
+        return std::rename(m_part.c_str(), m_path.c_str()) == 0;
     }
 
 private:
     FILE* m_f;
-    std::string m_path;
+    std::string m_path, m_part;
     std::vector<char> m_buf;
 };
 
@@ -119,7 +126,7 @@ std::unique_ptr<Sink> FolderStorage::Create(const std::string& path, uint64_t si
     Space(total, free);
     if (total && size > free) return nullptr;
     const std::string full = Full(path);
-    FILE* f = std::fopen(full.c_str(), "wb");
+    FILE* f = std::fopen((full + ".part").c_str(), "wb");
     return f ? std::make_unique<FileSink>(f, full) : nullptr;
 }
 

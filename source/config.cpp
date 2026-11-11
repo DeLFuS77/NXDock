@@ -55,10 +55,18 @@ bool Config::Save() const {
     if (!f) {
         return false;
     }
-    std::fprintf(f, "url=%s\nkey=%s\nid=%s\nname=%s\ntheme=%s\n", url.c_str(), key.c_str(), id.c_str(), name.c_str(),
+    // a value from the server never adds a line of its own
+    const auto line = [](const std::string& v) {
+        std::string out;
+        for (char c : v) {
+            if (static_cast<unsigned char>(c) >= 0x20 && c != 0x7F) out += c;
+        }
+        return out;
+    };
+    std::fprintf(f, "url=%s\nkey=%s\nid=%s\nname=%s\ntheme=%s\n", line(url).c_str(), line(key).c_str(), line(id).c_str(), line(name).c_str(),
                  light ? "light" : "dark");
     if (!pin.empty()) {
-        std::fprintf(f, "pin=%s\n", pin.c_str());
+        std::fprintf(f, "pin=%s\n", line(pin).c_str());
     }
     const bool ok = std::fclose(f) == 0;
     if (!ok) {

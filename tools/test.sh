@@ -74,7 +74,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   openssl req -x509 -newkey rsa:2048 -nodes -keyout rsa.key -out rsa.pem -days 2 -subj /CN=library 2>/dev/null
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout ec.key -out ec.pem -days 2 -subj /CN=other 2>/dev/null
   cd /src
-  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/inc -o /tmp/tls_pin_test tests/tls_pin_test.cpp source/tls_pin.cpp /usr/lib/x86_64-linux-gnu/libcurl.so.4
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/inc -DNXDOCK_VERSION=\"test\" -o /tmp/tls_pin_test tests/tls_pin_test.cpp source/tls_pin.cpp source/http.cpp /usr/lib/x86_64-linux-gnu/libcurl.so.4 -lpthread
   pin_of() { openssl x509 -in "$1" -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64; }
   /tmp/tls_pin_test /tmp/tls/ec.pem "sha256//$(pin_of /tmp/tls/ec.pem)"
   python3 tests/https_server.py 18766 /tmp/tls/rsa.pem /tmp/tls/rsa.key &

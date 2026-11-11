@@ -26,6 +26,14 @@ constexpr u8 HEADER_KEY_SRC[0x20] = {
 } // namespace
 
 void parse_hex_key(void* key, const char* hex) {
+    // NXDock: a name shorter than 32 hex characters gives a zero key (which matches no content
+    // or ticket) instead of reading past its end.
+    std::memset(key, 0, 0x10);
+    for (size_t i = 0; i < 0x20; i++) {
+        if (!std::isxdigit((unsigned char)hex[i])) {
+            return;
+        }
+    }
     char low[0x11]{};
     char upp[0x11]{};
     std::memcpy(low, hex, 0x10);

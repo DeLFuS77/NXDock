@@ -29,7 +29,9 @@ uint16_t Get16(const uint8_t* p) {
 
 bool PatchCnmt(std::vector<uint8_t>& s, const CnmtLayers& l, const uint8_t old_id[16], const uint8_t new_id[16], const uint8_t new_hash[32],
                uint64_t new_size, const HashFn& hash, uint8_t master[32]) {
-    if (l.block_size == 0 || l.pfs0_offset + l.pfs0_size > s.size() || l.hash_offset + l.hash_size > s.size()) return false;
+    // offsets and sizes from the file are compared so that their sum cannot wrap
+    if (l.block_size == 0 || l.pfs0_offset > s.size() || l.pfs0_size > s.size() - l.pfs0_offset ||
+        l.hash_offset > s.size() || l.hash_size > s.size() - l.hash_offset) return false;
     uint8_t* pfs = s.data() + l.pfs0_offset;
     if (l.pfs0_size < 0x10 || std::memcmp(pfs, "PFS0", 4) != 0) return false;
     const uint32_t files = Get32(pfs + 4), strings = Get32(pfs + 8);
@@ -40,14 +42,19 @@ bool PatchCnmt(std::vector<uint8_t>& s, const CnmtLayers& l, const uint8_t old_i
     for (uint32_t i = 0; i < files; i++) {
         const uint8_t* e = pfs + 0x10 + i * 0x18;
         const uint32_t name_at = Get32(e + 0x10);
-        if (0x10 + uint64_t(files) * 0x18 + name_at >= head) return false;
-        const std::string name(reinterpret_cast<const char*>(pfs + 0x10 + files * 0x18 + name_at));
+        const uint64_t name_start = 0x10 + uint64_t(files) * 0x18 + name_at;
+        if (name_start >= head) return false;
+        // the name ends inside the string table, with or without its NUL
+        const char* name_ptr = reinterpret_cast<const char*>(pfs + name_start);
+        const std::string name(name_ptr, strnlen(name_ptr, size_t(head - name_start)));
         if (name.size() > 5 && name.compare(name.size() - 5, 5, ".cnmt") == 0) {
-            at = head + Get64(e);
+            const uint64_t data_at = Get64(e);
+            if (data_at > l.pfs0_size - head) return false;
+            at = head + data_at;
             size = Get64(e + 8);
         }
     }
-    if (size < 0x20 || at + size > l.pfs0_size) return false;
+    if (size < 0x20 || size > l.pfs0_size - at) return false;
     uint8_t* cnmt = pfs + at;
     const uint16_t ext = Get16(cnmt + 0x0E), count = Get16(cnmt + 0x10);
     if (0x20 + uint64_t(ext) + uint64_t(count) * 0x38 > size) return false;

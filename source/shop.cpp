@@ -16,7 +16,7 @@
 namespace nxdock {
 namespace {
 
-constexpr size_t kMaxIndex = 64 * 1024 * 1024;
+constexpr size_t kMaxIndex = 16 * 1024 * 1024; // an index larger than this is refused: it and its copies must fit in an applet
 
 std::string UrlDecode(const std::string& s) {
     std::string out;

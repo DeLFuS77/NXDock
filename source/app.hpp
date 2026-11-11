@@ -197,7 +197,7 @@ private:
     std::unique_ptr<ShopLoader> m_shop_loader;
     int m_shop_focus = 0, m_shop_opening = -1;
     bool m_shop_active = false;   // the library shows a shop
-    std::string m_shop_name, m_shop_key;
+    std::string m_shop_name, m_shop_key, m_shop_url;
     // cheats and mods (10A, more_mods.cpp)
     void OpenMods();
     void OpenModsGame(unsigned long long app_id, const std::string& name);

@@ -162,7 +162,8 @@ bool Reader::Open(const std::string& path) {
         dir_size = Get64(z + 40);
         dir_at = Get64(z + 48);
     }
-    if (dir_size > 64ull * 1024 * 1024) return false;
+    // the list of files of a mod or a save is small: refuse huge ones and absurd counts
+    if (dir_size > 4ull * 1024 * 1024 || count > 65536 || count > dir_size / 46) return false;
     std::vector<unsigned char> dir(static_cast<size_t>(dir_size));
     fseeko(m_file, (off_t)dir_at, SEEK_SET);
     if (std::fread(dir.data(), 1, dir.size(), m_file) != dir.size()) return false;
@@ -183,6 +184,8 @@ bool Reader::Open(const std::string& path) {
         const size_t xend = x + extra_len;
         while (x + 4 <= xend) {
             const uint32_t id = Get16(&dir[x]), len = Get16(&dir[x + 2]);
+            // the field must stay inside the extra block and the list
+            if (x + 4 + len > xend || xend > dir.size()) break;
             if (id == 1) {
                 size_t q = x + 4;
                 if (e.size == 0xFFFFFFFF && q + 8 <= x + 4 + len) e.size = Get64(&dir[q]), q += 8;
@@ -207,6 +210,7 @@ bool Reader::Extract(const Entry& e, const std::function<bool(const void*, size_
     uLong crc = crc32(0, nullptr, 0);
     uint64_t left = e.packed, given = 0;
     if (e.method == 0) {
+        if (e.packed != e.size) return false;
         while (left) {
             const size_t n = size_t(std::min<uint64_t>(kChunk, left));
             if (std::fread(in.get(), 1, n, m_file) != n) return false;
@@ -233,6 +237,11 @@ bool Reader::Extract(const Entry& e, const std::function<bool(const void*, size_
             if (rc != Z_OK && rc != Z_STREAM_END) break;
             const size_t n = kChunk - z.avail_out;
             if (n) {
+                // never more than the list says: a zip bomb would fill the card
+                if (given + n > e.size) {
+                    rc = Z_DATA_ERROR;
+                    break;
+                }
                 crc = crc32(crc, o.get(), uInt(n));
                 if (!out(o.get(), n)) {
                     rc = Z_DATA_ERROR;

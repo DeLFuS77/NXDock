@@ -15,7 +15,9 @@ namespace nxdock::tls {
 // console key.
 
 // The pin in use ("sha256//<base64>"), empty for none; set when a library is linked.
-void SetPin(const std::string& pin);
+// `url` is the address of the library: the pin is used only for that origin (a shop on https is
+// another server, with its own certificate).
+void SetPin(const std::string& pin, const std::string& url = "");
 std::string Pin();
 
 // Sets up a curl handle for the address: with https, the pinned key when there is one (the

@@ -602,6 +602,8 @@ void App::ConfirmCompressDialog() {
                     }
                 }
                 AddJobs(jobs);
+                // the original comes back: it is not merged again by itself, and can be merged anew
+                if (merged) ForgetMerged(app);
                 return;
             }
             Notice(m.cz_undo_missing);

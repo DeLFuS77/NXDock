@@ -41,6 +41,8 @@ constexpr NcmStorageId NCM_STORAGE_IDS[]{
 };
 
 constexpr u32 KEYGEN_LIMIT = 0x20;
+// NXDock: more NCZ blocks than this (32 GiB in blocks of 16 KiB) means a damaged table.
+constexpr u64 NCZ_MAX_BLOCKS = 1ULL << 21;
 
 struct NcaCollection : container::CollectionEntry {
     nca::Header header{};
@@ -595,13 +597,26 @@ Result Yati::readFuncInternal(ThreadData* t) {
                     // validate block header.
                     R_TRY(t->ncz_block_header.IsValid());
 
+                    // NXDock: no more blocks than the decompressed size needs, nor than the file
+                    // holds, before the memory for them is taken.
+                    const u64 block_size = 1ULL << t->ncz_block_header.block_size_exponent;
+                    const u64 decompressed = t->ncz_block_header.decompressed_size;
+                    const u64 needed = decompressed / block_size + (decompressed % block_size ? 1 : 0);
+                    const u64 total_blocks = t->ncz_block_header.total_blocks;
+                    R_UNLESS(total_blocks <= needed && total_blocks <= NCZ_MAX_BLOCKS, Result_YatiInvalidNczBlockTotal);
+                    R_UNLESS(total_blocks <= u64(t->nca->size) / sizeof(ncz::Block), Result_YatiInvalidNczBlockTotal);
+
                     // read blocks (array of block sizes).
-                    std::vector<ncz::Block> blocks(t->ncz_block_header.total_blocks);
+                    std::vector<ncz::Block> blocks(total_blocks);
                     R_TRY(t->Read(blocks.data(), blocks.size() * sizeof(ncz::Block), std::addressof(bytes_read)));
 
                     // calculate offsets for each block.
+                    // NXDock: a block is never larger than zstd may make its decompressed size,
+                    // as the install keeps a whole block in memory.
+                    const u64 block_max = ZSTD_compressBound(block_size);
                     auto block_offset = t->read_offset.load();
                     for (const auto& block : blocks) {
+                        R_UNLESS(block.size <= block_max, Result_NczBlockTooLarge);
                         t->ncz_blocks.emplace_back(block_offset, block.size);
                         block_offset += block.size;
                     }
@@ -1044,13 +1059,20 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                 }
 
                 if (t->nca->modified) {
+                    // NXDock: the SHA-256 is of the NCA as shipped, so these bytes are hashed
+                    // before the new header goes in; only the header written changes.
+                    if (!config.skip_nca_hash_verify) {
+                        sha256ContextUpdate(std::addressof(t->sha256), buf.data(), buf.size());
+                    }
                     crypto::cryptoAes128Xts(std::addressof(header), buf.data(), keys.header_key, 0, 0x200, sizeof(header), true);
                 }
             }
 
             written += buf.size();
             t->decompress_offset += buf.size();
-            R_TRY(t->SetWriteBuf(buf, buf.size(), config.skip_nca_hash_verify));
+            // NXDock: a changed header was hashed above, before it changed.
+            const bool hashed = !decompress_buf_off && t->nca->modified;
+            R_TRY(t->SetWriteBuf(buf, buf.size(), config.skip_nca_hash_verify || hashed));
         } else if (is_ncz) {
             u64 buf_off{};
             while (buf_off < buf.size()) {
@@ -1604,7 +1626,8 @@ Result Yati::InstallNcaInternal(std::span<TikCollection> tickets, NcaCollection&
     std::memcpy(std::addressof(content_id), nca.hash, sizeof(content_id));
 
     log_write("old id: %s new id: %s\n", utils::hexIdToStr(nca.content_id).str, utils::hexIdToStr(content_id).str);
-    if (!config.skip_nca_hash_verify && !nca.modified) {
+    // NXDock: the hash is of the NCA as shipped, so it is checked even when the header changed.
+    if (!config.skip_nca_hash_verify) {
         if (std::memcmp(&nca.content_id, nca.hash, sizeof(nca.content_id))) {
             log_write("nca hash is invalid!!!!\n");
             R_UNLESS(!std::memcmp(&nca.content_id, nca.hash, sizeof(nca.content_id)), Result_YatiInvalidNcaSha256);
@@ -1727,6 +1750,9 @@ Result Yati::ParseTicketsIntoCollection(std::vector<TikCollection>& tickets, con
             });
 
             R_UNLESS(cert != collections.cend(), Result_YatiCertNotFound);
+            // NXDock: a ticket is 0x2C0 to 0x400 bytes and its certificates a few KiB; larger
+            // means a damaged file, and the memory is not taken for it.
+            R_UNLESS(collection.size <= 0x1000 && cert->size <= 0x10000, Result_EsBadTicketSize);
             entry.ticket.resize(collection.size);
             entry.cert.resize(cert->size);
 

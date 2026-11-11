@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "tls_pin.hpp"
+#include "http.hpp"
 
 #include <curl/curl.h>
 #include <cstring>
@@ -102,9 +103,12 @@ size_t Discard(char*, size_t size, size_t n, void*) {
 
 } // namespace
 
-void SetPin(const std::string& pin) {
+std::string g_pin_origin;
+
+void SetPin(const std::string& pin, const std::string& url) {
     std::lock_guard lock(g_mutex);
     g_pin = pin;
+    g_pin_origin = http::Origin(url);
 }
 
 std::string Pin() {
@@ -120,8 +124,13 @@ void Apply(void* handle, const std::string& url) {
     // no authority can vouch for the app's own certificate: the pin does
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-    const std::string pin = Pin();
-    if (!pin.empty()) {
+    std::string pin, origin;
+    {
+        std::lock_guard lock(g_mutex);
+        pin = g_pin;
+        origin = g_pin_origin;
+    }
+    if (!pin.empty() && (origin.empty() || origin == http::Origin(url))) {
         curl_easy_setopt(curl, CURLOPT_PINNEDPUBLICKEY, pin.c_str()); // copied by curl
     }
 }

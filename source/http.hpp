@@ -15,6 +15,12 @@ struct Response {
     std::string error; // why there was no answer
 };
 
+// The origin of an address, "scheme://host:port" in lower case with the port of the scheme when
+// none is given; empty when it is not http or https, or carries a user ("http://a@b/"): a key
+// is sent only to the origin it belongs to.
+std::string Origin(const std::string& url);
+bool SameOrigin(const std::string& a, const std::string& b);
+
 // A short request to the library app; the key, when given, goes as the password of basic
 // authentication, as DBI sends it. Bodies are small JSON answers, cut at 64 KB.
 Response Get(const std::string& url, const std::string& key = "", long timeout_ms = 4000);

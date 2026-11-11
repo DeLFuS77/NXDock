@@ -131,6 +131,9 @@ Result ParseLz4Table(std::span<const u8> table, std::vector<Lz4Block>& blocks) {
         block.raw_size = Get32(e + 12);
         block.level = int8_t(e[16]);
         R_UNLESS(block.offset >= next && block.raw_size <= MAX_RAW_SIZE && block.size != 0, Result_NczBadTable);
+        // NXDock: an LZ4 block is never larger than LZ4 may make its raw size, as the block is
+        // made again in memory of that size.
+        R_UNLESS(block.size <= nx_lz4_bound(block.raw_size), Result_NczBadTable);
         next = block.offset + block.size;
         R_UNLESS(next > block.offset, Result_NczBadTable);
     }

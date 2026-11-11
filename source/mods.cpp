@@ -249,7 +249,10 @@ bool InstallMod(const ModPackage& pkg, unsigned long long title_id, const std::s
         FILE* f = std::fopen(path.c_str(), "wb");
         if (!f) return false;
         const bool ok = r.Extract(*entry, [f](const void* d, size_t n) { return std::fwrite(d, 1, n, f) == n; });
-        if (std::fclose(f) != 0 || !ok) return false;
+        if (std::fclose(f) != 0 || !ok) {
+            std::remove(path.c_str()); // no half-written file left behind
+            return false;
+        }
     }
     return true;
 }
@@ -260,6 +263,12 @@ bool RemoveMod(const ModPackage& pkg, unsigned long long title_id, const std::st
     bool ok = true;
     std::vector<std::string> folders;
     for (const auto& target : list) {
+        // only what InstallMod could have written: romfs, exefs or cheats inside the game's folder
+        const std::string first = target.substr(0, target.find('/'));
+        if (!zip::SafeName(target) || target.back() == '/' || target.find('/') == std::string::npos ||
+            (first != "romfs" && first != "exefs" && first != "cheats")) {
+            continue; // a bad line is skipped, never followed
+        }
         const std::string path = contents_dir + "/" + target;
         if (Exists(path) && std::remove(path.c_str()) != 0) ok = false;
         for (size_t i = target.find_last_of('/'); i != std::string::npos && i > 0; i = target.find_last_of('/', i - 1)) {

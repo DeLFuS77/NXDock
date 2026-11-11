@@ -65,12 +65,16 @@ struct Store {
             ncmContentStorageClose(&cs);
         }
     }
-    std::vector<NcmContentMetaKey> Keys() {
+    // `read` (when given) says false when the list could not be read: an empty list is then not
+    // "nothing installed", and nothing may be deleted from it
+    std::vector<NcmContentMetaKey> Keys(bool* read = nullptr) {
         std::vector<NcmContentMetaKey> keys(64);
         s32 total = 0, written = 0;
+        if (read) *read = ok;
         while (ok) {
             if (R_FAILED(ncmContentMetaDatabaseList(&db, &total, &written, keys.data(), s32(keys.size()), NcmContentMetaType_Unknown, 0, 0,
                                                     UINT64_MAX, NcmContentInstallType_Full))) {
+                if (read) *read = false;
                 return {};
             }
             if (total <= s32(keys.size())) break;
@@ -80,9 +84,14 @@ struct Store {
         return keys;
     }
     // every content of a key, the meta itself too
-    std::vector<NcmContentInfo> Contents(const NcmContentMetaKey& key) {
+    std::vector<NcmContentInfo> Contents(const NcmContentMetaKey& key, bool* read = nullptr) {
         std::vector<NcmContentInfo> infos;
-        ncmx::GetContentInfos(&db, &key, infos);
+        if (R_FAILED(ncmx::GetContentInfos(&db, &key, infos))) {
+            // not read: nothing of it is told, so nothing of it is taken for a leftover
+            if (read) *read = false;
+            return {};
+        }
+        if (read) *read = true;
         NcmContentId meta{};
         if (R_SUCCEEDED(ncmContentMetaDatabaseGetContentIdByType(&db, &meta, &key, NcmContentType_Meta))) {
             const bool listed = std::any_of(infos.begin(), infos.end(), [&](const NcmContentInfo& i) { return !std::memcmp(&i.content_id, &meta, sizeof(meta)); });
@@ -267,6 +276,7 @@ std::string Upload(const std::string& url, const std::string& key, const std::st
         if (++retries > 5) return Packed(m.e_network_t, m.e_network_d, 0, r.error);
         const auto h = http::Get(base, key, 8000);
         if (h.status == 200) have = u64(std::max<long long>(0, http::JsonNumber(h.body, "have")));
+        if (have > nsp.Size()) have = 0;
         svcSleepThread(2'000'000'000ull);
     }
 }
@@ -576,10 +586,11 @@ bool Space::StartClean() {
             if (!s.ok) continue;
             std::set<std::string> referenced;
             bool complete = true;
-            for (const auto& key : s.Keys()) {
+            for (const auto& key : s.Keys(&complete)) {
                 installed_ids.insert(key.id);
-                const auto infos = s.Contents(key);
-                if (infos.empty()) complete = false;
+                bool read = false;
+                const auto infos = s.Contents(key, &read);
+                if (!read || infos.empty()) complete = false;
                 for (const auto& info : infos) referenced.insert(IdHex(&info.content_id, sizeof(info.content_id)));
             }
             // never on a list that could not be read whole
@@ -685,14 +696,21 @@ bool Space::StartMove(unsigned long long app, bool to_nand) {
         Store from(from_id), to(to_id);
         if (!from.ok || !to.ok) return Packed(m.e_storage_t, m.e_storage_d);
         std::vector<NcmContentMetaKey> keys;
-        for (const auto& k : from.Keys()) {
+        bool listed = true;
+        for (const auto& k : from.Keys(&listed)) {
             if (AppOf(k.id) == app) keys.push_back(k);
         }
+        if (!listed) return Packed(m.e_storage_t, m.e_storage_d);
         if (keys.empty()) return {};
-        // the room first
+        // the contents of each key, read once: a key whose contents cannot be read stops the move
+        // before anything is copied (an empty list would register it without its contents)
+        std::vector<std::vector<NcmContentInfo>> contents;
         u64 need = 0;
         for (const auto& k : keys) {
-            for (const auto& i : from.Contents(k)) need += InfoSize(i);
+            bool read = false;
+            contents.push_back(from.Contents(k, &read));
+            if (!read || contents.back().empty()) return Packed(m.e_storage_t, m.e_storage_d);
+            for (const auto& i : contents.back()) need += InfoSize(i);
         }
         s64 free_b = 0;
         ncmContentStorageGetFreeSpaceSize(&to.cs, &free_b);
@@ -709,8 +727,9 @@ bool Space::StartMove(unsigned long long app, bool to_nand) {
         };
         std::vector<unsigned char> buf(4 * 1024 * 1024);
         u64 done = 0;
-        for (const auto& k : keys) {
-            for (const auto& info : from.Contents(k)) {
+        for (size_t ki = 0; ki < keys.size(); ki++) {
+            const auto& k = keys[ki];
+            for (const auto& info : contents[ki]) {
                 bool has = false;
                 if (R_SUCCEEDED(ncmContentStorageHas(&to.cs, &has, &info.content_id)) && has) continue;
                 const u64 size = InfoSize(info);
@@ -748,15 +767,21 @@ bool Space::StartMove(unsigned long long app, bool to_nand) {
             undo();
             return Packed(m.s_move_failed, m.s_move_failed_d, rc);
         }
-        // 2. the record of the game says the new storage
-        if (R_SUCCEEDED(nsInitialize())) {
+        // 2. the record of the game says the new storage; if it cannot be changed, the old copy
+        //    stays and the new one goes (the record still says where the old one is)
+        rc = nsInitialize();
+        if (R_SUCCEEDED(rc)) {
             std::vector<ncmx::ContentStorageRecord> records;
-            if (R_SUCCEEDED(nsx::GetApplicationRecords(app, records))) {
+            rc = nsx::GetApplicationRecords(app, records);
+            if (R_SUCCEEDED(rc)) {
+                const auto before = records;
                 for (auto& r : records) {
                     if (r.storage_id == from_id) r.storage_id = to_id;
                 }
                 nsx::DeleteApplicationRecord(app);
                 rc = nsx::PushApplicationRecord(app, records.data(), u32(records.size()));
+                // not pushed: the record as it was, so the game stays on the HOME menu
+                if (R_FAILED(rc)) nsx::PushApplicationRecord(app, const_cast<ncmx::ContentStorageRecord*>(before.data()), u32(before.size()));
             }
             nsExit();
         }
@@ -765,9 +790,9 @@ bool Space::StartMove(unsigned long long app, bool to_nand) {
             return Packed(m.s_move_failed, m.s_move_failed_d, rc);
         }
         // 3. the old copy goes
-        for (const auto& k : keys) {
-            for (const auto& info : from.Contents(k)) ncmContentStorageDelete(&from.cs, &info.content_id);
-            ncmContentMetaDatabaseRemove(&from.db, &k);
+        for (size_t ki = 0; ki < keys.size(); ki++) {
+            for (const auto& info : contents[ki]) ncmContentStorageDelete(&from.cs, &info.content_id);
+            ncmContentMetaDatabaseRemove(&from.db, &keys[ki]);
         }
         ncmContentMetaDatabaseCommit(&from.db);
         return {};

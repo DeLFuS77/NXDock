@@ -584,6 +584,13 @@ void App::SpaceDialogText(std::string& title, std::string& body, std::string& pr
 void App::ConfirmSpaceDialog() {
     if (!m_space) return;
     const Config c = m_link.CurrentConfig();
+    // cleaning, archiving or moving while the queue installs could take the placeholders and the
+    // contents of the install going on: they wait until it ends
+    if ((m_dialog.kind == DialogKind::SpaceClean || m_dialog.kind == DialogKind::SpaceArchive || m_dialog.kind == DialogKind::SpaceMove) && m_queue &&
+        m_queue->Busy()) {
+        Notice(TrM().cz_busy);
+        return;
+    }
     switch (m_dialog.kind) {
         case DialogKind::SpaceClean: m_space->StartClean(); break;
         case DialogKind::SpaceArchive:

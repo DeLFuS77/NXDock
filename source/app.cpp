@@ -2290,8 +2290,11 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
     job.color_key = g.key;
     job.file_id = f.id;
     const bool whole = f.url.rfind("http://", 0) == 0 || f.url.rfind("https://", 0) == 0;
+    const bool path = !f.url.empty() && f.url[0] == '/' && f.url.rfind("//", 0) != 0 && f.url.find('@') == std::string::npos;
     job.url = whole ? f.url : c.url + f.url;
-    job.key = m_shop_active ? m_shop_key : c.key;
+    // a key goes only to the server it belongs to: a file elsewhere comes without it
+    if (m_shop_active) job.key = http::SameOrigin(job.url, m_shop_url) ? m_shop_key : "";
+    else job.key = (whole ? http::SameOrigin(job.url, c.url) : path) ? c.key : "";
     job.format = f.format;
     job.kind = f.kind;
     job.title_id = f.title_id;

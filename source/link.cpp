@@ -125,7 +125,7 @@ void Link::TakePin(const std::string& url) {
         m_config.pin = pin;
         m_config.Save();
     }
-    tls::SetPin(pin);
+    tls::SetPin(pin, m_session.url);
 }
 
 void Link::Start(const Config& config) {
@@ -134,7 +134,7 @@ void Link::Start(const Config& config) {
         m_config = config;
         m_session = config;
     }
-    tls::SetPin(config.pin);
+    tls::SetPin(config.pin, config.url);
     Run(config.Linked() ? &Link::JobReconnect : &Link::JobSearch);
 }
 
@@ -259,7 +259,8 @@ void Link::JobReconnect() {
     Library lib;
     bool here = hello.status == 200 && ReadHello(hello.body, url, lib) && (session.id.empty() || lib.id == session.id);
     // 2. moved: the same app on another address
-    if (!here && !session.id.empty() && !m_cancel) {
+    const bool https = session.url.rfind("https://", 0) == 0;
+    if (!here && !session.id.empty() && !https && !m_cancel) {
         Set(State::Searching);
         const auto found = Discover(m_cancel, [this](float p) {
             std::lock_guard lock(m_mutex);
@@ -283,6 +284,12 @@ void Link::JobReconnect() {
     bool enabled = true;
     std::string error;
     if (!CheckKey(url, session.key, enabled, error)) {
+        if (url != session.url) {
+            // found at another address and the key is not taken there: it may not be the app
+            // the console was paired with, so nothing is paired nor kept by itself
+            Fail(State::Offline, error.empty() ? Tr().link_offline : error);
+            return;
+        }
         // the key was removed in the app: pair again
         {
             std::lock_guard lock(m_mutex);

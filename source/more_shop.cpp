@@ -96,6 +96,7 @@ void App::FollowShop() {
     m_shop_active = true;
     m_shop_name = shop.name;
     m_shop_key = ShopKey(shop);
+    m_shop_url = shop.url;
     m_games = ShopGames(files);
     if (m_queue) {
         const auto installed = m_queue->Installed();

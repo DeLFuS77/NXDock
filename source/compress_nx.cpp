@@ -193,10 +193,23 @@ unsigned UpdateVersion(u64 app) {
 void Sha256(const u8* d, size_t n, u8 out[32]) { sha256CalculateHash(out, d, n); }
 
 // The levels of the IVFC of a RomFS, from its FS header.
+// The levels of the IVFC, empty when the header does not hold together (levels in order, one after
+// another without wrapping, blocks of 512 B to 16 MiB): a damaged or made-up header is refused
+// before its offsets are used to place anything.
 std::vector<lz4pack::IvfcLevel> IvfcLevels(const nca::FsHeader& fh) {
     const auto& info = fh.hash_data.integrity_meta_info.info_level_hash;
     std::vector<lz4pack::IvfcLevel> lv;
-    for (u32 i = 0; i + 1 < info.max_layers; i++) lv.push_back({info.levels[i].logical_offset, info.levels[i].hash_data_size, info.levels[i].block_size});
+    if (info.max_layers < 2 || info.max_layers > 7) return lv;
+    u64 end = 0;
+    for (u32 i = 0; i + 1 < info.max_layers; i++) {
+        const auto& l = info.levels[i];
+        if (l.block_size < 9 || l.block_size > 24 || l.logical_offset < end || l.hash_data_size > (u64(1) << 40) ||
+            l.logical_offset > (u64(1) << 40)) {
+            return {};
+        }
+        end = l.logical_offset + l.hash_data_size;
+        lv.push_back({l.logical_offset, l.hash_data_size, l.block_size});
+    }
     return lv;
 }
 
@@ -371,6 +384,16 @@ bool FindPair(Storage& s, u64 app, Pair& p) {
         if (keys_found[i].version > p.patch.version) p.patch = keys_found[i];
     }
     if (!Contents(s, p.base, p.base_infos) || !Contents(s, p.patch, p.patch_infos)) return false;
+    // a game of several programs is not merged: only the first is, and the others (patches that
+    // read their own base) would be left without it
+    for (const auto* list : {&p.base_infos, &p.patch_infos}) {
+        for (const auto& i : *list) {
+            if (i.content_type == NcmContentType_Program && i.id_offset != 0) {
+                log_write("[NXDock] %016llX: a game of several programs is not merged\n", (unsigned long long)app);
+                return false;
+            }
+        }
+    }
     const auto* bp = OfType(p.base_infos, NcmContentType_Program);
     const auto* up = OfType(p.patch_infos, NcmContentType_Program);
     const auto* bm = OfType(p.base_infos, NcmContentType_Meta);
@@ -648,6 +671,27 @@ bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, merge
     }
     why = GameEstimate::Why::None;
     return true;
+}
+
+// A content as it was registered, read back from the card: its SHA-256 must be its id. The hashes
+// of the new data were made from what was handed to the card; this sees what the card kept, before
+// the only good copy (the original) goes.
+bool ReadBack(NcmContentStorage& cs, const NcmContentId& id, const std::atomic<bool>& stop) {
+    s64 size = 0;
+    if (R_FAILED(ncmContentStorageGetSizeFromContentId(&cs, &size, &id)) || size <= 0) return false;
+    Sha256Context ctx;
+    sha256ContextCreate(&ctx);
+    std::vector<u8> buf(4 * 1024 * 1024);
+    for (s64 at = 0; at < size;) {
+        if (stop) return false;
+        const size_t n = size_t(std::min<s64>(s64(buf.size()), size - at));
+        if (R_FAILED(ncmContentStorageReadContentIdFile(&cs, buf.data(), n, &id, at))) return false;
+        sha256ContextUpdate(&ctx, buf.data(), n);
+        at += s64(n);
+    }
+    u8 hash[32];
+    sha256ContextGetHash(&ctx, hash);
+    return !std::memcmp(hash, &id, sizeof(id));
 }
 
 // The decrypted .cnmt of a meta NCA of the storage, with its header (to make another from it).
@@ -931,7 +975,16 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
             ns::Exit();
             return failed();
         }
-        if (!could) log_write("[NXDock] merge %016llX: not read by the console (no access), checked by its hashes only\n", (unsigned long long)app);
+        if (!could) {
+            // the console would not open it for NXDock: what the card kept is read back whole
+            log_write("[NXDock] merge %016llX: not read by the console (no access), read back from the card\n", (unsigned long long)app);
+            if (!ReadBack(s.cs, new_program, stop)) {
+                log_write("[NXDock] merge %016llX: the new copy did not read back right, put back\n", (unsigned long long)app);
+                put_back();
+                ns::Exit();
+                return failed();
+            }
+        }
         ns::Exit();
 
         // 5. the old contents not used any more
@@ -1006,6 +1059,12 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     const u64 start = h.fs_table[r].GetOffset(), old_end = h.fs_table[r].GetOffsetEnd();
     const u64 data_at = DataLevel(fh).logical_offset;
     u64 virt = DataLevel(fh).hash_data_size;
+    // the levels of a header that does not hold together are never used to place anything
+    if (start > old_end || IvfcLevels(fh).empty() || data_at > old_end - start || virt > (u64(1) << 40) || DataLevel(fh).block_size < 9 ||
+        DataLevel(fh).block_size > 24) {
+        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+        return;
+    }
     std::vector<u8> work;
     // the data level as it is stored now
     const lz4pack::ReadFn raw_read = [&](u64 o, u8* b, size_t n) {
@@ -1040,6 +1099,10 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     hasher.Feed(table.data(), table.size());
     const std::vector<u8> data_hashes = hasher.Finish();
     std::vector<lz4pack::IvfcLevel> lv = IvfcLevels(fh);
+    if (lv.empty() || data_at > old_end - start) {
+        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+        return;
+    }
     lv.back().size = stored;
     std::vector<std::vector<u8>> levels;
     u8 master[32];
@@ -1188,7 +1251,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     if (R_FAILED(rc = nca::GetDecryptedTitleKey(mcopy, k, mkey))) return fail(rc);
     auto& mfh = mh.fs_header[0];
     const u64 ms = mh.fs_table[0].GetOffset(), me = mh.fs_table[0].GetOffsetEnd();
-    if (mfh.hash_type != 2 || mfh.encryption_type != nca::EncryptionType_AesCtr || me > mn.size()) return fail(Result(0));
+    if (mfh.hash_type != 2 || mfh.encryption_type != nca::EncryptionType_AesCtr || me > mn.size() || ms > me) return fail(Result(0));
     std::vector<u8> section(mn.begin() + ms, mn.begin() + me);
     {
         u8 ctr[16];
@@ -1277,6 +1340,30 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
         R_FAILED(rc = ncmContentMetaDatabaseCommit(&s.db))) {
         undo();
         error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
+        return;
+    }
+    // what the card kept, read back whole; otherwise the record goes back to the original
+    if (!ReadBack(s.cs, new_program, stop)) {
+        log_write("[NXDock] compress %016llX: the new copy did not read back right, put back\n", (unsigned long long)g.key.id);
+        std::vector<u8> old(rec.begin(), rec.begin() + ptrdiff_t(rec_size));
+        for (u16 c = 0; c < count; c++) {
+            const size_t at = 8 + ext + size_t(c) * sizeof(NcmContentInfo);
+            if (at + sizeof(NcmContentInfo) > rec_size) break;
+            NcmContentInfo ci;
+            std::memcpy(&ci, old.data() + at, sizeof(ci));
+            if (!std::memcmp(&ci.content_id, &new_program, sizeof(ci.content_id))) {
+                ci.content_id = g.program;
+                ncmU64ToContentInfoSize(u64(g.program_size), &ci);
+            } else if (g.has_meta && !std::memcmp(&ci.content_id, &new_meta, sizeof(ci.content_id))) {
+                ci.content_id = g.meta;
+                ncmU64ToContentInfoSize(u64(meta_size), &ci);
+            }
+            std::memcpy(old.data() + at, &ci, sizeof(ci));
+        }
+        ncmContentMetaDatabaseSet(&s.db, &g.key, old.data(), rec_size);
+        ncmContentMetaDatabaseCommit(&s.db);
+        undo();
+        error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d);
         return;
     }
     sphaira::ncm::Delete(&s.cs, &g.program);
@@ -1384,7 +1471,11 @@ std::vector<u64> AddOnsOf(Storage& s, u64 app) {
 }
 
 // A content NXDock compressed (a game, or a DLC), in the list of marks.
+// The list of marks is read, changed and written by the screen, the compressor and the queue.
+std::mutex g_marks;
+
 void Mark(u64 id, const NcmContentId& content, u64 saved) {
+    std::lock_guard lock(g_marks);
     auto marks = LoadCompressed(kCompressedList);
     std::erase_if(marks, [id](const CompressedGame& c) { return c.app_id == id; });
     marks.push_back({id, Hex(&content, sizeof(content)), saved, (long long)time(nullptr)});
@@ -1444,6 +1535,7 @@ Compressor::View Compressor::Snapshot() {
 }
 
 std::vector<CompressedGame> Compressor::Marks() {
+    std::lock_guard lock(g_marks);
     auto marks = LoadCompressed(kCompressedList);
     if (marks.empty() || R_FAILED(ncmInitialize())) return marks;
     // a mark stays while the program NXDock wrote is the one installed
@@ -1641,6 +1733,17 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
     return true;
 }
 
+std::recursive_mutex& TitlesLock() {
+    static std::recursive_mutex lock;
+    return lock;
+}
+
+void ForgetMerged(unsigned long long app) {
+    std::remove(RecipePath(app).c_str());
+    std::remove(SparePath(app).c_str());
+    std::remove(MergedPath(app).c_str());
+}
+
 bool IsMergedGame(unsigned long long app) {
     // merged before the mark existed: its recipe says so
     return Exists(MergedPath(app)) || HasRecipe(app);
@@ -1661,6 +1764,7 @@ std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, c
         splCryptoExit();
         return Packed(m.cz_failed_t, m.cz_failed_d, rc);
     }
+    std::lock_guard titles(TitlesLock());
     std::string error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
     // merged when Nintendo had compressed it: a newer update cannot be merged over it (no recipe);
     // the original and the update are installed again, and merged then
@@ -1680,6 +1784,7 @@ std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, c
         MergeOne(s, app, k, pair, stop, progress, error, kept, merged);
         if (error.empty()) {
             saved = kept;
+            std::lock_guard lock(g_marks);
             auto marks = LoadCompressed(kCompressedList);
             std::erase_if(marks, [app](const CompressedGame& c) { return c.app_id == app; });
             marks.push_back({app, Hex(&merged, sizeof(merged)), kept, (long long)time(nullptr)});
@@ -1714,6 +1819,8 @@ bool Compressor::StartCompress(unsigned long long app) {
     m_stop = false;
     m_thread = std::thread([this, app, dlcs] {
         net::Boost awake; // the console stays awake while a game is written again
+        // the queue does not install nor remove while a game is written again
+        std::lock_guard titles(TitlesLock());
         // what it does goes to sdmc:/switch/NXDock/compress.log, for when something goes wrong
         nxdock_log_open("sdmc:/switch/NXDock/compress.log");
         const More& m = TrM();

@@ -70,6 +70,13 @@ bool IsMergedGame(unsigned long long app);
 // Whether a newer update can be merged over it: false for one merged when Nintendo had compressed
 // it (it keeps no recipe).
 bool CanMergeAgain(unsigned long long app);
+// Undo of a merged game: its recipe, what was kept of its base and its mark go, so the original
+// installed again is not merged by itself, and can be merged anew.
+void ForgetMerged(unsigned long long app);
+
+// Held while games are written again (Compress games) and while the queue installs or removes:
+// the two never change the contents and records of the console at the same time.
+std::recursive_mutex& TitlesLock();
 // Merges the update installed over a game with it (25D, 25E), on the calling thread: progress gets
 // the phase (1 measuring, 2 writing, 3 registering and checking), what is done and of how much.
 // Gives the error to show (errors.hpp), empty when it went well; `saved` what it saved.

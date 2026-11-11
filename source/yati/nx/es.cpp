@@ -326,6 +326,8 @@ Result GetCommonTicketAndCertificateData(u64 *tik_size_out, u64 *cert_size_out, 
 Result GetTicketDataOffset(std::span<const u8> ticket, u64& out, bool is_cert) {
     log_write("inside es\n");
     u32 signature_type;
+    // NXDock: a ticket too short for its signature type is refused before it is read.
+    R_UNLESS(ticket.size() >= sizeof(signature_type), Result_EsBadTicketSize);
     std::memcpy(std::addressof(signature_type), ticket.data(), sizeof(signature_type));
 
     if (is_cert) {
@@ -372,11 +374,11 @@ Result GetTitleKey(keys::KeyEntry& out, const TicketData& data, const keys::Keys
     } else if (data.title_key_type == es::TitleKeyType_Personalized) {
         auto rsa_key = (const es::EticketRsaDeviceKey*)keys.eticket_device_key.key;
         log_write("personalised ticket\n");
-        log_write("\tissuer: %s\n", data.issuer);
+        log_write("\tissuer: %.*s\n", int(sizeof(data.issuer)), data.issuer);
         log_write("\tmaster_key_revision: %u\n", data.master_key_revision);
         log_write("\tlicense_type: %u\n", data.license_type);
         log_write("\tproperties_bitfield: 0x%X\n", data.properties_bitfield);
-        log_write("\tdevice_id: 0x%lX vs 0x%lX\n", data.device_id, std::byteswap(rsa_key->device_id));
+        // NXDock: the device ids are compared, never written to the log (it is shared in bug reports)
 
         R_UNLESS(data.device_id == std::byteswap(rsa_key->device_id), Result_EsPersonalisedTicketDeviceIdMissmatch);
         log_write("device id is same\n");
@@ -407,39 +409,55 @@ Result ShouldPatchTicket(const TicketData& data, std::span<const u8> ticket, std
 
     if (data.title_key_type == es::TitleKeyType_Common) {
         SigType tik_sig_type;
+        R_UNLESS(ticket.size() >= sizeof(tik_sig_type), Result_EsBadTicketSize);
         std::memcpy(&tik_sig_type, ticket.data(), sizeof(tik_sig_type));
 
         if (tik_sig_type != SigType_Rsa2048Sha256) {
             R_SUCCEED();
         }
+        // NXDock: the whole RSA-2048 ticket is read below.
+        R_UNLESS(ticket.size() >= sizeof(TicketRsa2048), Result_EsBadTicketSize);
 
-        log_write("type: %u 0x%X issuer: %s\n", tik_sig_type, tik_sig_type, data.issuer);
+        log_write("type: %u 0x%X issuer: %.*s\n", tik_sig_type, tik_sig_type, int(sizeof(data.issuer)), data.issuer);
 
-        const auto cert_name = std::strrchr(data.issuer, '-') + 1;
-        R_UNLESS(cert_name, Result_EsBadTitleKeyType);
-        const auto cert_name_span = std::span{(const u8*)cert_name, std::strlen(cert_name)};
+        // NXDock: the issuer may fill its 0x40 bytes without a NUL, so the last '-' is looked
+        // for within them, and a name must follow it.
+        const size_t issuer_len = strnlen(data.issuer, sizeof(data.issuer));
+        size_t dash = issuer_len;
+        while (dash && data.issuer[dash - 1] != '-') {
+            dash--;
+        }
+        R_UNLESS(dash && dash < issuer_len, Result_EsBadTitleKeyType);
+        const auto cert_name = data.issuer + dash;
+        const auto cert_name_span = std::span{(const u8*)cert_name, issuer_len - dash};
 
         // find the cert from inside the cert chain.
         const auto it = std::ranges::search(cert_chain, cert_name_span);
         R_UNLESS(!it.empty(), Result_EsBadTitleKeyType);
-        const auto cert = cert_chain.subspan(std::distance(cert_chain.begin(), it.begin()) - offsetof(CertHeader, subject));
+        // NXDock: the subject must sit where a whole certificate header fits around it.
+        const size_t pos = std::distance(cert_chain.begin(), it.begin());
+        R_UNLESS(pos >= offsetof(CertHeader, subject), Result_EsBadTitleKeyType);
+        const auto cert = cert_chain.subspan(pos - offsetof(CertHeader, subject));
+        R_UNLESS(cert.size() >= sizeof(CertHeader), Result_EsBadTitleKeyType);
 
         const auto cert_header = (const CertHeader*)cert.data();
         const auto pub_key_type = std::byteswap<u32>(cert_header->pub_key_type);
-        log_write("[ES] cert_header->issuer: %s\n", cert_header->issuer);
+        log_write("[ES] cert_header->issuer: %.*s\n", int(sizeof(cert_header->issuer)), cert_header->issuer);
         log_write("[ES] cert_header->pub_key_type: %u\n", pub_key_type);
-        log_write("[ES] cert_header->subject: %s\n", cert_header->subject);
+        log_write("[ES] cert_header->subject: %.*s\n", int(sizeof(cert_header->subject)), cert_header->subject);
 
         std::span<const u8> public_key{};
         u32 public_exponent{};
 
         switch (pub_key_type) {
             case PubKeyType_Rsa4096: {
+                R_UNLESS(cert.size() >= sizeof(CertHeader) + sizeof(PublicKeyBlockRsa4096), Result_EsBadTitleKeyType);
                 auto pub_key = (const PublicKeyBlockRsa4096*)(cert.data() + sizeof(CertHeader));
                 public_key = pub_key->public_key;
                 public_exponent = pub_key->public_exponent;
             }   break;
             case PubKeyType_Rsa2048: {
+                R_UNLESS(cert.size() >= sizeof(CertHeader) + sizeof(PublicKeyBlockRsa2048), Result_EsBadTitleKeyType);
                 auto pub_key = (const PublicKeyBlockRsa2048*)(cert.data() + sizeof(CertHeader));
                 public_key = pub_key->public_key;
                 public_exponent = pub_key->public_exponent;
@@ -512,7 +530,7 @@ Result PatchTicket(std::vector<u8>& ticket, std::vector<u8>& cert_chain, u8 key_
     out.data.sect_hdr_offset = ticket.size();
 
     // get new cert chain if it changed.
-    if (std::strcmp(data.issuer, out.data.issuer)) {
+    if (std::strncmp(data.issuer, out.data.issuer, sizeof(data.issuer))) {
         R_TRY(GetCertChainFromIssuer(out.data.issuer, cert_chain));
     }
 

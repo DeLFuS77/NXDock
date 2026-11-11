@@ -163,7 +163,8 @@ bool Responder::ReadExact(void* buf, size_t size) {
             size -= n;
             continue;
         }
-        std::vector<uint8_t> t(std::max(size, size_t(512)));
+        // at most 4 MB per read: a big container comes in several steps
+        std::vector<uint8_t> t(std::min(std::max(size, size_t(512)), size_t(4) << 20));
         size_t got = 0;
         if (!m_usb.Read(t.data(), t.size(), &got)) return false;
         t.resize(got); // a transfer of no bytes (the end of a data phase) is simply passed over
@@ -181,7 +182,8 @@ bool Responder::ReadContainer(std::vector<uint8_t>& out, uint16_t& type, uint16_
     tid = Get32(h + 8);
     out.clear();
     if (len > 12 && len != 0xFFFFFFFF) {
-        if (len - 12 > (64u << 20)) return false;
+        // file data goes through SendObject; everything else is small
+        if (len - 12 > (1u << 20)) return false;
         out.resize(len - 12);
         if (!ReadExact(out.data(), out.size())) return false;
     }

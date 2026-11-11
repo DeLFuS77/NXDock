@@ -4,6 +4,8 @@
 
 #include "http.hpp"
 
+#include <new>
+
 #include <algorithm>
 
 namespace nxdock {
@@ -40,7 +42,9 @@ void ShopLoader::Start(const ShopConfig& shop) {
             if (std::find(seen.begin(), seen.end(), todo[i]) != seen.end()) continue;
             seen.push_back(todo[i]);
             std::string body;
-            const auto r = http::Receive(todo[i], key, 64ull * 1024 * 1024, [&body](const char* d, size_t n) {
+            // the user and password of the shop go only to the shop's own server
+            const std::string send = http::SameOrigin(todo[i], shop.url) ? key : "";
+            const auto r = http::Receive(todo[i], send, 16ull * 1024 * 1024, [&body](const char* d, size_t n) {
                 body.append(d, n);
                 return true;
             });
@@ -53,13 +57,25 @@ void ShopLoader::Start(const ShopConfig& shop) {
                 continue;
             }
             std::string json;
-            const ShopError e = UnpackIndex(body, json);
+            ShopError e = ShopError::NotIndex;
+            // an index too large for the memory is a shop that cannot be read, not a crash
+            try {
+                e = UnpackIndex(body, json);
+            } catch (const std::bad_alloc&) {
+                json.clear();
+            }
             if (e != ShopError::None) {
                 if (i == 0) error = e;
                 continue;
             }
             std::vector<std::string> dirs;
-            auto more = ParseIndex(json, todo[i], i == 0 ? &dirs : nullptr);
+            std::vector<ShopFile> more;
+            try {
+                more = ParseIndex(json, todo[i], i == 0 ? &dirs : nullptr);
+            } catch (const std::bad_alloc&) {
+                if (i == 0) error = ShopError::NotIndex;
+                continue;
+            }
             files.insert(files.end(), more.begin(), more.end());
             todo.insert(todo.end(), dirs.begin(), dirs.end());
         }

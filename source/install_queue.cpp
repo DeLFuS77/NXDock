@@ -3,6 +3,7 @@
 #include "install_queue.hpp"
 
 #include "compress_nx.hpp"
+#include "config.hpp"
 
 #include "errors.hpp"
 #include "history.hpp"
@@ -239,7 +240,15 @@ ResumeJob ToResume(const InstallJob& j) {
     return r;
 }
 
-InstallJob FromResume(const ResumeJob& r, const std::string& key) {
+// True when the url is on the library the console is linked to: the journal is on the SD card,
+// so its url is not trusted with the key otherwise.
+bool OnLibrary(const std::string& url, std::string base) {
+    while (!base.empty() && base.back() == '/') base.pop_back();
+    if (base.empty() || url.compare(0, base.size(), base) != 0) return false;
+    return url.size() == base.size() || url[base.size()] == '/' || url[base.size()] == '?';
+}
+
+InstallJob FromResume(const ResumeJob& r, const std::string& key, const std::string& library) {
     const auto get = [&r](const char* k) {
         auto it = r.fields.find(k);
         return it == r.fields.end() ? std::string() : it->second;
@@ -264,17 +273,18 @@ InstallJob FromResume(const ResumeJob& r, const std::string& key) {
     j.checked = true; // asked about before the console went off
     j.parts = r.parts;
     j.resumable = true;
-    if (j.origin == InstallJob::Origin::Library) j.key = key;
+    if (j.origin == InstallJob::Origin::Library && OnLibrary(j.url, library)) j.key = key;
     return j;
 }
 
 } // namespace
 
 std::vector<InstallJob> ResumeJobs(const ResumeState& state, const std::string& key) {
+    const std::string library = Config::Load().url;
     std::vector<InstallJob> jobs;
-    jobs.push_back(FromResume(state.job, key));
+    jobs.push_back(FromResume(state.job, key, library));
     jobs.back().resumed = true;
-    for (const auto& w : state.waiting) jobs.push_back(FromResume(w, key));
+    for (const auto& w : state.waiting) jobs.push_back(FromResume(w, key, library));
     return jobs;
 }
 
@@ -616,7 +626,11 @@ void InstallQueue::Run() {
             m_undo = false;
             m_undoing = true;
             lock.unlock();
-            RunUndo();
+            {
+                // not while Compress games writes a game again
+                std::lock_guard titles(TitlesLock());
+                RunUndo();
+            }
             lock.lock();
             m_undoing = false;
             m_version++;
@@ -630,7 +644,11 @@ void InstallQueue::Run() {
         it->state = InstallJob::State::Running;
         InstallJob job = *it;
         lock.unlock();
-        RunJob(job);
+        {
+            // not while Compress games writes a game again (it ends, then this job starts)
+            std::lock_guard titles(TitlesLock());
+            RunJob(job);
+        }
         lock.lock();
         for (auto& j : m_jobs) {
             if (j.id == job.id) {

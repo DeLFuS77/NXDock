@@ -4,6 +4,7 @@
 
 #include <sys/stat.h>
 #include <cstdio>
+#include <algorithm>
 #include <functional>
 #include "http.hpp"
 
@@ -23,6 +24,8 @@ namespace {
 
 constexpr int kWorkers = 2;
 constexpr int kUploadsPerFrame = 3;
+// the largest a cover is drawn is 330 px, on the page of a game: kept at most this big
+constexpr int kMaxSide = 400;
 constexpr const char* kCacheDir = "sdmc:/switch/NXDock/covers";
 
 // The file a cover is kept in: its address hashed, so any name of the app is a safe file name.
@@ -132,6 +135,10 @@ bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes) {
     if (ReadFile(cached, bytes)) {
         return true;
     }
+    // a path of the app: "/…", not "//host" nor "@host", which would take the key elsewhere
+    if (path.empty() || path[0] != '/' || path.rfind("//", 0) == 0 || path.find('@') != std::string::npos || path.find('\\') != std::string::npos) {
+        return false;
+    }
     const auto r = http::GetLarge(m_url + path, m_key, 10000, 4 * 1024 * 1024);
     if (r.status != 200 || r.body.empty()) {
         return false;
@@ -154,11 +161,36 @@ void Covers::Work() {
         std::vector<unsigned char> bytes;
         Decoded d;
         d.path = path;
-        if (Fetch(path, bytes)) {
+        int w = 0, h = 0, comp = 0;
+        // a small file may say it is a huge picture: those are left out before decoding
+        if (Fetch(path, bytes) && stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &comp) && w > 0 && h > 0 && w <= 4096 &&
+            h <= 4096) {
             int channels = 0;
-            unsigned char* pixels = stbi_load_from_memory(bytes.data(), int(bytes.size()), &d.width, &d.height, &channels, 4);
+            unsigned char* pixels = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &channels, 4);
             if (pixels) {
-                d.rgba.assign(pixels, pixels + size_t(d.width) * d.height * 4);
+                // covers are drawn at most 330 px: a larger picture is halved (or more), a box average of whole
+                // steps, so a library of large pictures does not fill the memory
+                const int step = std::max(1, std::max(w, h) / kMaxSide);
+                d.width = w / step;
+                d.height = h / step;
+                if (step == 1) {
+                    d.rgba.assign(pixels, pixels + size_t(w) * h * 4);
+                } else if (d.width > 0 && d.height > 0) {
+                    d.rgba.resize(size_t(d.width) * d.height * 4);
+                    for (int y = 0; y < d.height; y++) {
+                        for (int x = 0; x < d.width; x++) {
+                            unsigned sum[4] = {0, 0, 0, 0};
+                            for (int dy = 0; dy < step; dy++) {
+                                const unsigned char* row = pixels + (size_t(y * step + dy) * w + size_t(x) * step) * 4;
+                                for (int dx = 0; dx < step; dx++) {
+                                    for (int c = 0; c < 4; c++) sum[c] += row[dx * 4 + c];
+                                }
+                            }
+                            unsigned char* out = d.rgba.data() + (size_t(y) * d.width + x) * 4;
+                            for (int c = 0; c < 4; c++) out[c] = static_cast<unsigned char>(sum[c] / unsigned(step * step));
+                        }
+                    }
+                }
                 stbi_image_free(pixels);
             }
         }

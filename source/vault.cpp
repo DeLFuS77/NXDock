@@ -132,15 +132,21 @@ Result ZipToSave(const unsigned char uid[16], unsigned long long app_id, const s
     zip::Reader r;
     R_UNLESS(r.Open(zip_path), Result_UnknownContainer);
     unsigned long long total = 0, done = 0;
+    // the whole zip checked before the save is touched: names, sizes and every file read once
     for (const auto& e : r.Entries()) {
-        R_UNLESS(zip::SafeName(e.name), Result_UnknownContainer);
+        R_UNLESS(zip::SafeName(e.name) && e.name.size() + 1 < FS_MAX_PATH, Result_UnknownContainer);
         total += e.size;
+        R_UNLESS(total <= kMaxSave, Result_NotEnoughSpace);
+        if (!e.Folder()) R_UNLESS(r.Extract(e, [](const void*, size_t) { return true; }), Result_UnknownContainer);
     }
     FsFileSystem fs;
     const FsSaveDataAttribute attr = Attribute(uid, app_id);
     R_TRY(fsOpenSaveDataFileSystem(&fs, FsSaveDataSpaceId_User, &attr));
     ON_SCOPE_EXIT(fsFsClose(&fs));
     char root[FS_MAX_PATH] = "/";
+    // the save must hold it all once emptied
+    s64 room = 0;
+    if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &room))) R_UNLESS(total <= u64(room), Result_NotEnoughSpace);
     R_TRY(fsFsCleanDirectoryRecursively(&fs, root));
     for (const auto& e : r.Entries()) {
         char p[FS_MAX_PATH];
