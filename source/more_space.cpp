@@ -7,6 +7,7 @@
 #include "app.hpp"
 
 #include "draw.hpp"
+#include "history.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
 #include "sdcheck_nx.hpp"
@@ -191,7 +192,12 @@ void App::FollowSpace() {
     if (v.last == Space::Task::Scan) return;
     const More& m = TrM();
     if (!v.error.empty()) {
-        if (v.last == Space::Task::Remove && m_queue) m_queue->ReadInstalledAgain(); // part of it may be gone
+        if (v.last == Space::Task::Remove) {
+            if (m_queue) m_queue->ReadInstalledAgain(); // part of it may be gone
+            m_console_done.clear();
+            m_console_done_text.clear();
+            m_console_removing.clear();
+        }
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::VaultError;
         m_dialog.single = true;
@@ -204,10 +210,20 @@ void App::FollowSpace() {
         case Space::Task::Archive: Notice(m.done_archive); break;
         case Space::Task::Move: Notice(m.done_move); break;
         case Space::Task::Dump: Notice(m.done_dump); break;
-        case Space::Task::Remove:
-            Notice(m.ic_done_remove);
+        case Space::Task::Remove: {
+            NoticeOk(m_console_done_text.empty() ? std::string(m.ic_done_remove) : m_console_done_text);
+            // a line "Removed" for each in the history
+            if (!m_console_done.empty()) {
+                History h(HistoryPath());
+                for (const auto& e : m_console_done) h.Append(e);
+                m_history_version = ~0u;
+            }
+            m_console_done.clear();
+            m_console_done_text.clear();
+            m_console_removing.clear();
             if (m_queue) m_queue->ReadInstalledAgain(); // the Library knows it is not there any more
             break;
+        }
         default: break;
     }
     m_space_mode = 0;

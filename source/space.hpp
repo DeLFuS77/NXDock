@@ -83,6 +83,8 @@ public:
     // Takes contents of a game off the console (In the console, of the Installed tab): its updates
     // and DLC first, the game last; the saves stay. The game too means all of it goes.
     bool StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items);
+    // Several games (In the console, marked with X): each with what of it goes.
+    bool StartRemove(std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games);
     // A dump to the library app (PUT /install/upload/{name}): an installed content, or the game
     // card (its secure partition), as an NSP.
     bool StartDump(const std::string& url, const std::string& key, unsigned long long content_id, unsigned version, unsigned char type,

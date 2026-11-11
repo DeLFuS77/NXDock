@@ -507,6 +507,13 @@ constexpr More kEnglish{
     .ic_size_list = "List",
     .ic_size_mid = "Medium",
     .ic_size_big = "Large",
+    .ic_rm_many_fmt = "Delete %d games?",
+    .ic_with_fmt = "%d updates, %d DLC",
+    .ic_whole_game = "Whole game",
+    .ic_done_many_fmt = "%d games deleted · %s free",
+    .ic_done_one_fmt = "Deleted: %s · %s free",
+    .ic_picked_fmt = "%d marked · %s",
+    .ic_rm_picked_fmt = "Delete %d marked",
 };
 
 constexpr More kSpanish{
@@ -1007,6 +1014,13 @@ constexpr More kSpanish{
     .ic_size_list = "Lista",
     .ic_size_mid = "Mediana",
     .ic_size_big = "Grande",
+    .ic_rm_many_fmt = "¿Borrar %d juegos?",
+    .ic_with_fmt = "%d actualizaciones, %d DLC",
+    .ic_whole_game = "Juego entero",
+    .ic_done_many_fmt = "Se han borrado %d juegos · %s libres",
+    .ic_done_one_fmt = "Borrado: %s · %s libres",
+    .ic_picked_fmt = "%d marcados · %s",
+    .ic_rm_picked_fmt = "Borrar %d marcados",
 };
 
 constexpr More kFrench{
@@ -1507,6 +1521,13 @@ constexpr More kFrench{
     .ic_size_list = "Liste",
     .ic_size_mid = "Moyenne",
     .ic_size_big = "Grande",
+    .ic_rm_many_fmt = "Supprimer %d jeux ?",
+    .ic_with_fmt = "%d mises à jour, %d DLC",
+    .ic_whole_game = "Jeu entier",
+    .ic_done_many_fmt = "%d jeux supprimés · %s libres",
+    .ic_done_one_fmt = "Supprimé : %s · %s libres",
+    .ic_picked_fmt = "%d cochés · %s",
+    .ic_rm_picked_fmt = "Supprimer %d cochés",
 };
 
 constexpr More kGerman{
@@ -2007,6 +2028,13 @@ constexpr More kGerman{
     .ic_size_list = "Liste",
     .ic_size_mid = "Mittel",
     .ic_size_big = "Groß",
+    .ic_rm_many_fmt = "%d Spiele löschen?",
+    .ic_with_fmt = "%d Updates, %d DLC",
+    .ic_whole_game = "Ganzes Spiel",
+    .ic_done_many_fmt = "%d Spiele gelöscht · %s frei",
+    .ic_done_one_fmt = "Gelöscht: %s · %s frei",
+    .ic_picked_fmt = "%d markiert · %s",
+    .ic_rm_picked_fmt = "%d markierte löschen",
 };
 
 constexpr More kItalian{
@@ -2507,6 +2535,13 @@ constexpr More kItalian{
     .ic_size_list = "Elenco",
     .ic_size_mid = "Media",
     .ic_size_big = "Grande",
+    .ic_rm_many_fmt = "Eliminare %d giochi?",
+    .ic_with_fmt = "%d aggiornamenti, %d DLC",
+    .ic_whole_game = "Gioco intero",
+    .ic_done_many_fmt = "%d giochi eliminati · %s liberi",
+    .ic_done_one_fmt = "Eliminato: %s · %s liberi",
+    .ic_picked_fmt = "%d segnati · %s",
+    .ic_rm_picked_fmt = "Elimina %d segnati",
 };
 
 constexpr More kPortuguese{
@@ -3007,6 +3042,13 @@ constexpr More kPortuguese{
     .ic_size_list = "Lista",
     .ic_size_mid = "Média",
     .ic_size_big = "Grande",
+    .ic_rm_many_fmt = "Apagar %d jogos?",
+    .ic_with_fmt = "%d atualizações, %d DLC",
+    .ic_whole_game = "Jogo inteiro",
+    .ic_done_many_fmt = "%d jogos apagados · %s livres",
+    .ic_done_one_fmt = "Apagado: %s · %s livres",
+    .ic_picked_fmt = "%d marcados · %s",
+    .ic_rm_picked_fmt = "Apagar %d marcados",
 };
 
 constexpr More kDutch{
@@ -3507,6 +3549,13 @@ constexpr More kDutch{
     .ic_size_list = "Lijst",
     .ic_size_mid = "Middel",
     .ic_size_big = "Groot",
+    .ic_rm_many_fmt = "%d spellen wissen?",
+    .ic_with_fmt = "%d updates, %d DLC",
+    .ic_whole_game = "Heel spel",
+    .ic_done_many_fmt = "%d spellen gewist · %s vrij",
+    .ic_done_one_fmt = "Gewist: %s · %s vrij",
+    .ic_picked_fmt = "%d gemarkeerd · %s",
+    .ic_rm_picked_fmt = "%d gemarkeerde wissen",
 };
 
 constexpr More kRussian{
@@ -4007,6 +4056,13 @@ constexpr More kRussian{
     .ic_size_list = "Список",
     .ic_size_mid = "Средние",
     .ic_size_big = "Крупные",
+    .ic_rm_many_fmt = "Удалить игр: %d?",
+    .ic_with_fmt = "обновлений: %d, DLC: %d",
+    .ic_whole_game = "Вся игра",
+    .ic_done_many_fmt = "Удалено игр: %d · свободно %s",
+    .ic_done_one_fmt = "Удалено: %s · свободно %s",
+    .ic_picked_fmt = "Отмечено: %d · %s",
+    .ic_rm_picked_fmt = "Удалить отмеченные (%d)",
 };
 
 constexpr More kJapanese{
@@ -4507,6 +4563,13 @@ constexpr More kJapanese{
     .ic_size_list = "リスト",
     .ic_size_mid = "中",
     .ic_size_big = "大",
+    .ic_rm_many_fmt = "%d 本のゲームを削除しますか？",
+    .ic_with_fmt = "更新データ %d、DLC %d",
+    .ic_whole_game = "ゲーム全体",
+    .ic_done_many_fmt = "%d 本のゲームを削除しました · %s 空き",
+    .ic_done_one_fmt = "削除しました: %s · %s 空き",
+    .ic_picked_fmt = "%d 件選択 · %s",
+    .ic_rm_picked_fmt = "選択した %d 本を削除",
 };
 
 constexpr More kKorean{
@@ -5007,6 +5070,13 @@ constexpr More kKorean{
     .ic_size_list = "목록",
     .ic_size_mid = "중간",
     .ic_size_big = "크게",
+    .ic_rm_many_fmt = "게임 %d개를 삭제할까요?",
+    .ic_with_fmt = "업데이트 %d개, DLC %d개",
+    .ic_whole_game = "게임 전체",
+    .ic_done_many_fmt = "게임 %d개를 삭제했습니다 · %s 확보",
+    .ic_done_one_fmt = "삭제됨: %s · %s 확보",
+    .ic_picked_fmt = "%d개 선택 · %s",
+    .ic_rm_picked_fmt = "선택한 %d개 삭제",
 };
 
 constexpr More kChinese{
@@ -5507,6 +5577,13 @@ constexpr More kChinese{
     .ic_size_list = "列表",
     .ic_size_mid = "中",
     .ic_size_big = "大",
+    .ic_rm_many_fmt = "删除 %d 个游戏？",
+    .ic_with_fmt = "%d 个更新，%d 个 DLC",
+    .ic_whole_game = "整个游戏",
+    .ic_done_many_fmt = "已删除 %d 个游戏 · 释放 %s",
+    .ic_done_one_fmt = "已删除：%s · 释放 %s",
+    .ic_picked_fmt = "已选 %d 个 · %s",
+    .ic_rm_picked_fmt = "删除所选 %d 个",
 };
 
 // In the order of LanguageName in i18n.cpp.

@@ -102,6 +102,8 @@ struct More {
     const char *ri_title_one, *ri_title_fmt, *ri_body, *ri_go, *ri_skip;
     // the sizes of In the console
     const char *ic_size, *ic_size_list, *ic_size_mid, *ic_size_big;
+    // taking several games off together
+    const char *ic_rm_many_fmt, *ic_with_fmt, *ic_whole_game, *ic_done_many_fmt, *ic_done_one_fmt, *ic_picked_fmt, *ic_rm_picked_fmt;
 };
 
 const More& TrM();

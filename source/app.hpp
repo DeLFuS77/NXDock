@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #pragma once
+#include <set>
 
 #include <switch.h>
 #include <memory>
@@ -274,6 +275,7 @@ private:
     void FollowLink();
     void CheckSdSpace();
     void Notice(const std::string& text);
+    void NoticeOk(const std::string& text); // in green, with a tick: something was done
     void DrawPairing(NVGcontext* vg, const Link::View& v);
     void UpdatePairing(u64 down, u64 held, const Link::View& v);
     void ActivatePairRow(int row, const Link::View& v);
@@ -353,6 +355,7 @@ private:
     double m_sd_checked = -100;
     std::string m_notice;
     double m_notice_until = 0;
+    bool m_notice_ok = false;
     int m_pair_focus = 0; // row in focus on the pairing screen
     std::string m_manual_url; // typed in Settings, until the key is typed too
     SpeedTest m_speed;
@@ -407,6 +410,13 @@ private:
     int m_console_focus = 0, m_console_item = 0;
     std::vector<char> m_console_marks;
     std::vector<InstalledApp::Content> m_console_remove; // what the question takes off
+    std::set<unsigned long long> m_console_picked;       // games marked with X, to take off together
+    std::set<unsigned long long> m_console_removing;     // games being taken off: dimmed meanwhile
+    std::vector<HistoryEntry> m_console_done;             // what goes in the history when it is done
+    std::string m_console_done_text;                      // the green notice then
+    void AskConsoleRemoveMany(const Space::View& v);
+    void PickedText(const Space::View& v, char* out, size_t size);
+    std::vector<ui::Hint> ConsoleHints();
     unsigned m_console_scanned_for = ~0u;                 // the version of the queue last read for
     int m_installed_focus = 0;
     std::vector<HistoryEntry> m_history;

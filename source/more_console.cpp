@@ -183,7 +183,8 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
         const Game* g = LibraryGame(a.app_id);
         int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
         if (!image) image = m_covers.Get(IconPath(a.app_id));
-        nvgGlobalAlpha(vg, a.archived ? 0.55f : 1.f);
+        const bool removing = m_console_removing.count(a.app_id) && v.task == Space::Task::Remove;
+        nvgGlobalAlpha(vg, removing ? 0.25f : a.archived ? 0.55f : 1.f);
         ui::Cover(vg, t, 62, y + 5, 56, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, 9, image);
         nvgSave(vg);
         nvgScissor(vg, 134, y, 920, pitch);
@@ -211,19 +212,18 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& v) {
         }
         ui::Text(vg, 134, y + 47, 14, t.muted, sub.c_str());
         nvgRestore(vg);
-        if (!a.archived) ui::Text(vg, 1218, y + 33, 16, t.muted, draw::Size(a.Bytes()).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        const bool marking = !m_console_picked.empty();
+        if (marking && !a.archived) draw::TickBox(vg, t, 1196, y + 33, m_console_picked.count(a.app_id) > 0, "cpick:" + std::to_string(a.app_id));
+        if (!a.archived) {
+            ui::Text(vg, marking ? 1180 : 1218, y + 33, 16, t.muted, draw::Size(a.Bytes()).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
         nvgGlobalAlpha(vg, 1.f);
     }
     // the names still being read, on a big list
-    char left[96] = "";
-    if (v.names_total > 0) std::snprintf(left, sizeof(left), m.ic_names_fmt, v.names_done, v.names_total);
+    char left[160] = "";
+    PickedText(v, left, sizeof(left));
     DrawListLetter(vg, kWidth / 2, 360);
-    ui::HintBar(vg, t, left[0] ? left : nullptr,
-                {{ui::glyph::A, m.ic_open, HidNpadButton_A},
-                 {ui::glyph::Y, m.ic_size, HidNpadButton_Y},
-                 {Glyphs(), s.view_switch, HidNpadButton_ZR},
-                 {ui::glyph::B, s.back, HidNpadButton_B}},
-                m_hint_rects);
+    ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
 }
 
 // Medium (six in a row) or large covers (four in a row, with the version and the size).
@@ -252,9 +252,14 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
         const Game* g = LibraryGame(a.app_id);
         int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
         if (!image) image = m_covers.Get(IconPath(a.app_id));
-        nvgGlobalAlpha(vg, a.archived ? 0.55f : 1.f);
+        const bool removing = m_console_removing.count(a.app_id) && v.task == Space::Task::Remove;
+        nvgGlobalAlpha(vg, removing ? 0.25f : a.archived ? 0.55f : 1.f);
         ui::Cover(vg, t, x, y, cover, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, big ? 14 : 11, image);
         if (i == m_console_focus) ui::Focus(vg, t, x - 4, y - 4, cover + 8, cover + 8, big ? 17 : 14, m_time);
+        if (!m_console_picked.empty() && !a.archived) {
+            ui::FillRound(vg, x + cover - 38, y + 8, 30, 30, 8, nvgRGBAf(0, 0, 0, 0.55f));
+            draw::TickBox(vg, t, x + cover - 34, y + 23, m_console_picked.count(a.app_id) > 0, "cpick:" + std::to_string(a.app_id));
+        }
         // what to know at a glance, over the cover
         bool newer = false;
         for (const auto& ct : a.contents) newer = newer || NeedsNewer(a, ct);
@@ -296,14 +301,9 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
         nvgGlobalAlpha(vg, 1.f);
     }
     nvgRestore(vg);
-    char left[96] = "";
-    if (v.names_total > 0) std::snprintf(left, sizeof(left), m.ic_names_fmt, v.names_done, v.names_total);
-    ui::HintBar(vg, t, left[0] ? left : nullptr,
-                {{ui::glyph::A, m.ic_open, HidNpadButton_A},
-                 {ui::glyph::Y, m.ic_size, HidNpadButton_Y},
-                 {Glyphs(), s.view_switch, HidNpadButton_ZR},
-                 {ui::glyph::B, s.back, HidNpadButton_B}},
-                m_hint_rects);
+    char left[160] = "";
+    PickedText(v, left, sizeof(left));
+    ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
 }
 
 void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
@@ -399,6 +399,59 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     ui::HintBar(vg, t, v.task == Space::Task::Remove ? m.ic_removing : nullptr, hints, m_hint_rects);
 }
 
+// How many are marked and what they take, or the names still being read; on the left of the hints.
+void App::PickedText(const Space::View& v, char* out, size_t size) {
+    const More& m = TrM();
+    out[0] = 0;
+    if (!m_console_picked.empty()) {
+        unsigned long long bytes = 0;
+        int n = 0;
+        for (const auto& a : v.apps) {
+            if (m_console_picked.count(a.app_id)) {
+                bytes += a.Bytes();
+                n++;
+            }
+        }
+        std::snprintf(out, size, m.ic_picked_fmt, n, draw::Size(bytes).c_str());
+    } else if (v.names_total > 0) {
+        std::snprintf(out, size, m.ic_names_fmt, v.names_done, v.names_total);
+    }
+}
+
+std::vector<ui::Hint> App::ConsoleHints() {
+    const auto& s = Tr();
+    const More& m = TrM();
+    static std::string many;
+    std::vector<ui::Hint> hints = {{ui::glyph::A, m.ic_open, HidNpadButton_A}, {ui::glyph::X, m.ic_mark, HidNpadButton_X}};
+    if (!m_console_picked.empty()) {
+        char text[120];
+        std::snprintf(text, sizeof(text), m.ic_rm_picked_fmt, int(m_console_picked.size()));
+        many = text;
+        hints.push_back({ui::glyph::Minus, many.c_str(), HidNpadButton_Minus});
+    }
+    hints.push_back({ui::glyph::Y, m.ic_size, HidNpadButton_Y});
+    hints.push_back({Glyphs(), s.view_switch, HidNpadButton_ZR});
+    hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
+    return hints;
+}
+
+void App::AskConsoleRemoveMany(const Space::View& v) {
+    m_dialog = Dialog{};
+    for (const auto& a : v.apps) {
+        if (m_console_picked.count(a.app_id) && !a.contents.empty()) m_dialog.ids.push_back(a.app_id);
+    }
+    if (m_dialog.ids.empty()) {
+        Notice(TrM().ic_nothing);
+        return;
+    }
+    if (m_space->Busy() || (m_queue && (m_queue->Busy() || m_queue->Undoing()))) {
+        m_dialog = Dialog{};
+        Notice(TrM().cz_busy);
+        return;
+    }
+    m_dialog.kind = DialogKind::ConsoleRemove;
+}
+
 void App::UpdateConsole(u64 down, u64 held) {
     if (!m_space) return;
     const auto v = m_space->Snapshot();
@@ -411,6 +464,18 @@ void App::UpdateConsole(u64 down, u64 held) {
         }
         if (v.apps.empty()) return;
         const int n = int(v.apps.size());
+        m_console_focus = std::clamp(m_console_focus, 0, n - 1);
+        if (down & HidNpadButton_X) {
+            // marked to take off together; an archived game has nothing to take
+            const auto& a = v.apps[size_t(m_console_focus)];
+            if (!a.archived) {
+                if (!m_console_picked.erase(a.app_id)) m_console_picked.insert(a.app_id);
+            }
+        }
+        if ((down & HidNpadButton_Minus) && !m_console_picked.empty()) {
+            AskConsoleRemoveMany(v);
+            return;
+        }
         if (m_ui.console_size != 0) {
             const int cols = m_ui.console_size == 2 ? 4 : 6;
             if (Repeat(down, held, HidNpadButton_AnyLeft) && m_console_focus > 0) m_console_focus--;

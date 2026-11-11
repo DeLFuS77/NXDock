@@ -697,30 +697,42 @@ bool Space::StartArchive(std::vector<unsigned long long> apps) {
 }
 
 bool Space::StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items) {
-    if (Busy() || items.empty()) return false;
-    // the updates and the DLC before the game: the record of the game goes with the last of it
-    std::stable_sort(items.begin(), items.end(), [](const InstalledApp::Content& a, const InstalledApp::Content& b) {
-        return (a.type == NcmContentMetaType_Application) < (b.type == NcmContentMetaType_Application);
-    });
-    Run(Task::Remove, [this, app, items]() -> std::string {
+    if (items.empty()) return false;
+    return StartRemove({{app, std::move(items)}});
+}
+
+bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games) {
+    if (Busy() || games.empty()) return false;
+    u64 total = 0;
+    for (auto& [app, items] : games) {
+        // the updates and the DLC before the game: the record of the game goes with the last of it
+        std::stable_sort(items.begin(), items.end(), [](const InstalledApp::Content& a, const InstalledApp::Content& b) {
+            return (a.type == NcmContentMetaType_Application) < (b.type == NcmContentMetaType_Application);
+        });
+        total += items.size();
+    }
+    Run(Task::Remove, [this, games, total]() -> std::string {
         const More& m = TrM();
         std::lock_guard titles(TitlesLock());
         Result rc = 0;
-        bool base = false;
         u64 i = 0;
-        for (const auto& c : items) {
-            Progress(i++, items.size());
-            NcmContentMetaKey key{};
-            key.id = c.id;
-            key.version = c.version;
-            key.type = c.type;
-            key.install_type = NcmContentInstallType_Full;
-            rc = RemoveInstalled(key, c.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
+        for (const auto& [app, items] : games) {
+            bool base = false;
+            for (const auto& c : items) {
+                Progress(i++, total);
+                NcmContentMetaKey key{};
+                key.id = c.id;
+                key.version = c.version;
+                key.type = c.type;
+                key.install_type = NcmContentInstallType_Full;
+                rc = RemoveInstalled(key, c.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
+                if (R_FAILED(rc)) break;
+                if (c.type == NcmContentMetaType_Application) base = true;
+            }
+            // the marks of a game NXDock merged or compressed go with it
+            if (base) ForgetMerged(app);
             if (R_FAILED(rc)) break;
-            if (c.type == NcmContentMetaType_Application) base = true;
         }
-        // the marks of a game NXDock merged or compressed go with it
-        if (base) ForgetMerged(app);
         if (R_FAILED(rc)) {
             if (rc == Result_GameRunning) return Packed(m.ic_rm_running_t, m.ic_rm_running_d, rc);
             return Packed(m.ic_rm_failed_t, m.ic_rm_failed_d, rc);

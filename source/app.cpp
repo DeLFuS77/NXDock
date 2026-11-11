@@ -1150,14 +1150,22 @@ void App::Draw(NVGcontext* vg) {
     }
     if (m_time < m_notice_until && !m_notice.empty()) {
         // a short notice above the hint bar
-        const float w = ui::TextWidth(vg, 16, m_notice.c_str()) + 48;
+        const float mark = m_notice_ok ? 28.f : 0.f; // something done: a green tick before it
+        const float w = ui::TextWidth(vg, 16, m_notice.c_str()) + 48 + mark;
         // it comes up from below with a little spring
         const float rise = ui::EaseOutBack(ui::Appear(m_notice_at, 0.35f));
         const float x = (kWidth - w) / 2, y = 600 + (1 - rise) * 34;
         nvgGlobalAlpha(vg, float(std::min(1.0, (m_notice_until - m_time) * 3)) * std::min(1.f, rise * 1.5f));
-        ui::FillRound(vg, x, y, w, 44, 22, m_theme.panel2);
-        ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, 43, 22, m_theme.work, 1.5f);
-        ui::Text(vg, x + w / 2, y + 22, 16, m_theme.text, m_notice.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        NVGcolor fill = m_theme.panel2;
+        if (m_notice_ok) {
+            fill = m_theme.ok;
+            fill.a = 0.18f;
+            ui::FillRound(vg, x, y, w, 44, 22, m_theme.panel2);
+        }
+        ui::FillRound(vg, x, y, w, 44, 22, fill);
+        ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, 43, 22, m_notice_ok ? m_theme.ok : m_theme.work, 1.5f);
+        if (m_notice_ok) ui::CheckMark(vg, x + 30, y + 22, 14, m_theme.ok, 2.6f);
+        ui::Text(vg, x + (w + mark) / 2, y + 22, 16, m_theme.text, m_notice.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         nvgGlobalAlpha(vg, 1.f);
     }
     DrawFinish(vg);
@@ -1341,6 +1349,13 @@ void App::Notice(const std::string& text) {
     m_notice = text;
     m_notice_at = m_time;
     m_notice_until = m_time + 3.5;
+    m_notice_ok = false;
+}
+
+void App::NoticeOk(const std::string& text) {
+    Notice(text);
+    m_notice_ok = true;
+    m_notice_until = m_time + 5;
 }
 
 void App::CheckSdSpace() {
@@ -4007,9 +4022,34 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::ConsoleRemove: {
             const More& m = TrM();
             char text[300];
-            std::snprintf(text, sizeof(text), m.ic_rm_title_fmt, m_dialog.text.c_str());
-            title = text;
+            if (!m_dialog.ids.empty()) {
+                // several games, each whole
+                std::snprintf(text, sizeof(text), m.ic_rm_many_fmt, int(m_dialog.ids.size()));
+                title = text;
+                const auto v = m_space ? m_space->Snapshot() : Space::View{};
+                for (const auto app : m_dialog.ids) {
+                    for (const auto& a : v.apps) {
+                        if (a.app_id != app) continue;
+                        int updates = 0, dlc = 0;
+                        for (const auto& c : a.contents) {
+                            updates += c.type == NcmContentMetaType_Patch;
+                            dlc += c.type == NcmContentMetaType_AddOnContent;
+                        }
+                        std::string what = a.name;
+                        if (updates || dlc) {
+                            std::snprintf(text, sizeof(text), m.ic_with_fmt, updates, dlc);
+                            what += std::string(" · ") + text;
+                        }
+                        size += a.Bytes();
+                        lines.push_back({what, "", SizeText(a.Bytes()), t.text});
+                    }
+                }
+            } else {
+                std::snprintf(text, sizeof(text), m.ic_rm_title_fmt, m_dialog.text.c_str());
+                title = text;
+            }
             for (const auto& c : m_console_remove) {
+                if (!m_dialog.ids.empty()) break;
                 size += c.bytes;
                 lines.push_back({ContentLabel(c, m_console_app), c.nand ? s.internal_short : "SD", SizeText(c.bytes), t.text});
             }
@@ -4588,7 +4628,60 @@ void App::ConfirmDialog() {
             // taking contents off while the queue installs could take those of the install going on
             if (m_queue && (m_queue->Busy() || m_queue->Undoing())) {
                 Notice(TrM().cz_busy);
+            } else if (!m_dialog.ids.empty()) {
+                // several games, whole: what the console has of each
+                const auto v = m_space ? m_space->Snapshot() : Space::View{};
+                std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games;
+                u64 bytes = 0;
+                m_console_done.clear();
+                for (const auto app : m_dialog.ids) {
+                    for (const auto& a : v.apps) {
+                        if (a.app_id != app || a.contents.empty()) continue;
+                        games.push_back({app, a.contents});
+                        bytes += a.Bytes();
+                        HistoryEntry e;
+                        e.when = std::time(nullptr);
+                        e.game = a.name;
+                        e.label = TrM().ic_whole_game;
+                        e.size = a.Bytes();
+                        e.nand = a.nand_bytes > 0 && a.sd_bytes == 0;
+                        e.result = HistoryEntry::Result::Removed;
+                        m_console_done.push_back(e);
+                    }
+                }
+                char text[200];
+                std::snprintf(text, sizeof(text), TrM().ic_done_many_fmt, int(games.size()), SizeText(bytes).c_str());
+                m_console_done_text = text;
+                if (m_space && m_space->StartRemove(games)) {
+                    m_console_removing.clear();
+                    for (const auto& g : games) m_console_removing.insert(g.first);
+                    m_console_picked.clear();
+                } else {
+                    m_console_done.clear();
+                    Notice(TrM().cz_busy);
+                }
             } else if (m_space && m_space->StartRemove(m_console_app, m_console_remove)) {
+                // one game, or a part of it
+                u64 bytes = 0;
+                bool base = false;
+                m_console_done.clear();
+                for (const auto& c : m_console_remove) {
+                    bytes += c.bytes;
+                    base = base || c.type == NcmContentMetaType_Application;
+                    HistoryEntry e;
+                    e.when = std::time(nullptr);
+                    e.game = m_dialog.text;
+                    e.label = ContentLabel(c, m_console_app);
+                    e.size = c.bytes;
+                    e.nand = c.nand;
+                    e.result = HistoryEntry::Result::Removed;
+                    m_console_done.push_back(e);
+                }
+                char text[300];
+                std::snprintf(text, sizeof(text), TrM().ic_done_one_fmt, m_dialog.text.c_str(), SizeText(bytes).c_str());
+                m_console_done_text = text;
+                m_console_removing.clear();
+                if (base) m_console_removing.insert(m_console_app);
                 m_console_marks.clear();
             } else {
                 Notice(TrM().cz_busy);
