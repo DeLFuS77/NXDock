@@ -858,6 +858,68 @@ bool Space::StartMove(unsigned long long app, bool to_nand) {
     return true;
 }
 
+namespace {
+
+// The files of an NSP of an installed content: its NCAs, and its ticket and certificate when it has
+// a common one.
+bool InstalledFiles(const std::shared_ptr<Store>& store, const NcmContentMetaKey& k, std::vector<NspMaker::File>& files) {
+    NcmContentId meta_id{};
+    ncmContentMetaDatabaseGetContentIdByType(&store->db, &meta_id, &k, NcmContentType_Meta);
+    for (const auto& info : store->Contents(k)) {
+        const bool meta = !std::memcmp(&info.content_id, &meta_id, sizeof(meta_id));
+        const NcmContentId id = info.content_id;
+        files.push_back({IdHex(&id, sizeof(id)) + (meta ? ".cnmt.nca" : ".nca"), InfoSize(info), [store, id](u64 off, void* buf, size_t n) {
+                             return R_SUCCEEDED(ncmContentStorageReadContentIdFile(&store->cs, buf, n, &id, s64(off)));
+                         }});
+    }
+    if (files.empty()) return false;
+    FsRightsId rights{};
+    for (const auto& info : store->Contents(k)) {
+        NcmRightsId nr{};
+        if ((info.content_type == NcmContentType_Program || info.content_type == NcmContentType_Data) &&
+            R_SUCCEEDED(ncmContentStorageGetRightsIdFromContentId(&store->cs, &nr, &info.content_id, FsContentAttributes_All))) {
+            rights = nr.rights_id;
+            if (std::any_of(std::begin(rights.c), std::end(rights.c), [](u8 c) { return c != 0; })) break;
+        }
+    }
+    const bool has_rights = std::any_of(std::begin(rights.c), std::end(rights.c), [](u8 c) { return c != 0; });
+    if (has_rights && R_SUCCEEDED(esx::Initialize())) {
+        auto tik = std::make_shared<std::vector<u8>>(), cert = std::make_shared<std::vector<u8>>();
+        if (R_SUCCEEDED(esx::GetCommonTicketAndCertificate(rights, *tik, *cert))) {
+            const std::string base = IdHex(&rights, sizeof(rights));
+            files.push_back({base + ".tik", tik->size(), [tik](u64 off, void* b, size_t n) {
+                                 std::memcpy(b, tik->data() + off, n);
+                                 return true;
+                             }});
+            files.push_back({base + ".cert", cert->size(), [cert](u64 off, void* b, size_t n) {
+                                 std::memcpy(b, cert->data() + off, n);
+                                 return true;
+                             }});
+        }
+        esx::Exit();
+    }
+    return true;
+}
+
+} // namespace
+
+std::shared_ptr<InstalledNsp> OpenInstalledNsp(unsigned long long id, unsigned version, unsigned char type, bool nand) {
+    auto store = std::make_shared<Store>(nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
+    if (!store->ok) return nullptr;
+    NcmContentMetaKey k{};
+    k.id = id;
+    k.version = version;
+    k.type = type;
+    k.install_type = NcmContentInstallType_Full;
+    std::vector<NspMaker::File> files;
+    if (!InstalledFiles(store, k, files)) return nullptr;
+    auto nsp = std::make_shared<NspMaker>(std::move(files));
+    auto out = std::make_shared<InstalledNsp>();
+    out->size = nsp->Size();
+    out->read = [nsp](unsigned long long off, void* buf, size_t n) { return nsp->Read(off, buf, n); };
+    return out;
+}
+
 bool Space::StartDump(const std::string& url, const std::string& key, unsigned long long content_id, unsigned version, unsigned char type,
                       bool nand, const std::string& name) {
     if (Busy()) return false;
@@ -873,43 +935,9 @@ bool Space::StartDump(const std::string& url, const std::string& key, unsigned l
         k.version = version;
         k.type = type;
         k.install_type = NcmContentInstallType_Full;
+        // its NCAs, and the ticket and its certificate when the game has one
         std::vector<NspMaker::File> files;
-        NcmContentId meta_id{};
-        ncmContentMetaDatabaseGetContentIdByType(&store->db, &meta_id, &k, NcmContentType_Meta);
-        for (const auto& info : store->Contents(k)) {
-            const bool meta = !std::memcmp(&info.content_id, &meta_id, sizeof(meta_id));
-            const NcmContentId id = info.content_id;
-            files.push_back({IdHex(&id, sizeof(id)) + (meta ? ".cnmt.nca" : ".nca"), InfoSize(info), [store, id](u64 off, void* buf, size_t n) {
-                                 return R_SUCCEEDED(ncmContentStorageReadContentIdFile(&store->cs, buf, n, &id, s64(off)));
-                             }});
-        }
-        if (files.empty()) return Packed(m.s_dump_failed, m.s_dump_failed_d);
-        // the ticket and its certificate, when the game has one
-        FsRightsId rights{};
-        for (const auto& info : store->Contents(k)) {
-            NcmRightsId nr{};
-            if (info.content_type == NcmContentType_Program &&
-                R_SUCCEEDED(ncmContentStorageGetRightsIdFromContentId(&store->cs, &nr, &info.content_id, FsContentAttributes_All))) {
-                rights = nr.rights_id;
-                break;
-            }
-        }
-        const bool has_rights = std::any_of(std::begin(rights.c), std::end(rights.c), [](u8 c) { return c != 0; });
-        if (has_rights && R_SUCCEEDED(esx::Initialize())) {
-            auto tik = std::make_shared<std::vector<u8>>(), cert = std::make_shared<std::vector<u8>>();
-            if (R_SUCCEEDED(esx::GetCommonTicketAndCertificate(rights, *tik, *cert))) {
-                const std::string base = IdHex(&rights, sizeof(rights));
-                files.push_back({base + ".tik", tik->size(), [tik](u64 off, void* b, size_t n) {
-                                     std::memcpy(b, tik->data() + off, n);
-                                     return true;
-                                 }});
-                files.push_back({base + ".cert", cert->size(), [cert](u64 off, void* b, size_t n) {
-                                     std::memcpy(b, cert->data() + off, n);
-                                     return true;
-                                 }});
-            }
-            esx::Exit();
-        }
+        if (!InstalledFiles(store, k, files)) return Packed(m.s_dump_failed, m.s_dump_failed_d);
         NspMaker nsp(std::move(files));
         Progress(0, nsp.Size(), name);
         return Upload(url, key, name, nsp, m_cancel, [this](u64 d, u64 t) { Progress(d, t); });

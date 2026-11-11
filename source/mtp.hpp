@@ -34,7 +34,8 @@ struct MtpView {
 
 // `enqueue` puts the job of a file that starts to arrive in the install queue; it returns
 // false when the queue is busy (the computer is told to wait and tries again).
-bool MtpStart(std::function<bool(InstallJob)> enqueue, std::function<bool()> queue_busy);
+// `units`: the read-only folders of 8A to show too (mtp_more.hpp).
+bool MtpStart(std::function<bool(InstallJob)> enqueue, std::function<bool()> queue_busy, int units = 0);
 void MtpStop();
 MtpView MtpSnapshot();
 void MtpAllowNand(bool on);

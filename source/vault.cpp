@@ -55,11 +55,11 @@ std::string HttpError(const http::Response& r) {
     return VaultError(m.e_refused_t, m.e_refused_d, 0, what);
 }
 
-FsSaveDataAttribute Attribute(const unsigned char uid[16], unsigned long long app_id) {
+FsSaveDataAttribute Attribute(const unsigned char uid[16], unsigned long long app_id, int kind = 0) {
     FsSaveDataAttribute attr{};
     attr.application_id = app_id;
-    std::memcpy(&attr.uid, uid, sizeof(attr.uid));
-    attr.save_data_type = FsSaveDataType_Account;
+    if (kind == 0) std::memcpy(&attr.uid, uid, sizeof(attr.uid));
+    attr.save_data_type = kind == 1 ? FsSaveDataType_Device : kind == 2 ? FsSaveDataType_Bcat : FsSaveDataType_Account;
     return attr;
 }
 
@@ -91,9 +91,9 @@ Result Walk(FsFileSystem* fs, const std::string& dir, std::vector<std::pair<std:
 
 // The save to a zip on the SD card.
 Result SaveToZip(const unsigned char uid[16], unsigned long long app_id, const std::string& zip_path,
-                 const std::function<void(unsigned long long, unsigned long long)>& progress) {
+                 const std::function<void(unsigned long long, unsigned long long)>& progress, int kind = 0) {
     FsFileSystem fs;
-    const FsSaveDataAttribute attr = Attribute(uid, app_id);
+    const FsSaveDataAttribute attr = Attribute(uid, app_id, kind);
     R_TRY(fsOpenSaveDataFileSystem(&fs, FsSaveDataSpaceId_User, &attr));
     ON_SCOPE_EXIT(fsFsClose(&fs));
     std::vector<std::pair<std::string, s64>> items;
@@ -196,6 +196,12 @@ http::Response Upload(const std::string& url, const std::string& key, const std:
 }
 
 } // namespace
+
+bool SaveZipTo(const unsigned char uid[16], unsigned long long app_id, int kind, const std::string& zip_path) {
+    const bool ok = R_SUCCEEDED(SaveToZip(uid, app_id, zip_path, [](unsigned long long, unsigned long long) {}, kind));
+    if (!ok) std::remove(zip_path.c_str());
+    return ok;
+}
 
 Vault::Vault() {
     mkdir("sdmc:/switch", 0777);

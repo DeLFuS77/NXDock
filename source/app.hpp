@@ -68,7 +68,7 @@ private:
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
-                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing };
+                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -230,6 +230,9 @@ private:
     std::map<unsigned long long, Missing> m_missing;
     std::string m_missing_key;    // what the missing were worked out from
     bool m_console_missing = false; // the filter: only the games missing something
+    // more folders over MTP (8A, more.cpp): the one in focus, and a switch turned
+    int m_mtp_unit = 0;
+    void ToggleMtpUnit(int unit);
     // the vault of saves (6A, more_vault.cpp)
     void OpenVault();
     std::vector<LibrarySave> VaultCopies();

@@ -151,6 +151,18 @@ constexpr Tools kEnglish{
     .cd_ticket_label = "the ticket only",
     .cd_hint = "Details",
     .cd_missing_note = "Without its ticket the game does not open: put it back from your library.",
+    .mu_title = "More folders, read only",
+    .mu_installed = "Installed games",
+    .mu_installed_sub = "each game as NSP; copying one dumps it",
+    .mu_saves = "Saves",
+    .mu_saves_sub = "a zip for each game and user",
+    .mu_album = "Album",
+    .mu_album_sub = "captures and videos",
+    .mu_usb = "USB disk",
+    .mu_usb_sub = "what it holds",
+    .mu_usb_none = "none plugged in",
+    .mu_device = "Console",
+    .mu_note = "The computer sees the change when it connects again.",
 };
 
 constexpr Tools kSpanish{
@@ -295,6 +307,18 @@ constexpr Tools kSpanish{
     .cd_ticket_label = "solo el ticket",
     .cd_hint = "Detalles",
     .cd_missing_note = "Sin su ticket el juego no se abre: vuelve a ponerlo desde tu biblioteca.",
+    .mu_title = "Más carpetas, de solo lectura",
+    .mu_installed = "Juegos instalados",
+    .mu_installed_sub = "cada juego como NSP; copiarlo lo vuelca",
+    .mu_saves = "Partidas",
+    .mu_saves_sub = "un zip por juego y usuario",
+    .mu_album = "Álbum",
+    .mu_album_sub = "capturas y vídeos",
+    .mu_usb = "Disco USB",
+    .mu_usb_sub = "lo que tiene",
+    .mu_usb_none = "no hay ninguno",
+    .mu_device = "Consola",
+    .mu_note = "El ordenador ve el cambio al conectarse de nuevo.",
 };
 
 // The other languages take the English texts until they have their own.

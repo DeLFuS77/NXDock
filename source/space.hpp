@@ -5,6 +5,7 @@
 #include <atomic>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -31,6 +32,14 @@ struct InstalledApp {
     std::vector<Content> contents;
     unsigned long long Bytes() const { return sd_bytes + nand_bytes; }
 };
+
+// An installed content as an NSP made as it is read (the dumps, and the Installed games folder of
+// MTP, 8A of the new tools): its size and a reader. Null when it cannot be read. ncm must be open.
+struct InstalledNsp {
+    unsigned long long size = 0;
+    std::function<bool(unsigned long long, void*, size_t)> read;
+};
+std::shared_ptr<InstalledNsp> OpenInstalledNsp(unsigned long long id, unsigned version, unsigned char type, bool nand);
 
 // What "Clean leftovers" would remove: contents no title refers to, and tickets of titles that
 // are not on the console in any way (archived games keep theirs).

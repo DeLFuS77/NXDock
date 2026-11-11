@@ -33,6 +33,11 @@ std::string TitleHex(unsigned long long id);
 std::string CopySavesBefore(const std::string& url, const std::string& key, unsigned long long app_id, unsigned current,
                             const std::string& note, const std::function<void(unsigned long long, unsigned long long)>& progress);
 
+// The save of a game as a zip on the SD card (MTP 8A, the saves 9A): of a user (`kind` 0), of the
+// console (1, device) or BCAT (2); `uid` is not read for 1 and 2. False when there is none or it
+// could not be written.
+bool SaveZipTo(const unsigned char uid[16], unsigned long long app_id, int kind, const std::string& zip_path);
+
 // The vault of saves (6A): the saves of a user of the console, copied to the library app as a
 // zip with a note, and a copy brought back. Restoring always asks first and sends a copy of the
 // save it replaces to the library before.

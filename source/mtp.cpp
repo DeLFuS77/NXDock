@@ -5,6 +5,7 @@
 // install folder becomes a stream for the install core follows Sphaira's haze_helper.cpp
 // (GPL-3.0).
 #include "mtp.hpp"
+#include "mtp_more.hpp"
 
 #include "defines.hpp"
 #include "file_source.hpp"
@@ -286,7 +287,7 @@ bool g_ncm = false;
 
 } // namespace
 
-bool MtpStart(std::function<bool(InstallJob)> enqueue, std::function<bool()> queue_busy) {
+bool MtpStart(std::function<bool(InstallJob)> enqueue, std::function<bool()> queue_busy, int units) {
     if (g_running) return true;
     {
         std::lock_guard lock(g_mutex);
@@ -308,6 +309,7 @@ bool MtpStart(std::function<bool(InstallJob)> enqueue, std::function<bool()> que
         std::make_shared<InstallStorage>(m.mtp_install_nand, true),
         std::make_shared<mtp::FolderStorage>("sdmc:/", m.mtp_sd_card),
     };
+    MtpAddMore(storages, units); // the read-only folders of 8A
     g_running = true;
     {
         std::lock_guard lock(g_mutex);
@@ -336,6 +338,7 @@ void MtpStop() {
     }
     g_usb->Stop();
     if (g_thread.joinable()) g_thread.join();
+    MtpMoreStop();
     std::lock_guard lock(g_mutex);
     g_pipe.reset();
     g_handed.reset();

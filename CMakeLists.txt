@@ -205,6 +205,7 @@ add_executable(nxdock
     source/updater.cpp
     source/more_update.cpp
     source/versions_list.cpp
+    source/mtp_more.cpp
 )
 
 target_compile_definitions(nxdock PRIVATE

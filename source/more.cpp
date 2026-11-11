@@ -15,6 +15,7 @@
 #include "i18n_more.hpp"
 #include "i18n_tools.hpp"
 #include "mtp.hpp"
+#include "mtp_more.hpp"
 #include "usb_disks.hpp"
 #include "usb_tinfoil.hpp"
 
@@ -102,8 +103,14 @@ void App::OpenMoreScreen(MoreScreen screen) {
             break;
         case MoreScreen::Mtp: {
             MtpAllowNand(false);
+            // the games installed for their folder (8A): read now if they were not
+            if (!m_space) m_space = std::make_unique<Space>();
+            if (!m_space->Snapshot().scanned && !m_space->Busy()) m_space->StartScan();
+            Space* space = m_space.get();
+            MtpSetInstalled([space] { return space->Snapshot().apps; });
+            UsbDisksStart();
             const bool ok = MtpStart([this](InstallJob job) { return m_queue && m_queue->Add(std::move(job)); },
-                                     [this] { return m_queue && m_queue->Busy(); });
+                                     [this] { return m_queue && m_queue->Busy(); }, m_ui.mtp_units);
             m_more_error = ok ? std::string{} : std::string(TrM().mtp_failed);
             break;
         }
@@ -790,14 +797,37 @@ void App::DrawArrival(NVGcontext* vg) {
                                   {m.mtp_install_nand, mv.nand_allowed ? m.nand_allowed : m.mtp_install_nand_sub, !mv.nand_allowed},
                                   {m.mtp_sd_card, m.mtp_sd_card_sub, false}};
         for (const auto& f : folders) {
-            ui::FillRound(vg, px + 26, y, pw - 52, 66, 12, t.panel2);
-            ui::StrokeRound(vg, px + 26.5f, y + .5f, pw - 53, 65, 12, t.line, 1);
+            ui::FillRound(vg, px + 26, y, pw - 52, 58, 12, t.panel2);
+            ui::StrokeRound(vg, px + 26.5f, y + .5f, pw - 53, 57, 12, t.line, 1);
             nvgGlobalAlpha(vg, f.off ? 0.55f : 1.f);
-            draw::FolderIcon(vg, t, px + 44, y + 33);
-            ui::Text(vg, px + 82, y + 23, 17, t.text, f.name);
-            ui::Text(vg, px + 82, y + 46, 14, t.muted, f.sub);
+            draw::FolderIcon(vg, t, px + 44, y + 29);
+            ui::Text(vg, px + 82, y + 19, 16, t.text, f.name);
+            ui::Text(vg, px + 82, y + 41, 13, t.muted, f.sub);
             nvgGlobalAlpha(vg, 1.f);
-            y += 78;
+            y += 64;
+        }
+        // the read-only folders, each with its switch (8A)
+        const Tools& tt = TrT();
+        ui::Text(vg, px + 28, y + 12, 13, t.muted, tt.mu_title);
+        y += 24;
+        const bool disk = !UsbDisks().empty();
+        const struct { const char* name; const char* sub; } units[] = {
+            {tt.mu_installed, tt.mu_installed_sub}, {tt.mu_saves, tt.mu_saves_sub}, {tt.mu_album, tt.mu_album_sub},
+            {tt.mu_usb, disk ? tt.mu_usb_sub : tt.mu_usb_none}};
+        for (int k = 0; k < 4; k++) {
+            const bool on = (m_ui.mtp_units >> k) & 1;
+            if (k == m_mtp_unit) {
+                ui::FillRound(vg, px + 26, y, pw - 52, 46, 10, t.panel2);
+                ui::Focus(vg, t, px + 26, y, pw - 52, 46, 10, m_time);
+            }
+            AddHit(px + 26, y - 1, pw - 52, 48, HitKind::MtpUnit, k);
+            nvgSave(vg);
+            nvgScissor(vg, px + 40, y, pw - 52 - 90, 46);
+            const float nx = ui::Text(vg, px + 44, y + 23, 15, on ? t.text : t.muted, units[k].name) + 10;
+            ui::Text(vg, nx, y + 23, 13, t.muted, units[k].sub);
+            nvgRestore(vg);
+            draw::Toggle(vg, t, px + pw - 26 - 62, y + 23, on, "mtp-unit:" + std::to_string(k));
+            y += 50;
         }
     } else {
         draw::Box(vg, px + 26, y, pw - 52, 17, t.muted, m.usb_steps);
@@ -891,13 +921,33 @@ void App::DrawArrival(NVGcontext* vg) {
 
     std::vector<ui::Hint> hints;
     // the internal memory allowed can be turned off again: only the SD card
+    if (mtp) hints.push_back({ui::glyph::A, m.st_change, HidNpadButton_A});
     if (mtp) hints.push_back({ui::glyph::X, mv.nand_allowed ? m.mtp_sd_only : m.allow_nand, HidNpadButton_X});
     if (!mtp) hints.push_back({ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, m.stop_back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
 
-void App::UpdateArrival(u64 down, u64 /*held*/) {
+void App::ToggleMtpUnit(int unit) {
+    m_ui.mtp_units ^= 1 << std::clamp(unit, 0, 3);
+    m_ui.Save();
+    // the folders are given when a computer connects: MTP starts again with them (nothing is arriving)
+    if (MtpSnapshot().file.empty()) {
+        MtpStop();
+        OpenMoreScreen(MoreScreen::Mtp);
+    }
+    Notice(TrT().mu_note);
+}
+
+void App::UpdateArrival(u64 down, u64 held) {
+    if (m_more == MoreScreen::Mtp) {
+        if (Repeat(down, held, HidNpadButton_AnyUp) && m_mtp_unit > 0) m_mtp_unit--;
+        if (Repeat(down, held, HidNpadButton_AnyDown) && m_mtp_unit < 3) m_mtp_unit++;
+        if (down & HidNpadButton_A) {
+            ToggleMtpUnit(m_mtp_unit);
+            return;
+        }
+    }
     if (m_more == MoreScreen::Mtp && (down & HidNpadButton_X)) {
         if (MtpSnapshot().nand_allowed) {
             MtpAllowNand(false); // only the SD card again, at once

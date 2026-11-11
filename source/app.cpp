@@ -1218,6 +1218,10 @@ void App::Tap(float x, float y, u64& down) {
                 FilesDo(it->index);
                 break;
             case HitKind::FilesMenuBack: m_files_menu = false; break;
+            case HitKind::MtpUnit:
+                m_mtp_unit = it->index;
+                ToggleMtpUnit(it->index);
+                break;
             case HitKind::ConsoleMissing:
                 m_console_missing = !m_console_missing;
                 m_console_focus = 0;

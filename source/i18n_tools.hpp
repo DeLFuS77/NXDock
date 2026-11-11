@@ -31,6 +31,8 @@ struct Tools {
     const char *ms_filter_fmt, *ms_dlc_fmt, *ms_card, *ms_update_fmt, *ms_update, *ms_dlc, *ms_dlc_of_fmt, *ms_in_lib, *ms_some_lib_fmt, *ms_not_lib, *ms_list, *ms_list_fmt, *ms_list_none, *ms_nothing, *ms_install_hint, *ms_row, *ms_hint_filter, *ms_hint_all;
     // the details of a content, its ticket and the version the console asks for (7A)
     const char *cd_title_fmt, *cd_id, *cd_version, *cd_where, *cd_ticket, *cd_t_common, *cd_t_personal, *cd_t_missing, *cd_t_none, *cd_keys, *cd_keys_fmt, *cd_keys_one_fmt, *cd_firmware, *cd_firmware_fmt, *cd_needs_app, *cd_asks, *cd_asks_fmt, *cd_ticket_go, *cd_version_go, *cd_no_lib, *cd_version_done, *cd_version_fail, *cd_ticket_label, *cd_hint, *cd_missing_note;
+    // more folders for the computer over MTP (8A)
+    const char *mu_title, *mu_installed, *mu_installed_sub, *mu_saves, *mu_saves_sub, *mu_album, *mu_album_sub, *mu_usb, *mu_usb_sub, *mu_usb_none, *mu_device, *mu_note;
 };
 
 const Tools& TrT();
