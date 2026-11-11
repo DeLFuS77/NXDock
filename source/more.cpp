@@ -186,6 +186,14 @@ void App::DrawTiles(NVGcontext* vg) {
         nvgTranslate(vg, -cx, -cy);
         nvgGlobalAlpha(vg, std::min(1.f, ui::Appear(m_more_at + 0.05 * i, 0.3f) * 1.2f));
         draw::Panel(vg, t, x, y, kTileW, kTileH, 16);
+        // a touch of the colour of its group from the top (13A)
+        const NVGcolor group = row == 0 ? Hex(0x2a8fe0) : Hex(0x6a4ae0);
+        NVGcolor wash = group;
+        wash.a = t.dark ? 0.10f : 0.06f;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x, y, kTileW, kTileH, 16);
+        nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + kTileH, wash, Hex(0, 0)));
+        nvgFill(vg);
         if (i == m_tile) {
             ui::Focus(vg, t, x, y, kTileW, kTileH, 16, m_time);
             if (ui::Lively()) {
@@ -209,12 +217,36 @@ void App::DrawTiles(NVGcontext* vg) {
                 nvgRestore(vg);
             }
         }
-        DrawTileIcon(vg, tool, x + 22, y + 40);
+        // its picture in white in a bubble of the colour of its group: blue to install without the
+        // library, violet for the console (13A); never red
+        const float bx = x + 20, by = y + 18, bs = 52;
+        nvgBeginPath(vg);
+        nvgRect(vg, bx - 14, by - 6, bs + 28, bs + 26);
+        nvgFillPaint(vg, nvgBoxGradient(vg, bx, by + 5, bs, bs, 15, 12, nvgRGBAf(0, 0, 0, t.dark ? 0.4f : 0.18f), nvgRGBAf(0, 0, 0, 0)));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, bx, by, bs, bs, 15);
+        nvgFillPaint(vg, row == 0 ? nvgLinearGradient(vg, bx, by, bx + bs, by + bs, Hex(0x4fc8f5), Hex(0x2a6fe0))
+                                  : nvgLinearGradient(vg, bx, by, bx + bs, by + bs, Hex(0xa58cff), Hex(0x5a3fd0)));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, bx + 12, by + 1.2f);
+        nvgLineTo(vg, bx + bs - 12, by + 1.2f);
+        nvgStrokeColor(vg, nvgRGBAf(1, 1, 1, 0.35f));
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+        const NVGcolor white = nvgRGB(255, 255, 255);
+        nvgSave(vg);
+        nvgTranslate(vg, bx + bs / 2, by + bs / 2);
+        nvgScale(vg, 0.8f, 0.8f);
+        nvgTranslate(vg, -(bx + bs / 2), -(by + bs / 2));
+        DrawTileIcon(vg, tool, bx + bs / 2 - 16, by + bs / 2, &white);
+        nvgRestore(vg);
         nvgSave(vg);
         nvgIntersectScissor(vg, x + 12, y, kTileW - 24, kTileH);
-        ui::Text(vg, x + 20, y + 84, 19, t.text, titles[tool]);
+        ui::Title(vg, x + 20, y + 94, 19, t.text, titles[tool]);
         nvgRestore(vg);
-        draw::Box(vg, x + 20, y + 104, kTileW - 40, 14, t.muted, subs[tool]);
+        draw::Box(vg, x + 20, y + 112, kTileW - 40, 14, t.muted, subs[tool]);
         nvgRestore(vg);
     }
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}, {ui::glyph::Plus, Tr().exit, HidNpadButton_Plus}};
@@ -223,9 +255,9 @@ void App::DrawTiles(NVGcontext* vg) {
 
 // The pictures of the tiles, drawn in the blue of work: an SD card, a screen, a plug, a shop, a
 // safe, a pie, a wand and a moon.
-void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy) {
+void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy, const NVGcolor* ink) {
     const Theme& t = m_theme;
-    const NVGcolor c = t.work;
+    const NVGcolor c = ink ? *ink : t.work;
     // each picture moves a little in its own way (2A)
     nvgSave(vg);
     if (ui::Lively()) {
@@ -355,7 +387,7 @@ void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy) {
             nvgFill(vg);
             nvgBeginPath(vg);
             nvgCircle(vg, x + 24, cy - 6, 13);
-            nvgFillColor(vg, t.panel);
+            nvgFillColor(vg, ink ? Hex(0x8a70f0) : t.panel); // in its bubble, the violet behind it
             nvgFill(vg);
             break;
     }

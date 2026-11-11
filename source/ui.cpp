@@ -32,6 +32,34 @@ float TextWidth(NVGcontext* vg, float size, const char* str) {
     return nvgTextBounds(vg, 0, 0, str, nullptr, nullptr);
 }
 
+float Title(NVGcontext* vg, float x, float y, float size, NVGcolor color, const char* str, int align) {
+    Text(vg, x, y, size, color, str, align);
+    return Text(vg, x + (size >= 24 ? 0.7f : 0.5f), y, size, color, str, align);
+}
+
+void Glass(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
+    // the shadow, only outside the panel (it is a little see-through)
+    nvgBeginPath(vg);
+    nvgRect(vg, x - 16, y - 8, w + 32, h + 30);
+    nvgRoundedRect(vg, x, y, w, h, r);
+    nvgPathWinding(vg, NVG_HOLE);
+    nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 6, w, h, r + 4, 18, nvgRGBAf(0, 0, 0, t.dark ? 0.32f : 0.09f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    NVGcolor fill = t.panel;
+    fill.a = t.dark ? 0.80f : 0.82f;
+    FillRound(vg, x, y, w, h, r, fill);
+    StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, t.line, 1);
+    // the light along the top edge
+    if (w > 2 * r) {
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x + r, y + 1.2f);
+        nvgLineTo(vg, x + w - r, y + 1.2f);
+        nvgStrokeColor(vg, nvgRGBAf(1, 1, 1, t.dark ? 0.08f : 0.9f));
+        nvgStrokeWidth(vg, 1.2f);
+        nvgStroke(vg);
+    }
+}
+
 void FillRound(NVGcontext* vg, float x, float y, float w, float h, float r, NVGcolor c) {
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x, y, w, h, r);
@@ -246,10 +274,41 @@ void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text) {
 
 namespace {
 
-// Brand mark, as the icon (assets/icon.svg): the dock of the console seen from the front, a game card
-// going into its slot with an arrow on its label, a progress bar and the light on its front, on the
-// blue and violet of NXDock. Drawn from the icon's own 256 px layout, scaled to `s`.
-void BrandMark(NVGcontext* vg, const Theme& /*t*/, float x, float y, float s) {
+// The dock of the icon (assets/icon.svg) seen from the front, from its own 256 px layout scaled by
+// `k`: its back and slot (`back`), or its front with the step, the bar lit by `bar` and the light.
+void DockPart(NVGcontext* vg, float x, float y, float k, bool back, float bar, float lamp) {
+    const auto rect = [&](float rx, float ry, float rw, float rh, float r, NVGcolor c) {
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x + rx * k, y + ry * k, rw * k, rh * k, r * k);
+        nvgFillColor(vg, c);
+        nvgFill(vg);
+    };
+    if (back) {
+        rect(30, 110, 196, 118, 9, Hex(0x2c2c30));
+        rect(70, 111, 116, 7, 3.5f, Hex(0x0d0d10));
+        return;
+    }
+    rect(30, 120, 196, 108, 9, Hex(0x232326));
+    rect(38, 120, 180, 2, 1, Hex(0x6b6b72));
+    rect(58, 196, 140, 12, 6, nvgRGBA(0, 0, 0, 90));
+    const float lit = 98 * std::clamp(bar, 0.f, 1.f);
+    if (lit > 1) {
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x + 58 * k, y + 196 * k, std::max(12.f, lit) * k, 12 * k, 6 * k);
+        nvgFillPaint(vg, nvgLinearGradient(vg, x + 58 * k, y, x + 156 * k, y, Hex(0x29d0ff), Hex(0x7c5cff)));
+        nvgFill(vg);
+    }
+    if (lamp > 0.01f) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, x + 212 * k, y + 216 * k, std::max(1.f, 5 * k));
+        nvgFillColor(vg, Hex(0x3ee87a, std::min(1.f, lamp)));
+        nvgFill(vg);
+    }
+}
+
+} // namespace
+
+void Brand(NVGcontext* vg, float x, float y, float s, float card, float bar, float lamp) {
     const float k = s / 256.f;
     const auto rect = [&](float rx, float ry, float rw, float rh, float r, NVGcolor c) {
         nvgBeginPath(vg);
@@ -262,9 +321,11 @@ void BrandMark(NVGcontext* vg, const Theme& /*t*/, float x, float y, float s) {
     nvgRoundedRect(vg, x, y, s, s, s * 0.22f);
     nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + s, y + s, Hex(0x4fc8f5), Hex(0x5a2fc0)));
     nvgFill(vg);
-    // the game card, its lower part already in the dock
+    // the game card, its lower part already in the dock; before that it falls in from above
     nvgSave(vg);
     nvgIntersectScissor(vg, x, y, s, 117 * k);
+    const float drop = -130 * (1 - std::clamp(card, 0.f, 1.2f));
+    nvgTranslate(vg, 0, drop * k);
     rect(96, 34, 64, 100, 8, Hex(0x45454b));
     rect(106, 42, 44, 3, 1.5f, Hex(0x1a1a1d));
     rect(102, 57, 52, 70, 5, Hex(0xe8202f));
@@ -280,23 +341,22 @@ void BrandMark(NVGcontext* vg, const Theme& /*t*/, float x, float y, float s) {
     nvgLineTo(vg, x + 140 * k, y + 88 * k);
     nvgStroke(vg);
     nvgRestore(vg);
-    // the dock: its back, the slot, its front with the step, the bar and the light
-    rect(30, 110, 196, 118, 9, Hex(0x2c2c30));
-    rect(70, 111, 116, 7, 3.5f, Hex(0x0d0d10));
-    rect(30, 120, 196, 108, 9, Hex(0x232326));
-    rect(38, 120, 180, 2, 1, Hex(0x6b6b72));
-    rect(58, 196, 140, 12, 6, nvgRGBA(0, 0, 0, 90));
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, x + 58 * k, y + 196 * k, 98 * k, 12 * k, 6 * k);
-    nvgFillPaint(vg, nvgLinearGradient(vg, x + 58 * k, y, x + 156 * k, y, Hex(0x29d0ff), Hex(0x7c5cff)));
-    nvgFill(vg);
-    nvgBeginPath(vg);
-    nvgCircle(vg, x + 212 * k, y + 216 * k, std::max(1.f, 5 * k));
-    nvgFillColor(vg, Hex(0x3ee87a));
-    nvgFill(vg);
+    DockPart(vg, x, y, k, true, 0, 0);
+    DockPart(vg, x, y, k, false, bar, lamp);
 }
 
-} // namespace
+void Dock(NVGcontext* vg, float x, float y, float s, float bar, void (*inside)(NVGcontext*, void*), void* data) {
+    const float k = s / 256.f;
+    DockPart(vg, x, y, k, true, 0, 0);
+    if (inside) {
+        // what falls in shows only above the slot
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x - s, y - 2 * s, 3 * s, 2 * s + 117 * k);
+        inside(vg, data);
+        nvgRestore(vg);
+    }
+    DockPart(vg, x, y, k, false, bar, 1);
+}
 
 float Battery(NVGcontext* vg, const Theme& t, float right, float cy, int percent, bool charging) {
     percent = std::clamp(percent, 0, 100);
@@ -364,62 +424,192 @@ float Wifi(NVGcontext* vg, const Theme& t, float right, float cy, int strength) 
     return right - w;
 }
 
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[6], const char* sd_free, int battery,
-            bool charging, int wifi, HitRect* wifi_hit) {
-    BrandMark(vg, t, 36, 19, 34);
-    Text(vg, 80, 36, 24, t.text, "NXDock");
+namespace {
 
+// The icon of each tab (8A), 18 px, centred at (cx, cy): the library a grid, the shops a shop, the
+// queue a numbered list, the installed games a tick in a circle, More three dots, Settings a gear.
+void TabIcon(NVGcontext* vg, int tab, float cx, float cy, NVGcolor c) {
+    nvgStrokeColor(vg, c);
+    nvgFillColor(vg, c);
+    nvgStrokeWidth(vg, 1.8f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgLineJoin(vg, NVG_ROUND);
+    switch (tab) {
+        case 0: // the library
+            for (int i = 0; i < 4; i++) {
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, cx - 8 + (i % 2) * 9, cy - 8 + (i / 2) * 9, 7, 7, 1.8f);
+                nvgFill(vg);
+            }
+            break;
+        case 1: // a shop: its awning and its front
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, cx - 7, cy - 1, 14, 9, 1.5f);
+            nvgStroke(vg);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, cx - 9, cy - 3);
+            nvgLineTo(vg, cx - 7, cy - 8);
+            nvgLineTo(vg, cx + 7, cy - 8);
+            nvgLineTo(vg, cx + 9, cy - 3);
+            nvgClosePath(vg);
+            nvgFill(vg);
+            nvgBeginPath(vg);
+            nvgRect(vg, cx - 2, cy + 3, 4, 5);
+            nvgFill(vg);
+            break;
+        case 2: // the queue
+            for (int i = 0; i < 3; i++) {
+                const float y = cy - 6 + i * 6;
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx - 7, y, 1.6f);
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, cx - 3, y);
+                nvgLineTo(vg, cx + 8, y);
+                nvgStroke(vg);
+            }
+            break;
+        case 3: // installed
+            nvgBeginPath(vg);
+            nvgCircle(vg, cx, cy, 8);
+            nvgStroke(vg);
+            CheckMark(vg, cx, cy + 0.5f, 9, c, 1.8f);
+            break;
+        case 4: // more
+            for (int i = -1; i <= 1; i++) {
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx + i * 6.5f, cy, 2);
+                nvgFill(vg);
+            }
+            break;
+        default: { // settings: a gear
+            nvgSave(vg);
+            nvgTranslate(vg, cx, cy);
+            for (int i = 0; i < 8; i++) {
+                nvgBeginPath(vg);
+                nvgRoundedRect(vg, -1.8f, -8.6f, 3.6f, 4, 1);
+                nvgFill(vg);
+                nvgRotate(vg, NVG_PI / 4);
+            }
+            nvgRestore(vg);
+            nvgBeginPath(vg);
+            nvgCircle(vg, cx, cy, 5.6f);
+            nvgStrokeWidth(vg, 2.6f);
+            nvgStroke(vg);
+            break;
+        }
+    }
+}
+
+} // namespace
+
+float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[6], const char* sd_free, int battery,
+             bool charging, int wifi, HitRect* wifi_hit, float sd_used) {
+    // only the icon: the name of NXDock is on its opening and in the HOME menu (8A)
+    Brand(vg, 36, 19, 34);
     const auto& s = Tr();
     const char* tabs[] = {s.library, TrM().t_shops, s.queue, s.installed, TrM().more_tab, s.settings};
-    float x = 236;
-    Text(vg, x - 10, 37, 22, t.muted, glyph::L, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    x += 14;
-    for (int i = 0; i < 6; i++) {
-        const float tw = TextWidth(vg, 17, tabs[i]);
-        const float badge = (i == 2 && queue_count > 0) ? 32.f : 0.f;
-        const float w = tw + 32 + badge;
-        if (i == tab) {
-            NVGcolor bgc = t.work;
-            bgc.a = 0.16f;
-            FillRound(vg, x, 18, w, 36, 18, bgc);
-        }
-        Text(vg, x + 16, 36, 17, i == tab ? t.text : t.muted, tabs[i]);
-        if (badge > 0) {
-            char n[8];
-            std::snprintf(n, sizeof(n), "%d", queue_count);
-            FillRound(vg, x + 16 + tw + 8, 26, 24, 20, 10, t.work);
-            Text(vg, x + 16 + tw + 20, 36, 13, t.on_work, n, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        }
-        tabs_out[i] = {x - 3, 0, w + 6, 72, 0};
-        x += w + 6;
-    }
-    Text(vg, x + 6, 37, 22, t.muted, glyph::R, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-
-    // Right side: free space on the SD card, the battery and the clock.
+    // Right side, in a capsule: the SD card, the WiFi, the battery and the clock (measured first).
     char clock[16];
     const time_t now = time(nullptr);
     const struct tm* lt = localtime(&now);
     std::snprintf(clock, sizeof(clock), "%02d:%02d", lt ? lt->tm_hour : 0, lt ? lt->tm_min : 0);
-    Text(vg, 1244, 36, 17, t.text, clock, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    float right = 1244 - TextWidth(vg, 17, clock) - 20;
+    char pct[8];
+    std::snprintf(pct, sizeof(pct), "%d %%", std::clamp(battery, 0, 100));
+    const float gap = 16, pad = 16;
+    float inner = TextWidth(vg, 17, clock);
+    if (battery >= 0) inner += gap + TextWidth(vg, 16, pct) + 7 + 34;
+    if (wifi > -2) inner += gap + 26;
+    const bool sd = sd_free && sd_free[0];
+    if (sd) inner += gap + 12 + 7 + (sd_used >= 0 ? 38 + 7 : 0) + TextWidth(vg, 16, sd_free);
+    const float cap_x = 1244 - inner - 2 * pad;
+    // the tabs: when every name does not fit before the capsule (long languages), the tabs not
+    // shown keep only their icon
+    float names = 0;
+    for (int i = 0; i < 6; i++) names += TextWidth(vg, 17, tabs[i]) + 58 + 4 + ((i == 2 && queue_count > 0) ? 32.f : 0.f);
+    const bool compact = 114 + names + 30 > cap_x - 16;
+    float x = 98;
+    Text(vg, x, 37, 22, t.muted, glyph::L, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    x += 16;
+    for (int i = 0; i < 6; i++) {
+        const bool on = i == tab;
+        const bool named = on || !compact;
+        const float tw = named ? TextWidth(vg, 17, tabs[i]) : 0.f;
+        const float badge = (i == 2 && queue_count > 0) ? 32.f : 0.f;
+        const float w = named ? tw + 58 + badge : 46 + badge;
+        if (on) {
+            NVGcolor bgc = t.work;
+            bgc.a = 0.16f;
+            FillRound(vg, x, 18, w, 36, 18, bgc);
+            // the line under the tab shown, with a little glow
+            NVGcolor glow = t.work;
+            glow.a = 0.45f;
+            nvgBeginPath(vg);
+            nvgRect(vg, x + 6, 44, w - 12, 20);
+            nvgFillPaint(vg, nvgBoxGradient(vg, x + 18, 52, w - 36, 3, 1.5f, 8, glow, Hex(0, 0)));
+            nvgFill(vg);
+            FillRound(vg, x + 18, 52, w - 36, 3, 1.5f, t.work);
+        }
+        TabIcon(vg, i, x + (named ? 25 : 23), 36, on ? t.work : t.muted);
+        if (named) Text(vg, x + 42, 36, 17, on ? t.text : t.muted, tabs[i]);
+        if (badge > 0) {
+            char n[8];
+            std::snprintf(n, sizeof(n), "%d", queue_count);
+            const float bx = named ? x + 42 + tw + 8 : x + 40;
+            FillRound(vg, bx, 26, 24, 20, 10, t.work);
+            Text(vg, bx + 12, 36, 13, t.on_work, n, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+        tabs_out[i] = {x - 2, 0, w + 4, 72, 0};
+        x += w + 4;
+    }
+    Text(vg, x + 8, 37, 22, t.muted, glyph::R, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+    NVGcolor cap = t.panel2;
+    cap.a = 0.8f;
+    FillRound(vg, cap_x, 17, inner + 2 * pad, 38, 19, cap);
+    StrokeRound(vg, cap_x + .5f, 17.5f, inner + 2 * pad - 1, 37, 18.5f, t.line, 1);
+    float right = 1244 - pad;
+    Text(vg, right, 36, 17, t.text, clock, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    right -= TextWidth(vg, 17, clock) + gap;
     if (battery >= 0) {
-        right = Battery(vg, t, right, 36, battery, charging) - 22;
+        right = Battery(vg, t, right, 36, battery, charging) - gap;
     }
     if (wifi > -2) {
         const float start = Wifi(vg, t, right, 36, wifi);
         if (wifi_hit) *wifi_hit = {start - 10, 0, right - start + 20, 72, 0};
-        right = start - 20;
+        right = start - gap;
     }
-    if (sd_free && sd_free[0]) {
-        char sd[64];
-        std::snprintf(sd, sizeof(sd), "SD  %s %s", sd_free, s.free_space);
-        Text(vg, right, 36, 16, t.muted, sd, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    if (sd) {
+        Text(vg, right, 36, 16, t.text, sd_free, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        right -= TextWidth(vg, 16, sd_free) + 7;
+        if (sd_used >= 0) {
+            // the part of the card in use
+            NVGcolor track = t.work;
+            track.a = 0.22f;
+            FillRound(vg, right - 38, 32.5f, 38, 7, 3.5f, track);
+            FillRound(vg, right - 38, 32.5f, std::max(7.f, 38 * std::clamp(sd_used, 0.f, 1.f)), 7, 3.5f,
+                      sd_used > 0.95f ? t.warn : t.work);
+            right -= 38 + 7;
+        }
+        // the card: its outline with the corner cut
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, right - 12, 29);
+        nvgLineTo(vg, right - 3, 29);
+        nvgLineTo(vg, right, 32);
+        nvgLineTo(vg, right, 44);
+        nvgLineTo(vg, right - 12, 44);
+        nvgClosePath(vg);
+        nvgStrokeColor(vg, t.muted);
+        nvgStrokeWidth(vg, 1.6f);
+        nvgLineJoin(vg, NVG_ROUND);
+        nvgStroke(vg);
     }
 
     nvgBeginPath(vg);
     nvgRect(vg, 0, 72, kWidth, 1);
     nvgFillColor(vg, t.line);
     nvgFill(vg);
+    return cap_x;
 }
 
 void HintBar(NVGcontext* vg, const Theme& t, const char* left, std::initializer_list<Hint> hints,

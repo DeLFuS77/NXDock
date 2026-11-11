@@ -15,8 +15,7 @@
 namespace nxdock::draw {
 
 inline void Panel(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
-    ui::FillRound(vg, x, y, w, h, r, t.panel);
-    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, t.line, 1);
+    ui::Glass(vg, t, x, y, w, h, r); // glass, with a soft shadow (12A)
 }
 
 inline float BoxHeight(NVGcontext* vg, float w, float size, const char* str) {

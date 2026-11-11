@@ -638,6 +638,15 @@ constexpr More kEnglish{
     .hm_no_nro = "NXDock.nro is not in /switch/NXDock/ on the SD card",
     .hm_failed_fmt = "The shortcut could not be changed (error 0x%X)",
     .hm_applet_tip = "Opened from the Album, NXDock has little memory. Settings › HOME menu adds a shortcut that opens it with all of it.",
+    .st_focus_row = "Game in focus",
+    .st_focus_band = "Band below",
+    .st_focus_panel = "Panel on the right",
+    .st_touch_rumble = "Vibration on touch",
+    .fv_open = "View and install",
+    .tap_open = "Open",
+    .qm_install_sd = "Install to the SD card",
+    .qm_page = "See its page",
+    .pr_done_fmt = "Library up to date · %d games",
 };
 
 constexpr More kSpanish{
@@ -1269,6 +1278,15 @@ constexpr More kSpanish{
     .hm_no_nro = "NXDock.nro no está en /switch/NXDock/ de la tarjeta SD",
     .hm_failed_fmt = "No se pudo cambiar el acceso (error 0x%X)",
     .hm_applet_tip = "Abierto desde el Álbum, NXDock tiene poca memoria. En Ajustes › Menú HOME puedes crear un acceso que lo abre con toda.",
+    .st_focus_row = "Juego enfocado",
+    .st_focus_band = "Banda abajo",
+    .st_focus_panel = "Panel a la derecha",
+    .st_touch_rumble = "Vibración al tocar",
+    .fv_open = "Ver e instalar",
+    .tap_open = "Abrir",
+    .qm_install_sd = "Instalar en la tarjeta SD",
+    .qm_page = "Ver la ficha",
+    .pr_done_fmt = "Biblioteca al día · %d juegos",
 };
 
 constexpr More kFrench{
@@ -1900,6 +1918,15 @@ constexpr More kFrench{
     .hm_no_nro = "NXDock.nro n'est pas dans /switch/NXDock/ sur la carte SD",
     .hm_failed_fmt = "Impossible de modifier le raccourci (erreur 0x%X)",
     .hm_applet_tip = "Ouvert depuis l'Album, NXDock a peu de mémoire. Réglages › Menu HOME crée un raccourci qui l'ouvre avec toute la mémoire.",
+    .st_focus_row = "Jeu sélectionné",
+    .st_focus_band = "Bandeau en bas",
+    .st_focus_panel = "Panneau à droite",
+    .st_touch_rumble = "Vibration au toucher",
+    .fv_open = "Voir et installer",
+    .tap_open = "Ouvrir",
+    .qm_install_sd = "Installer sur la carte SD",
+    .qm_page = "Voir sa fiche",
+    .pr_done_fmt = "Bibliothèque à jour · %d jeux",
 };
 
 constexpr More kGerman{
@@ -2531,6 +2558,15 @@ constexpr More kGerman{
     .hm_no_nro = "NXDock.nro liegt nicht in /switch/NXDock/ auf der SD-Karte",
     .hm_failed_fmt = "Die Verknüpfung konnte nicht geändert werden (Fehler 0x%X)",
     .hm_applet_tip = "Aus dem Album geöffnet hat NXDock wenig Speicher. Unter Einstellungen › HOME-Menü erstellst du eine Verknüpfung, die es mit dem ganzen Speicher öffnet.",
+    .st_focus_row = "Ausgewähltes Spiel",
+    .st_focus_band = "Leiste unten",
+    .st_focus_panel = "Feld rechts",
+    .st_touch_rumble = "Vibration bei Berührung",
+    .fv_open = "Ansehen und installieren",
+    .tap_open = "Öffnen",
+    .qm_install_sd = "Auf die SD-Karte installieren",
+    .qm_page = "Seite ansehen",
+    .pr_done_fmt = "Bibliothek aktuell · %d Spiele",
 };
 
 constexpr More kItalian{
@@ -3162,6 +3198,15 @@ constexpr More kItalian{
     .hm_no_nro = "NXDock.nro non è in /switch/NXDock/ sulla scheda SD",
     .hm_failed_fmt = "Impossibile modificare il collegamento (errore 0x%X)",
     .hm_applet_tip = "Aperto dall'Album, NXDock ha poca memoria. In Impostazioni › Menu HOME puoi creare un collegamento che lo apre con tutta la memoria.",
+    .st_focus_row = "Gioco selezionato",
+    .st_focus_band = "Fascia in basso",
+    .st_focus_panel = "Pannello a destra",
+    .st_touch_rumble = "Vibrazione al tocco",
+    .fv_open = "Vedi e installa",
+    .tap_open = "Apri",
+    .qm_install_sd = "Installa sulla scheda SD",
+    .qm_page = "Vedi la scheda",
+    .pr_done_fmt = "Libreria aggiornata · %d giochi",
 };
 
 constexpr More kPortuguese{
@@ -3793,6 +3838,15 @@ constexpr More kPortuguese{
     .hm_no_nro = "O NXDock.nro não está em /switch/NXDock/ no cartão SD",
     .hm_failed_fmt = "Não foi possível mudar o atalho (erro 0x%X)",
     .hm_applet_tip = "Aberto a partir do Álbum, o NXDock tem pouca memória. Em Definições › Menu HOME podes criar um atalho que o abre com toda.",
+    .st_focus_row = "Jogo em foco",
+    .st_focus_band = "Faixa em baixo",
+    .st_focus_panel = "Painel à direita",
+    .st_touch_rumble = "Vibração ao tocar",
+    .fv_open = "Ver e instalar",
+    .tap_open = "Abrir",
+    .qm_install_sd = "Instalar no cartão SD",
+    .qm_page = "Ver a ficha",
+    .pr_done_fmt = "Biblioteca atualizada · %d jogos",
 };
 
 constexpr More kDutch{
@@ -4424,6 +4478,15 @@ constexpr More kDutch{
     .hm_no_nro = "NXDock.nro staat niet in /switch/NXDock/ op de SD-kaart",
     .hm_failed_fmt = "De snelkoppeling kon niet worden gewijzigd (fout 0x%X)",
     .hm_applet_tip = "Vanuit het Album geopend heeft NXDock weinig geheugen. Via Instellingen › HOME-menu maak je een snelkoppeling die het met al het geheugen opent.",
+    .st_focus_row = "Geselecteerde game",
+    .st_focus_band = "Balk onder",
+    .st_focus_panel = "Paneel rechts",
+    .st_touch_rumble = "Trillen bij aanraken",
+    .fv_open = "Bekijken en installeren",
+    .tap_open = "Openen",
+    .qm_install_sd = "Op de SD-kaart installeren",
+    .qm_page = "Pagina bekijken",
+    .pr_done_fmt = "Bibliotheek bijgewerkt · %d games",
 };
 
 constexpr More kRussian{
@@ -5055,6 +5118,15 @@ constexpr More kRussian{
     .hm_no_nro = "NXDock.nro нет в /switch/NXDock/ на SD-карте",
     .hm_failed_fmt = "Не удалось изменить ярлык (ошибка 0x%X)",
     .hm_applet_tip = "Если открыть NXDock из Альбома, у него мало памяти. В Настройки › Меню HOME можно создать ярлык, который открывает его со всей памятью.",
+    .st_focus_row = "Выбранная игра",
+    .st_focus_band = "Полоса снизу",
+    .st_focus_panel = "Панель справа",
+    .st_touch_rumble = "Вибрация при касании",
+    .fv_open = "Открыть и установить",
+    .tap_open = "Открыть",
+    .qm_install_sd = "Установить на SD-карту",
+    .qm_page = "Открыть страницу",
+    .pr_done_fmt = "Библиотека обновлена · игр: %d",
 };
 
 constexpr More kJapanese{
@@ -5686,6 +5758,15 @@ constexpr More kJapanese{
     .hm_no_nro = "SDカードの /switch/NXDock/ にNXDock.nroがありません",
     .hm_failed_fmt = "ショートカットを変更できませんでした（エラー 0x%X）",
     .hm_applet_tip = "アルバムから開くと、NXDockのメモリは少なくなります。設定 › HOMEメニューで、メモリをすべて使えるショートカットを作成できます。",
+    .st_focus_row = "選択中のゲーム",
+    .st_focus_band = "下に帯",
+    .st_focus_panel = "右にパネル",
+    .st_touch_rumble = "タッチで振動",
+    .fv_open = "見てインストール",
+    .tap_open = "開く",
+    .qm_install_sd = "SDカードにインストール",
+    .qm_page = "詳細を見る",
+    .pr_done_fmt = "ライブラリを更新しました · %d 本",
 };
 
 constexpr More kKorean{
@@ -6317,6 +6398,15 @@ constexpr More kKorean{
     .hm_no_nro = "SD 카드의 /switch/NXDock/에 NXDock.nro가 없습니다",
     .hm_failed_fmt = "바로 가기를 바꾸지 못했습니다 (오류 0x%X)",
     .hm_applet_tip = "앨범에서 열면 NXDock의 메모리가 적습니다. 설정 › HOME 메뉴에서 메모리를 모두 쓰는 바로 가기를 만들 수 있습니다.",
+    .st_focus_row = "선택한 게임",
+    .st_focus_band = "아래 띠",
+    .st_focus_panel = "오른쪽 패널",
+    .st_touch_rumble = "터치 시 진동",
+    .fv_open = "보기 및 설치",
+    .tap_open = "열기",
+    .qm_install_sd = "SD 카드에 설치",
+    .qm_page = "상세 보기",
+    .pr_done_fmt = "라이브러리 최신 · 게임 %d개",
 };
 
 constexpr More kChinese{
@@ -6948,6 +7038,15 @@ constexpr More kChinese{
     .hm_no_nro = "SD 卡的 /switch/NXDock/ 中没有 NXDock.nro",
     .hm_failed_fmt = "无法更改快捷方式（错误 0x%X）",
     .hm_applet_tip = "从相册打开时，NXDock 的内存较少。在 设置 › HOME 菜单 中可创建一个使用全部内存打开它的快捷方式。",
+    .st_focus_row = "选中的游戏",
+    .st_focus_band = "下方横条",
+    .st_focus_panel = "右侧面板",
+    .st_touch_rumble = "触摸时振动",
+    .fv_open = "查看并安装",
+    .tap_open = "打开",
+    .qm_install_sd = "安装到 SD 卡",
+    .qm_page = "查看详情",
+    .pr_done_fmt = "游戏库已更新 · %d 个游戏",
 };
 
 // In the order of LanguageName in i18n.cpp.

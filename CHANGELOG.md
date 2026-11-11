@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A new look: the screen takes the colours of the game in focus, shown in large
+  under the covers or in a panel on the right (Settings), covers with round
+  marks only, the queue as a floating pill, a short opening, tabs with icons
+  and panels of glass.
+- Touch: what is pressed reacts at once, the grid goes on with its speed, a
+  short vibration (it can be turned off), hold a cover for its quick menu,
+  slide sideways to change the tab and pull down to read the library again.
 - A shortcut on the HOME menu (Settings › HOME menu): NXDock opens from it with
   all the memory and the network of a game. Made on the console, to the SD card;
   made again, it is updated; it can be removed.

@@ -53,6 +53,8 @@ struct UiPrefs {
     int sort = 0;               // the order of the library: 0 A-Z, 1 size, 2 not installed first, 3 recent
     int library_size = 0;       // the covers of the library: 0 large (7 in a row), 1 medium (9), 2 small (12)
     int console_size = 0;       // In the console, of the Installed tab: 0 list, 1 medium covers, 2 large covers
+    int focus_view = 0;         // the game in focus in the library: 0 a band under the covers, 1 a panel on the right
+    bool touch_rumble = true;   // a very short vibration when a touch does something (17A)
     std::string focus;          // the key of the game in focus in the library, for the next time
 
     static UiPrefs Load();

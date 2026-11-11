@@ -42,6 +42,22 @@ struct HitRect {
 float Text(NVGcontext* vg, float x, float y, float size, NVGcolor color, const char* str,
            int align = NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 float TextWidth(NVGcontext* vg, float size, const char* str);
+// A title: the console's font has one weight, so it is drawn twice, half a pixel apart, to stand
+// out from the text around it (11A). The sizes of the interface: 13 · 15 · 17 · 22 · 30 · 36.
+float Title(NVGcontext* vg, float x, float y, float size, NVGcolor color, const char* str,
+            int align = NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+// A panel of glass (12A): a little see-through (the lights behind show), a thin light along its
+// top edge and a soft shadow below.
+void Glass(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r);
+
+// The mark of NXDock, as its icon. `card` is how far the game card has gone into the dock (1:
+// all the way, as on the icon), `bar` how much of its light bar is lit and `lamp` its light, for
+// the opening presentation (4A); all 1 draws the icon as it is.
+void Brand(NVGcontext* vg, float x, float y, float s, float card = 1, float bar = 1, float lamp = 1);
+// The dock alone (no background) in a square of side `s`, with what falls into its slot drawn by
+// `inside` between its back and its front, cut at the slot (10A); `bar` lights its bar.
+void Dock(NVGcontext* vg, float x, float y, float s, float bar, void (*inside)(NVGcontext*, void*), void* data);
 
 void FillRound(NVGcontext* vg, float x, float y, float w, float h, float r, NVGcolor c);
 void StrokeRound(NVGcontext* vg, float x, float y, float w, float h, float r, NVGcolor c, float width);
@@ -75,8 +91,12 @@ void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text);
 // battery: the charge in %, -1 when unknown (then nothing is drawn).
 // wifi: the coverage 0..3, -1 without network, -2 not known yet (nothing drawn); its area goes
 // to `wifi_hit` (taller than drawn: easy to tap).
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[6], const char* sd_free,
-            int battery = -1, bool charging = false, int wifi = -2, HitRect* wifi_hit = nullptr);
+// Each tab has its icon and its name, the one shown with a blue line under it (8A); on the right a
+// capsule holds the SD card (a little bar of the part in use), the WiFi, the battery and the
+// clock. `sd_used` is the part of the card in use (0..1), -1 when not known. Returns where the
+// capsule starts.
+float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[6], const char* sd_free,
+            int battery = -1, bool charging = false, int wifi = -2, HitRect* wifi_hit = nullptr, float sd_used = -1);
 
 // The WiFi as the fan of the HOME menu (1A): three arcs lit by the coverage, blue with signal,
 // amber with one bar, grey and crossed without network. Drawn to the left of `right`; returns

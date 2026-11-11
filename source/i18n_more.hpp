@@ -125,6 +125,9 @@ struct More {
     const char *st_g_library, *st_g_install, *st_g_notices, *st_g_look, *st_g_wizard, *st_g_manual, *st_change, *st_updates, *st_dest, *st_pick, *st_screen, *st_scr_normal, *st_scr_dim, *st_scr_off, *st_finish, *st_battery, *st_battery_fmt, *rs_later, *rd_title, *rd_body_fmt, *rd_go, *le_reach_t, *le_reach_w, *le_reach_d, *le_key_t, *le_key_w, *le_key_d, *le_off_t, *le_off_w, *le_off_d, *le_server_t, *le_server_w, *le_server_d, *le_stop_t, *le_stop_w, *le_stop_d, *pr_code_failed, *sp_todo, *cat_stale_short, *t_dumps, *t_dumps_sub;
     // the shortcut on the HOME menu
     const char *st_g_home, *hm_row, *hm_remove_row, *hm_on, *hm_in_use, *hm_make, *hm_update, *hm_add_title, *hm_update_title, *hm_add_body, *hm_remove_title, *hm_remove_body, *hm_remove_go, *hm_done_add, *hm_done_update, *hm_done_remove, *hm_in_use_note, *hm_no_nro, *hm_failed_fmt, *hm_applet_tip;
+    // the new look (11/11): the game in focus, a vibration on touch, the quick menu of a cover held,
+    // the bubble to open a cover tapped once, pulling down to read the library again
+    const char *st_focus_row, *st_focus_band, *st_focus_panel, *st_touch_rumble, *fv_open, *tap_open, *qm_install_sd, *qm_page, *pr_done_fmt;
 };
 
 const More& TrM();

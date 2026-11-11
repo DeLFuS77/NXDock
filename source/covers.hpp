@@ -27,6 +27,10 @@ public:
     int Get(const std::string& path);
     // True while a cover is still on its way (not yet fetched, or fetched again after a failure).
     bool Loading(const std::string& path);
+    // A small soft picture of a cover (kThumb a side, RGBA), for the light behind the game in focus
+    // (1A); false while the cover has not been read.
+    static constexpr int kThumb = 24;
+    bool Thumb(const std::string& path, unsigned char* out);
     // Makes the decoded covers into images; call once per frame on the drawing thread.
     void Upload(NVGcontext* vg);
     void Free(NVGcontext* vg);
@@ -58,6 +62,10 @@ private:
     std::set<std::string> m_asked;
     std::deque<Decoded> m_decoded;
     std::map<std::string, int> m_images;
+    // the small pictures (kThumb a side), the oldest dropped past kMaxThumbs (about 2 KB each)
+    static constexpr size_t kMaxThumbs = 256;
+    std::map<std::string, std::vector<unsigned char>> m_thumbs;
+    std::deque<std::string> m_thumb_order;
     // the frame each image was last drawn in: in a library of thousands, the ones not seen for
     // longest are freed when there are too many
     std::map<std::string, unsigned long> m_used;

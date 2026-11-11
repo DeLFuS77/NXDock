@@ -17,6 +17,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <ctime>
 #include <string>
@@ -144,16 +145,36 @@ constexpr float kGridMargin = 10;                      // room for the focus glo
 // The A-Z bar on the right edge: as tall as the grid, 48 px wide for a finger.
 constexpr float kAzTop = kGridTop - 6;
 
-void GridSize(int size) {
+// The A-Z bar on the right edge of the covers: 26 px drawn, 48 px for a finger.
+constexpr float kAzW = 26;
+float g_az_x = 1251;
+// The panel of the game in focus (2B), on the right of the covers.
+constexpr float kPanelX = 884, kPanelW = kWidth - kPanelX - 36;
+
+// panel: the game in focus is shown in a panel on the right (2B), the covers keep the rest
+void GridSize(int size, bool panel = false) {
     static constexpr int kCols[] = {7, 9, 12}, kRows[] = {2, 3, 4};
     const int i = std::clamp(size, 0, 2);
-    g_columns = kCols[i];
-    g_cover = (kWidth - 2 * kGridX - kGridGap * float(g_columns - 1)) / float(g_columns);
-    g_row_pitch = g_cover + kGridGap;
-    g_view_h = float(kRows[i]) * g_row_pitch - kGridGap;
+    if (panel) {
+        // two columns less, as many rows as fit down to the hint bar
+        const float width = 800;
+        g_columns = kCols[i] - 2;
+        g_cover = (width - kGridGap * float(g_columns - 1)) / float(g_columns);
+        g_row_pitch = g_cover + kGridGap;
+        const int rows = std::max(1, int((500 + kGridGap) / g_row_pitch));
+        g_view_h = float(rows) * g_row_pitch - kGridGap;
+        g_az_x = kGridX + width + 12;
+    } else {
+        g_columns = kCols[i];
+        g_cover = (kWidth - 2 * kGridX - kGridGap * float(g_columns - 1)) / float(g_columns);
+        g_row_pitch = g_cover + kGridGap;
+        g_view_h = float(kRows[i]) * g_row_pitch - kGridGap;
+        g_az_x = 1251;
+    }
     g_az_height = g_view_h + 12;
 }
-constexpr float kAzX = 1251, kAzW = 26, kAzTouchX = kWidth - 48;
+// how far the library is pulled down before letting go reads it again (21A)
+constexpr float kPullArm = 64;
 
 // Touch: how far a finger moves before a tap turns into a drag.
 constexpr float kDragSlop = 14;
@@ -170,8 +191,7 @@ void Background(NVGcontext* vg, const Theme& t) {
 }
 
 void Panel(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
-    ui::FillRound(vg, x, y, w, h, r, t.panel);
-    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, t.line, 1);
+    ui::Glass(vg, t, x, y, w, h, r); // glass, with a soft shadow (12A)
 }
 
 // Text over several lines inside a width.
@@ -214,7 +234,7 @@ enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowSpeed,
     kRowDest, kRowPick, kRowSaveCopy, kRowScreen, kRowCompress,
     kRowFinish, kRowBattery, kRowNotifyDone,
-    kRowLanguage, kRowTheme, kRowSounds, kRowAnim,
+    kRowLanguage, kRowTheme, kRowSounds, kRowAnim, kRowFocusView, kRowTouchRumble,
     kRowWizard,
     kRowHome, kRowHomeRemove,
     kRowAddress, kRowKey,
@@ -452,6 +472,11 @@ bool App::Init() {
     } else if (net::IsAppletMode() && !m_home.installed && m_home.nro_found) {
         Notice(TrM().hm_applet_tip);
         m_notice_until = m_time + 8;
+    }
+    if (m_ui.wizard_done && !ui::Still()) {
+        // the opening (4A): the icon assembles itself, then the covers come in
+        m_boot_at = m_time;
+        m_wave_at = m_time + (ui::Lively() ? 1.25 : 0.5);
     }
     return true;
 }
@@ -742,6 +767,19 @@ void App::ActivateSetting(int row) {
             ui::SetMotion(m_ui.anim);
             m_ui.Save();
             break;
+        case kRowFocusView:
+            // the game in focus: a band under the covers, or a panel on the right (2A, 2B)
+            m_ui.focus_view = m_ui.focus_view == 1 ? 0 : 1;
+            m_ui.Save();
+            GridSize(m_ui.library_size, m_ui.focus_view == 1);
+            m_scroll = m_scroll_target = 0;
+            KeepFocusVisible();
+            break;
+        case kRowTouchRumble:
+            m_ui.touch_rumble = !m_ui.touch_rumble;
+            m_ui.Save();
+            TouchTick(); // felt at once when it is turned on
+            break;
         case kRowLibrary:
             // the pairing screen, or the library when linked
             m_tab = Tab::Library;
@@ -847,30 +885,49 @@ float App::MaxScroll() const {
 // On a cover of the library: Installed in green; what it lacks of the library (its update, its DLC)
 // in cyan below.
 void App::InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s) {
+    // only what the console has, as small round marks in the corner (5A): a green tick when the
+    // game is on it, under it a cyan arrow when an update is missing, a cyan plus for a DLC
+    if (!g.installed.base) return;
     const Theme& t = m_theme;
-    const More& m = TrM();
-    const bool small = s < 110;
-    const float size = small ? 10.f : 12.f, h = small ? 18.f : 22.f, pad = small ? 5.f : 7.f;
-    float by = y + s - pad - h;
-    const auto pill = [&](const char* text, NVGcolor fg, NVGcolor bg, bool tick) {
-        const float tw = ui::TextWidth(vg, size, text), w = std::min(s - 2 * pad, tw + (tick ? 30.f : 14.f));
-        ui::FillRound(vg, x + pad, by, w, h, h / 2, bg);
-        nvgSave(vg);
-        nvgIntersectScissor(vg, x + pad, by, w, h);
-        float tx = x + pad + 7;
-        if (tick) {
-            ui::CheckMark(vg, tx + 6, by + h / 2, size, fg, 2.f);
-            tx += 16;
-        }
-        ui::Text(vg, tx, by + h / 2, size, fg, text);
-        nvgRestore(vg);
-        by -= h + 4;
+    const float r = s < 110 ? 10.f : 13.f;
+    const float cx = x + s - 8 - r;
+    float cy = y + 8 + r;
+    const auto mark = [&](NVGcolor fill) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, r + 2);
+        nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.28f));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, cy, r);
+        nvgFillColor(vg, fill);
+        nvgFill(vg);
     };
-    if (g.installed.base) {
-        if (g.UpdateAvailable()) pill(m.lb_needs_update, Hex(0x082430), Hex(0x22bfe3), false);
-        else if (g.MissingDlc()) pill(m.lb_needs_dlc, Hex(0x082430), Hex(0x22bfe3), false);
-        pill(m.lb_installed_tag, nvgRGB(255, 255, 255), t.ok, true);
+    mark(t.ok);
+    ui::CheckMark(vg, cx, cy + 0.5f, r * 1.05f, nvgRGB(255, 255, 255), s < 110 ? 2.f : 2.6f);
+    const bool update = g.UpdateAvailable(), dlc = g.MissingDlc();
+    if (!update && !dlc) return;
+    cy += 2 * r + 6;
+    mark(Hex(0x22bfe3));
+    const NVGcolor ink = Hex(0x082430);
+    const float k = r * 0.45f;
+    nvgBeginPath(vg);
+    if (update) {
+        nvgMoveTo(vg, cx, cy + k);
+        nvgLineTo(vg, cx, cy - k);
+        nvgMoveTo(vg, cx - k * 0.8f, cy - k * 0.2f);
+        nvgLineTo(vg, cx, cy - k);
+        nvgLineTo(vg, cx + k * 0.8f, cy - k * 0.2f);
+    } else {
+        nvgMoveTo(vg, cx - k, cy);
+        nvgLineTo(vg, cx + k, cy);
+        nvgMoveTo(vg, cx, cy - k);
+        nvgLineTo(vg, cx, cy + k);
     }
+    nvgStrokeColor(vg, ink);
+    nvgStrokeWidth(vg, s < 110 ? 2.f : 2.4f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgLineJoin(vg, NVG_ROUND);
+    nvgStroke(vg);
 }
 
 void App::FollowPreflight() {
@@ -955,15 +1012,48 @@ void App::ReadTouch(u64& down) {
         if (!m_touching) {
             m_touching = true;
             m_dragging = false;
-            m_touch_x0 = x;
-            m_touch_y0 = y;
+            m_swipe = false;
+            m_swipe_dx = 0;
+            m_long_fired = false;
+            m_touch_x0 = m_touch_x_prev = x;
+            m_touch_y0 = m_touch_y_prev = y;
+            m_touch_t_prev = m_time;
+            m_drag_v = m_drag_vx = 0;
+            m_fling_v = 0;      // a finger stops the grid
+            m_list_fling = 0;
             m_drag_scroll0 = m_scroll;
             // a list drawn last frame under the finger: dragged, it moves its focus row by row
-            m_list_drag = m_list_pitch > 0 && m_dialog.kind == DialogKind::None && !m_menu && !m_wifi_open && m_list_area.Contains(x, y);
+            m_list_drag = m_list_pitch > 0 && m_dialog.kind == DialogKind::None && !m_menu && !m_wifi_open && m_quick < 0 &&
+                          m_list_area.Contains(x, y);
             m_drag_steps = 0;
             // the A-Z bar on the right edge: tapped or dragged along, it jumps to the letter
-            m_az_touch = AzBarShown() && m_dialog.kind == DialogKind::None && !m_menu && x >= kAzTouchX &&
-                         y >= kAzTop - 8 && y < kAzTop + g_az_height + 8;
+            m_az_touch = AzBarShown() && m_dialog.kind == DialogKind::None && !m_menu && m_quick < 0 && x >= g_az_x - 22 &&
+                         x < g_az_x + kAzW + 12 && y >= kAzTop - 8 && y < kAzTop + g_az_height + 8;
+            // what is under the finger reacts at once (15A)
+            m_press_live = false;
+            m_press_cover = -1;
+            if (!m_az_touch) {
+                for (auto it = m_hits.rbegin(); it != m_hits.rend(); ++it) {
+                    if (it->rect.Contains(x, y)) {
+                        m_press_rect = it->rect;
+                        m_press_kind = it->kind;
+                        m_press_cover = it->kind == HitKind::Cover ? it->index : -1;
+                        m_press_live = true;
+                        m_press_at = m_time;
+                        break;
+                    }
+                }
+            }
+        }
+        // the speed of the finger, smoothed (16A)
+        const double dt = m_time - m_touch_t_prev;
+        if (dt > 0.001) {
+            const float vy = float((y - m_touch_y_prev) / dt), vx = float((x - m_touch_x_prev) / dt);
+            m_drag_v = m_drag_v * 0.4f + vy * 0.6f;
+            m_drag_vx = m_drag_vx * 0.4f + vx * 0.6f;
+            m_touch_y_prev = y;
+            m_touch_x_prev = x;
+            m_touch_t_prev = m_time;
         }
         m_touch_x = x;
         m_touch_y = y;
@@ -972,27 +1062,113 @@ void App::ReadTouch(u64& down) {
             JumpToLetter(slot, 0);
             return;
         }
-        const bool in_grid = GridTab() && !m_detail && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + g_view_h;
-        if (!m_dragging && std::fabs(y - m_touch_y0) > kDragSlop && (in_grid || m_list_drag)) {
-            m_dragging = true;
-            if (m_list_drag) ListDragStarts();
+        const float dx = x - m_touch_x0, dy = y - m_touch_y0;
+        const bool moved = std::fabs(dx) > kDragSlop || std::fabs(dy) > kDragSlop;
+        if (moved && m_press_live) {
+            m_press_live = false; // a drag, not a press: the wave goes
+            m_release_at = m_time;
         }
-        if (m_dragging && m_list_drag) {
+        // held still on a cover: its quick menu (18A)
+        if (!moved && !m_long_fired && m_press_cover >= 0 && m_press_kind == HitKind::Cover && GridTab() && !m_detail &&
+            m_dialog.kind == DialogKind::None && !m_menu && m_quick < 0 && m_time - m_press_at >= 0.45) {
+            m_long_fired = true;
+            m_press_live = false;
+            m_release_at = m_time;
+            OpenQuick(m_press_cover);
+            TouchTick();
+            return;
+        }
+        const bool in_grid = GridTab() && !m_detail && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + g_view_h &&
+                             m_touch_x0 < g_az_x - 22;
+        if (!m_dragging && !m_swipe && moved && !m_long_fired) {
+            // sideways: the tab beside, or back from a page (20A); up and down: the grid or the list
+            const bool calm = !m_wizard && m_dialog.kind == DialogKind::None && !m_menu && m_quick < 0 && !m_wifi_open;
+            if (std::fabs(dx) > std::fabs(dy) * 1.2f && calm) {
+                m_swipe = true;
+            } else if (std::fabs(dy) > kDragSlop && (in_grid || m_list_drag)) {
+                m_dragging = true;
+                if (m_list_drag) ListDragStarts();
+            }
+        }
+        if (m_swipe) {
+            // the content follows the finger; from a page only to the right (back), and with resistance
+            const bool sub = InSubScreen();
+            float follow = dx;
+            if (sub && follow < 0) follow *= 0.15f;
+            m_swipe_dx = ui::Still() ? 0.f : follow * (sub ? 0.6f : 0.45f);
+        } else if (m_dragging && m_list_drag) {
             // a row dragged up shows the next one: the focus goes down by one, as with the pad
             const int steps = int((m_touch_y0 - y) / m_list_pitch);
             m_drag_pending += steps - m_drag_steps;
             m_drag_steps = steps;
         } else if (m_dragging) {
-            // The grid follows the finger.
-            m_scroll = m_scroll_target = std::clamp(m_drag_scroll0 - (y - m_touch_y0), 0.f, MaxScroll());
+            // the grid follows the finger; past its ends it gives a little (16A), at the top that
+            // is pulling to read the library again (21A)
+            const float raw = m_drag_scroll0 - dy, top = m_refreshing ? -46.f : 0.f, max = MaxScroll();
+            float at = raw;
+            if (ui::Still()) at = std::clamp(raw, 0.f, max);
+            else if (raw < top) at = top + (raw - top) * 0.42f;
+            else if (raw > max) at = max + (raw - max) * 0.42f;
+            m_scroll = m_scroll_target = at;
+            m_scroll_seen_at = m_time;
         }
     } else if (m_touching && m_az_touch) {
         m_touching = m_az_touch = false;
     } else if (m_touching) {
         m_touching = false;
-        const bool moved = std::fabs(m_touch_x - m_touch_x0) > kDragSlop || std::fabs(m_touch_y - m_touch_y0) > kDragSlop;
-        if (!m_dragging && !moved) {
-            Tap(m_touch_x, m_touch_y, down);
+        const float dx = m_touch_x - m_touch_x0;
+        const bool moved = std::fabs(dx) > kDragSlop || std::fabs(m_touch_y - m_touch_y0) > kDragSlop;
+        if (m_press_live) {
+            m_press_live = false;
+            m_release_at = m_time;
+        }
+        if (m_swipe) {
+            // far enough, or quick enough: the tab beside (or back); else it springs back
+            const bool far = std::fabs(dx) > 150 || (std::fabs(m_drag_vx) > 700 && std::fabs(dx) > 40);
+            const bool sub = InSubScreen();
+            if (far && sub && dx > 0) {
+                down |= HidNpadButton_B;
+                TouchTick();
+                m_swipe_dx = 0;
+            } else if (far && !sub) {
+                const int dir = dx < 0 ? 1 : -1;
+                m_tab = Tab((int(m_tab) + dir + kTabs) % kTabs);
+                // the new tab comes in from where the finger left the old one
+                m_tab_from_next = float(dir) * std::max(80.f, 380.f - std::fabs(m_swipe_dx));
+                m_swipe_dx = 0;
+                TouchTick();
+            } else {
+                m_swipe_back = m_swipe_dx;
+                m_swipe_back_at = m_time;
+                m_swipe_dx = 0;
+            }
+            m_swipe = false;
+        } else if (m_dragging && m_list_drag) {
+            // let go with speed: the list goes on a few rows, slowing down (16A)
+            if (!ui::Still() && std::fabs(m_drag_v) > 400 && m_list_pitch > 0) {
+                m_list_fling = -m_drag_v;
+                m_list_fling_d = 0;
+                m_list_fling_pitch = m_list_pitch;
+            }
+        } else if (m_dragging) {
+            if (m_scroll < -kPullArm && m_tab == Tab::Library && !m_shop_active && !m_refreshing &&
+                m_catalog.GetState() != Catalog::State::Loading) {
+                // pulled far enough: the library is read again (21A)
+                const Config c = m_link.CurrentConfig();
+                if (c.Linked()) {
+                    m_refreshing = true;
+                    m_refresh_at = m_time;
+                    m_catalog.Load(c.url, c.key);
+                    TouchTick();
+                }
+            }
+            if (!ui::Still() && std::fabs(m_drag_v) > 250) {
+                m_fling_v = std::clamp(-m_drag_v, -4200.f, 4200.f);
+                m_fling_end_told = false;
+            }
+            m_scroll_target = std::clamp(m_scroll, m_refreshing ? -46.f : 0.f, MaxScroll());
+        } else if (!moved && !m_long_fired) {
+            if (Tap(m_touch_x, m_touch_y, down)) TouchTick();
         }
         m_dragging = false;
         m_list_drag = false;
@@ -1006,11 +1182,11 @@ void App::ListDragStarts() {
     if (m_more == MoreScreen::Saves) m_vault_side = 0;
 }
 
-void App::Tap(float x, float y, u64& down) {
+bool App::Tap(float x, float y, u64& down) {
     if (m_wifi_open) {
         // the WiFi card is on top: a tap on it does nothing, anywhere else closes it
         if (!m_wifi_card.Contains(x, y)) m_wifi_open = false;
-        return;
+        return true;
     }
     // Last drawn on top wins: walk backwards.
     for (auto it = m_hits.rbegin(); it != m_hits.rend(); ++it) {
@@ -1022,6 +1198,7 @@ void App::Tap(float x, float y, u64& down) {
             case HitKind::Tab: m_tab = Tab(it->index); break;
             case HitKind::Wifi: m_wifi_open = true; break;
             case HitKind::Chip:
+                if (m_filter != it->index) m_wave_at = m_time; // the covers come in as a wave (9A)
                 m_filter = it->index;
                 RebuildView();
                 break;
@@ -1037,6 +1214,9 @@ void App::Tap(float x, float y, u64& down) {
                 } else {
                     m_focus = it->index;
                     KeepFocusVisible();
+                    // marked by a finger: a bubble on it opens it (19A)
+                    m_touch_focus = true;
+                    m_touch_focus_at = m_time;
                 }
                 break;
             case HitKind::QueueStrip: m_tab = Tab::Queue; break;
@@ -1257,9 +1437,13 @@ void App::Tap(float x, float y, u64& down) {
                 m_dialog.focus = it->index;
                 down |= HidNpadButton_A;
                 break;
+            case HitKind::OpenBubble: down |= HidNpadButton_A; break; // the bubble on a cover tapped once (19A)
+            case HitKind::QuickRow: ActivateQuick(it->index); break;    // a row of the quick menu acts at once (18A)
+            case HitKind::QuickBack: m_quick = -1; break;
         }
-        return;
+        return true;
     }
+    return false;
 }
 
 void App::Update(u64 down, u64 held) {
@@ -1308,6 +1492,14 @@ void App::Update(u64 down, u64 held) {
             UpdateDetail(down, held);
             return;
         }
+    }
+    if (m_quick >= 0) {
+        // the quick menu of a cover held (18A)
+        if (GridTab() && !m_detail && m_quick < int(m_view.size())) {
+            UpdateQuick(down, held);
+            return;
+        }
+        m_quick = -1;
     }
     if (m_menu) {
         if (GridTab()) {
@@ -1394,6 +1586,12 @@ bool App::Frame() {
     }
     if (FollowScreenOff(down, new_touch)) {
         // the input that lit the screen, or stopped the countdown, does nothing else
+    } else if (m_boot_at > 0 && m_time - m_boot_at < 1.5 && (down || new_touch)) {
+        // the opening is skipped by any button or touch, which does nothing else (4A)
+        m_boot_at = -100;
+        m_wave_at = -100;
+        m_wake_touch = new_touch;
+        down = 0;
     } else if ((m_saver_on || TourActive()) && (down || new_touch)) {
         // the input that lights the screen again, or ends the walk, does nothing else
         m_saver_on = false;
@@ -1411,8 +1609,11 @@ bool App::Frame() {
         down |= HidNpadButton_Up;
         m_drag_pending++;
     }
-    if (m_dialog.kind != DialogKind::None || m_menu) m_drag_pending = 0;
-    GridSize(m_ui.library_size);
+    if (m_dialog.kind != DialogKind::None || m_menu || m_quick >= 0) {
+        m_drag_pending = 0;
+        m_list_fling = 0;
+    }
+    GridSize(m_ui.library_size, m_ui.focus_view == 1);
     Update(down, held);
     FollowPreflight();
     if (m_tab != m_tab_seen) {
@@ -1435,6 +1636,21 @@ bool App::Frame() {
         m_saver_on = true;
     }
     FollowLink();
+    if (m_refreshing && m_catalog.GetState() != Catalog::State::Loading && m_time - m_refresh_at > 0.4) {
+        // the library read again by pulling it down (21A): said in green, and the grid goes back up
+        m_refreshing = false;
+        if (m_catalog.GetState() == Catalog::State::Ready) {
+            char text[160];
+            std::snprintf(text, sizeof(text), TrM().pr_done_fmt, int(m_games.size()));
+            NoticeOk(text);
+        }
+        if (!m_dragging) m_scroll_target = std::clamp(m_scroll_target, 0.f, MaxScroll());
+    }
+    if (m_tick_off_at > 0 && m_time >= m_tick_off_at) {
+        // the end of the short vibration of a touch (17A)
+        m_tick_off_at = -1;
+        if (m_rumble_step < 0) SendRumble(false);
+    }
     FollowQueue();
     FollowFinish();
     FollowUsb();
@@ -1444,6 +1660,36 @@ bool App::Frame() {
     CheckSdSpace();
     CheckBattery();
     CheckWifi();
+
+    // The grid goes on after the finger with its speed, slowing down; past an end it stops quickly
+    // and comes back (16A)
+    if (!m_dragging && m_fling_v != 0) {
+        const float max = MaxScroll(), top = m_refreshing ? -46.f : 0.f;
+        m_scroll = std::clamp(m_scroll + m_fling_v * dt, top - 90.f, max + 90.f);
+        const bool out = m_scroll < top || m_scroll > max;
+        m_fling_v *= std::exp(-dt * (out ? 18.f : 3.f));
+        if (out && !m_fling_end_told) {
+            m_fling_end_told = true;
+            TouchTick(); // the end, felt
+        }
+        m_scroll_target = m_scroll;
+        m_scroll_seen_at = m_time;
+        if (std::fabs(m_fling_v) < 30 || !GridTab() || m_detail) {
+            m_fling_v = 0;
+            m_scroll_target = std::clamp(m_scroll, top, max);
+        }
+    }
+    // a list let go with speed goes on a few rows
+    if (m_list_fling != 0 && !m_touching) {
+        m_list_fling_d += m_list_fling * dt;
+        m_list_fling *= std::exp(-dt * 5.f);
+        const int steps = m_list_fling_pitch > 0 ? int(m_list_fling_d / m_list_fling_pitch) : 0;
+        if (steps) {
+            m_drag_pending += steps;
+            m_list_fling_d -= float(steps) * m_list_fling_pitch;
+        }
+        if (std::fabs(m_list_fling) < 150) m_list_fling = 0;
+    }
 
     // Ease the grid toward where it should be (frame-rate independent).
     if (!m_dragging) {
@@ -1516,7 +1762,18 @@ void App::Draw(NVGcontext* vg) {
     m_list_pitch = 0; // set again by the list drawn, if any
     Background(vg, m_theme);
     // the slow lights behind, paused while installing on little battery
-    if (!(m_queue && m_queue->Busy() && m_battery >= 0 && m_battery < 20 && !m_charging)) ui::Aurora(vg, m_theme);
+    const bool low = m_queue && m_queue->Busy() && m_battery >= 0 && m_battery < 20 && !m_charging;
+    if (!low) ui::Aurora(vg, m_theme);
+    // the light of the game in focus (1A), behind the library and the page of a game; paused, as
+    // the aurora, while installing on little battery
+    if (!m_wizard && GridTab() && !low) {
+        const bool shown = m_tab == Tab::Shops ? m_shop_active : m_link.Snapshot().state == Link::State::Connected;
+        if (shown && m_detail && m_detail_game >= 0 && m_detail_game < int(m_games.size())) {
+            DrawBackdrop(vg, m_games[m_detail_game], true);
+        } else if (shown && !m_detail && !m_view.empty()) {
+            DrawBackdrop(vg, m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]], false);
+        }
+    }
     if (m_wizard) {
         DrawWizard(vg);
         AddHints(m_hint_rects);
@@ -1533,14 +1790,15 @@ void App::Draw(NVGcontext* vg) {
     if (m_queue) {
         queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
     }
-    ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect);
+    const float sd_used = m_sd_total_bytes > 0 && m_sd_free_bytes >= 0 ? 1.f - float(double(m_sd_free_bytes) / double(m_sd_total_bytes)) : -1.f;
+    const float capsule = ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect, sd_used);
     if (m_wifi > -2) m_hits.push_back({m_wifi_rect, HitKind::Wifi, 0});
     if (m_shop_active && m_tab == Tab::Library) {
         // which shop the library shows
         char badge[160];
         std::snprintf(badge, sizeof(badge), TrM().sh_badge, m_shop_name.c_str());
-        const float bw = std::min(260.f, ui::TextWidth(vg, 14, badge) + 28);
         const float bx = tabs[kTabs - 1].x + tabs[kTabs - 1].w + 30;
+        const float bw = std::min({260.f, ui::TextWidth(vg, 14, badge) + 28, capsule - 12 - bx});
         NVGcolor bg = m_theme.work;
         bg.a = 0.16f;
         ui::FillRound(vg, bx, 22, bw, 28, 14, bg);
@@ -1554,11 +1812,15 @@ void App::Draw(NVGcontext* vg) {
         m_tab_rects[i] = tabs[i];
     }
     if (m_tab != m_shown_tab) {
-        // the content comes in from the side of the new tab (L wraps from the first to the last)
+        // the content comes in from the side of the new tab (L wraps from the first to the last);
+        // slid by a finger, from where the finger left the old one (20A)
         const int from = int(m_shown_tab), to = int(m_tab);
         m_tab_dir = ((to - from + kTabs) % kTabs) <= 2 ? 1.f : -1.f;
         m_shown_tab = m_tab;
         m_tab_at = m_time;
+        m_tab_from = m_tab_from_next;
+        m_tab_from_next = 0;
+        m_quick = -1;
     }
     if (m_detail != m_shown_detail) {
         m_shown_detail = m_detail;
@@ -1566,10 +1828,21 @@ void App::Draw(NVGcontext* vg) {
     }
     const float tab_e = float(std::min(1.0, (m_time - m_tab_at) / 0.22));
     nvgSave(vg);
+    float shift = 0;
     if (tab_e < 1 && !ui::Still()) {
         const float k = 1 - tab_e;
-        nvgTranslate(vg, 30 * m_tab_dir * k * k, 0);
+        shift = m_tab_from != 0 ? m_tab_from * k * k * k : 30 * m_tab_dir * k * k;
+    } else {
+        m_tab_from = 0;
     }
+    // a finger sliding sideways moves the content; let go too soon, it springs back (20A)
+    shift += m_swipe_dx;
+    if (m_swipe_back != 0) {
+        const float back = 1 - ui::EaseOut(ui::Appear(m_swipe_back_at, 0.22f));
+        shift += m_swipe_back * back;
+        if (back <= 0) m_swipe_back = 0;
+    }
+    if (shift != 0) nvgTranslate(vg, shift, 0);
     switch (m_tab) {
         case Tab::Library: {
             const Link::View link = m_link.Snapshot();
@@ -1602,6 +1875,9 @@ void App::Draw(NVGcontext* vg) {
     if (m_menu && GridTab() && !m_detail) {
         DrawMenu(vg);
     }
+    if (m_quick >= 0 && GridTab() && !m_detail) {
+        DrawQuick(vg);
+    }
     if (m_dialog.kind != DialogKind::None) {
         DrawDialog(vg);
     }
@@ -1628,6 +1904,7 @@ void App::Draw(NVGcontext* vg) {
     DrawFinish(vg);
     DrawTour(vg);
     DrawWifiCard(vg);
+    DrawBoot(vg);
     DrawTouchFeedback(vg);
     DrawSaver(vg);
     DrawScreenOff(vg);
@@ -1645,7 +1922,7 @@ void App::DrawTransitions(NVGcontext* vg) {
     };
     const float tab_e = float(std::min(1.0, (m_time - m_tab_at) / 0.22));
     if (tab_e < 1) {
-        veil(0.9f * (1 - tab_e));
+        veil((m_tab_from != 0 ? 0.45f : 0.9f) * (1 - tab_e)); // slid by a finger: it was already moving
     }
     const double age = m_time - m_detail_at;
     if (!GridTab() || age >= 0.3 || m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
@@ -1653,7 +1930,7 @@ void App::DrawTransitions(NVGcontext* vg) {
     }
     // the page of a game grows out of its cover, and goes back into it
     const float p = float(age / 0.3), e = 1 - (1 - p) * (1 - p) * (1 - p);
-    veil(0.85f * (1 - e));
+    veil((ui::Lively() ? 0.4f : 0.85f) * (1 - e)); // lively, its parts come in one after another (7A)
     const float gx = kGridX + (m_focus % g_columns) * (g_cover + kGridGap);
     const float gy = kGridTop + (m_focus / g_columns) * g_row_pitch - m_scroll;
     const float dx = 48, dy = 72 + 34, ds = 330;
@@ -1676,13 +1953,13 @@ void App::InitRumble() {
     m_vib_ok[2] = R_SUCCEEDED(hidInitializeVibrationDevices(m_vib_full, 1, HidNpadIdType_No1, HidNpadStyleTag_NpadFullKey));
 }
 
-void App::SendRumble(bool on) {
+void App::SendRumble(bool on, float strength) {
     // short and gentle: a quarter of the strength, at the frequencies the console uses for a tap
     HidVibrationValue v[2];
     for (auto& value : v) {
-        value.amp_low = on ? 0.25f : 0.f;
+        value.amp_low = on ? 0.25f * strength : 0.f;
         value.freq_low = 160.f;
-        value.amp_high = on ? 0.20f : 0.f;
+        value.amp_high = on ? 0.20f * strength : 0.f;
         value.freq_high = 320.f;
     }
     if (m_vib_ok[0] && (hidGetNpadStyleSet(HidNpadIdType_Handheld) & HidNpadStyleTag_NpadHandheld)) {
@@ -1695,6 +1972,13 @@ void App::SendRumble(bool on) {
     if (m_vib_ok[2] && (style & HidNpadStyleTag_NpadFullKey)) {
         hidSendVibrationValues(m_vib_full, v, 1);
     }
+}
+
+void App::TouchTick() {
+    // a tap of 18 ms at less than half the strength of the end of a queue (17A)
+    if (!m_ui.touch_rumble || m_rumble_step >= 0) return;
+    SendRumble(true, 0.45f);
+    m_tick_off_at = m_time + 0.018;
 }
 
 void App::FollowFinish() {
@@ -1725,6 +2009,10 @@ void App::FollowFinish() {
             if (j.state == InstallJob::State::Done) {
                 m_batch_done++;
                 m_batch_bytes += j.size;
+                // the last game installed falls into the dock (10A)
+                m_finish_cover = j.cover;
+                m_finish_key = j.color_key;
+                m_finish_name = j.game;
             } else {
                 m_batch_failed++;
             }
@@ -1740,6 +2028,11 @@ void App::FollowFinish() {
             if (m_batch_failed > 0) Notice(text);
             else NoticeOk(text);
             m_notice_until = m_time + 5;
+            if (m_ui.finish_effect && m_batch_failed == 0 && ui::Lively()) {
+                // the notice comes up once the game is in the dock
+                m_notice_at = m_time + 1.0;
+                m_notice_until = m_time + 6;
+            }
             if (m_ui.finish_effect) {
                 m_finish_at = m_time;
                 m_rumble_step = 0;
@@ -1755,52 +2048,155 @@ void App::FollowFinish() {
     m_queue_was_busy = busy;
 }
 
+namespace {
+
+// The cover that falls into the dock at the end of a queue (10A), drawn by ui::Dock between its
+// back and its front.
+struct Falling {
+    const Theme* theme;
+    float x, y, s, angle;
+    unsigned color;
+    const char* initial;
+    int image;
+};
+
+void DrawFalling(NVGcontext* vg, void* data) {
+    const auto& f = *static_cast<const Falling*>(data);
+    nvgSave(vg);
+    nvgTranslate(vg, f.x + f.s / 2, f.y + f.s / 2);
+    nvgRotate(vg, f.angle);
+    nvgTranslate(vg, -f.s / 2, -f.s / 2);
+    nvgBeginPath(vg);
+    nvgRect(vg, -16, -6, f.s + 32, f.s + 30);
+    nvgFillPaint(vg, nvgBoxGradient(vg, 2, 8, f.s - 4, f.s, 10, 16, nvgRGBAf(0, 0, 0, 0.4f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    ui::Cover(vg, *f.theme, 0, 0, f.s, f.color, f.initial, nullptr, false, false, 10, f.image);
+    nvgRestore(vg);
+}
+
+} // namespace
+
 void App::DrawFinish(NVGcontext* vg) {
+    // 10A: the cover of the last game installed falls into the slot of the dock (the drawing of the
+    // icon), its bar lights, blue and violet sparks fly, and the green notice comes up. Gentle
+    // animations show the game in the dock without the fall; with none, it shows still. The
+    // buttons keep working all along.
     const double t = m_time - m_finish_at;
-    if (t < 0 || t > 1.4) {
+    const double total = 1.9;
+    if (t < 0 || t > total) {
         return;
     }
-    // the glow: up in a quarter of a second, away in a little more than one
+    const Theme& th = m_theme;
+    // the glow of the edges, as before
     const float glow = float(t < 0.25 ? t / 0.25 : std::max(0.0, 1 - (t - 0.25) / 1.15));
-    NVGcolor edge = m_theme.work;
+    NVGcolor edge = th.work;
     edge.a = 0.5f * glow;
-    NVGcolor clear = m_theme.work;
+    NVGcolor clear = th.work;
     clear.a = 0;
     nvgBeginPath(vg);
     nvgRect(vg, 0, 0, kWidth, kHeight);
     nvgFillPaint(vg, nvgBoxGradient(vg, 60, 60, kWidth - 120, kHeight - 120, 40, 220, clear, edge));
     nvgFill(vg);
 
-    // the tick in a circle: it pops, rests, and goes
-    const float scale = float(t < 0.18 ? 0.6 + 0.45 * (t / 0.18) : t < 0.3 ? 1.05 - 0.05 * ((t - 0.18) / 0.12) : 1.0);
-    const float alpha = float(t < 0.12 ? t / 0.12 : t > 0.9 ? std::max(0.0, 1 - (t - 0.9) / 0.5) : 1.0);
-    const float cx = kWidth / 2, cy = 340, r = 72 * scale;
-    nvgGlobalAlpha(vg, alpha);
-    NVGcolor halo = m_theme.work;
-    halo.a = 0.45f;
+    const bool lively = ui::Lively();
+    // everything in and out: a light dark veil behind the dock
+    const float shown = float(t < 0.15 ? t / 0.15 : t > 1.5 ? std::max(0.0, 1 - (t - 1.5) / 0.4) : 1.0);
     nvgBeginPath(vg);
-    nvgCircle(vg, cx, cy, r + 40);
-    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, r * 0.8f, r + 40, halo, clear));
+    nvgRect(vg, 0, 73, kWidth, 664 - 73);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.35f * shown));
     nvgFill(vg);
+    nvgGlobalAlpha(vg, shown);
+    const float ds = 256, dx = (kWidth - ds) / 2, dy = 196;
+    // the light under the dock
+    NVGcolor halo = th.work;
+    halo.a = 0.3f;
     nvgBeginPath(vg);
-    nvgCircle(vg, cx, cy, r);
-    nvgFillColor(vg, m_theme.work);
+    nvgCircle(vg, dx + ds / 2, dy + 170, 220);
+    nvgFillPaint(vg, nvgRadialGradient(vg, dx + ds / 2, dy + 170, 40, 220, halo, clear));
     nvgFill(vg);
-    ui::CheckMark(vg, cx, cy + 2, 70 * scale, m_theme.on_work, 9 * scale);
+    // the fall: faster and faster, from above and a little turned, into the slot
+    const float p = lively ? float(std::clamp((t - 0.1) / 0.55, 0.0, 1.0)) : 1.f;
+    const float q = p * p;
+    const float cs = 90 * (1.25f - 0.25f * q);
+    const std::string initial = Initial(m_finish_name);
+    Falling f{&th, dx + ds / 2 - cs / 2, dy - 170 + (90 + 170 - 0) * q, cs, -0.07f * (1 - q), PlaceholderColor(m_finish_key), initial.c_str(),
+              m_covers.Get(m_finish_cover)};
+    const float bar = lively ? ui::EaseOut(float(std::clamp((t - 0.6) / 0.4, 0.0, 1.0))) : 1.f;
+    ui::Dock(vg, dx, dy, ds, bar, DrawFalling, &f);
+    // the sparks, out of the slot
+    if (lively && t > 0.62 && t < 1.35) {
+        const float u = float((t - 0.62) / 0.7);
+        for (int i = 0; i < 14; i++) {
+            const float a = float(i) / 14 * 2 * NVG_PI + 0.2f;
+            const float d = ui::EaseOut(u) * (110 + float(i % 3) * 40);
+            nvgBeginPath(vg);
+            nvgCircle(vg, dx + ds / 2 + std::cos(a) * d, dy + 114 + std::sin(a) * d * 0.7f, 5 * (1 - 0.7f * u));
+            nvgFillColor(vg, Hex(i % 2 ? 0x7c5cff : 0x3db7ea, 1 - u));
+            nvgFill(vg);
+        }
+    }
     nvgGlobalAlpha(vg, 1.f);
 }
 
 void App::DrawTouchFeedback(NVGcontext* vg) {
-    // While a finger rests on something, light it up so it is clear what will be pressed.
-    if (!m_touching || m_dragging || m_az_touch) {
-        return;
+    // 15A: what the finger presses darkens a little and a soft wave grows out of the finger; let go,
+    // the wave fades. With the animations off, it is lit while pressed, without the wave.
+    const Theme& t = m_theme;
+    if (m_az_touch || m_swipe || m_dragging) return;
+    const bool held = m_touching && m_press_live;
+    const double since = m_time - m_release_at;
+    if (m_press_at < 0 || (!held && (m_release_at < m_press_at || since > 0.35))) {
+        // nothing pressed, or its wave is gone
+    } else {
+        ui::HitRect r = m_press_rect;
+        float radius = 10;
+        if (m_press_kind == HitKind::Cover) {
+            // the cover itself, not the gap around it
+            r.x += kGridGap / 2;
+            r.w -= kGridGap;
+            r.h = std::min(r.h, g_cover);
+        } else if (m_press_kind == HitKind::Tab || m_press_kind == HitKind::Chip) {
+            radius = r.h / 2;
+        }
+        const float fade = held ? 1.f : float(std::max(0.0, 1 - since / 0.35));
+        nvgSave(vg);
+        nvgIntersectScissor(vg, r.x, r.y, r.w, r.h);
+        if (m_press_kind != HitKind::Cover) {
+            ui::FillRound(vg, r.x, r.y, r.w, r.h, radius, nvgRGBAf(0, 0, 0, (t.dark ? 0.10f : 0.05f) * fade));
+        }
+        if (ui::Still()) {
+            NVGcolor lit = t.work;
+            lit.a = 0.18f * fade;
+            ui::FillRound(vg, r.x, r.y, r.w, r.h, radius, lit);
+        } else {
+            const float far = std::hypot(std::max(m_touch_x0 - r.x, r.x + r.w - m_touch_x0), std::max(m_touch_y0 - r.y, r.y + r.h - m_touch_y0));
+            const float grow = ui::EaseOut(float(std::min(1.0, (m_time - m_press_at) / 0.45)));
+            NVGcolor wave = t.dark ? nvgRGBAf(1, 1, 1, 0.16f) : t.work;
+            if (!t.dark) wave.a = 0.16f;
+            wave.a *= fade;
+            nvgBeginPath(vg);
+            nvgCircle(vg, m_touch_x0, m_touch_y0, std::max(8.f, far * grow));
+            nvgFillColor(vg, wave);
+            nvgFill(vg);
+        }
+        nvgRestore(vg);
     }
-    for (auto it = m_hits.rbegin(); it != m_hits.rend(); ++it) {
-        if (it->rect.Contains(m_touch_x, m_touch_y)) {
-            NVGcolor c = m_theme.work;
-            c.a = 0.18f;
-            ui::FillRound(vg, it->rect.x, it->rect.y, it->rect.w, it->rect.h, 10, c);
-            return;
+    // 18A: held still on a cover, a ring fills around the finger until its quick menu opens
+    if (m_touching && m_press_live && m_press_kind == HitKind::Cover && !m_long_fired && GridTab() && !m_detail && m_quick < 0) {
+        const float p = float((m_time - m_press_at - 0.12) / (0.45 - 0.12));
+        if (p > 0) {
+            NVGcolor track = t.work;
+            track.a = 0.25f;
+            nvgBeginPath(vg);
+            nvgCircle(vg, m_touch_x0, m_touch_y0, 38);
+            nvgStrokeColor(vg, track);
+            nvgStrokeWidth(vg, 6);
+            nvgStroke(vg);
+            nvgBeginPath(vg);
+            nvgArc(vg, m_touch_x0, m_touch_y0, 38, -NVG_PI / 2, -NVG_PI / 2 + 2 * NVG_PI * std::min(1.f, p), NVG_CW);
+            nvgStrokeColor(vg, t.work);
+            nvgLineCap(vg, NVG_ROUND);
+            nvgStroke(vg);
         }
     }
 }
@@ -1831,6 +2227,8 @@ void App::CheckSdSpace() {
             m_sd_free_bytes = free_bytes;
             m_sd_free = SizeText(u64(free_bytes));
         }
+        s64 total_bytes = 0;
+        if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &total_bytes)) && total_bytes > 0) m_sd_total_bytes = total_bytes;
         fsFsClose(&fs);
     }
     StorageSpace(NcmStorageId_BuiltInUser, m_nand_free_bytes, m_nand_total_bytes);
@@ -1983,13 +2381,19 @@ void App::UpdateLibrary(u64 down, u64 held) {
             }
         }
     }
-    if (m_focus != before) KeepFocusVisible();
+    if (m_focus != before) {
+        KeepFocusVisible();
+        m_touch_focus = false; // the pad took the focus: no bubble
+        m_fling_v = 0;
+    }
     if (down & (HidNpadButton_ZL)) {
         m_filter = (m_filter + kFilters - 1) % kFilters;
+        m_wave_at = m_time;
         RebuildView();
     }
     if (down & (HidNpadButton_ZR)) {
         m_filter = (m_filter + 1) % kFilters;
+        m_wave_at = m_time;
         RebuildView();
     }
     if ((down & HidNpadButton_A) && count > 0) {
@@ -2004,6 +2408,7 @@ void App::UpdateLibrary(u64 down, u64 held) {
         std::string text;
         if (AskText(Tr().search_hint, m_search, false, text) || !m_search.empty()) {
             m_search = text;
+            m_wave_at = m_time;
             RebuildView();
         }
     }
@@ -2039,7 +2444,7 @@ void App::ActivateMenu(int row) {
     if (row == kSorts) {
         m_ui.library_size = (m_ui.library_size + 1) % 3;
         m_ui.Save();
-        GridSize(m_ui.library_size);
+        GridSize(m_ui.library_size, m_ui.focus_view == 1);
         m_scroll = m_scroll_target = 0;
         KeepFocusVisible();
         return;
@@ -2128,7 +2533,7 @@ void App::DrawAzBar(NVGcontext* vg) {
             const float thumb_y = kGridTop + (track_h - thumb_h) * (m_scroll / MaxScroll());
             NVGcolor c = t.muted;
             c.a = 0.45f;
-            ui::FillRound(vg, kWidth - 16, thumb_y, 4, thumb_h, 2, c);
+            ui::FillRound(vg, g_az_x + 13, thumb_y, 4, thumb_h, 2, c);
         }
         return;
     }
@@ -2137,9 +2542,9 @@ void App::DrawAzBar(NVGcontext* vg) {
     const int here = LetterSlot(m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]].name);
     NVGcolor back = t.panel2;
     back.a = m_az_touch ? 0.95f : 0.7f;
-    ui::FillRound(vg, kAzX, kAzTop, kAzW, g_az_height, kAzW / 2, back);
+    ui::FillRound(vg, g_az_x, kAzTop, kAzW, g_az_height, kAzW / 2, back);
     if (m_az_touch) {
-        ui::StrokeRound(vg, kAzX + .5f, kAzTop + .5f, kAzW - 1, g_az_height - 1, kAzW / 2, t.work, 1.5f);
+        ui::StrokeRound(vg, g_az_x + .5f, kAzTop + .5f, kAzW - 1, g_az_height - 1, kAzW / 2, t.work, 1.5f);
     }
     const float pitch = g_az_height / 27;
     for (int i = 0; i < 27; i++) {
@@ -2147,7 +2552,7 @@ void App::DrawAzBar(NVGcontext* vg) {
         const float y = kAzTop + pitch * (i + 0.5f);
         NVGcolor c = i == here ? t.work : t.muted;
         if (!present[i]) c.a = 0.35f;
-        ui::Text(vg, kAzX + kAzW / 2, y, i == here ? 13 : 11, c, label, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, g_az_x + kAzW / 2, y, i == here ? 13 : 11, c, label, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
     // the whole edge answers to the finger (see ReadTouch); nothing here is a tap target of its own
 }
@@ -2250,6 +2655,7 @@ void App::OpenDetail(int view_index) {
         return;
     }
     m_detail = true;
+    m_touch_focus = false;
     m_detail_game = m_view[view_index];
     m_detail_from_console = false;
     m_detail_first = 0;
@@ -2368,22 +2774,17 @@ void App::DrawLibrary(NVGcontext* vg) {
             ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.retry, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
                         m_hint_rects);
         } else {
-            ui::Spinner(vg, kWidth / 2, 330, 20, t.work, m_time);
+            // the shape of the library while it comes, a light running over it (14A); below, how far
+            // a large library is in preparing its catalog the first time
             int done = 0, total = 0;
-            if (m_catalog.Preparing(done, total)) {
-                // a large library prepares its catalog the first time: how far it is
-                char line[160];
-                if (total > 0) {
-                    std::snprintf(line, sizeof(line), TrM().cat_preparing_fmt, done, total);
-                } else {
-                    std::snprintf(line, sizeof(line), "%s", TrM().cat_preparing);
-                }
-                ui::Text(vg, kWidth / 2, 384, 20, t.muted, line, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                ui::Progress(vg, t, kWidth / 2 - 240, 414, 480, 8, total > 0 ? float(done) / float(total) : 0.f, t.work, m_time,
-                             total <= 0);
+            char line[160];
+            const bool preparing = m_catalog.Preparing(done, total);
+            if (preparing && total > 0) {
+                std::snprintf(line, sizeof(line), TrM().cat_preparing_fmt, done, total);
             } else {
-                ui::Text(vg, kWidth / 2, 384, 20, t.muted, s.loading_library, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                std::snprintf(line, sizeof(line), "%s", preparing ? TrM().cat_preparing : s.loading_library);
             }
+            DrawSkeleton(vg, line, total > 0 ? float(done) / float(total) : 0.f, preparing && total > 0);
             ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.cancel, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
                         m_hint_rects);
         }
@@ -2421,13 +2822,23 @@ void App::DrawLibrary(NVGcontext* vg) {
         counts[4] += !g.Dlc().empty();
     }
     const char* names[] = {s.all, s.not_installed, TrM().lb_installed, s.with_update, s.dlc};
+    char chips[kFilters][64];
+    float chip_x[kFilters], chip_w[kFilters];
     for (int i = 0; i < kFilters; i++) {
-        char chip[64];
-        std::snprintf(chip, sizeof(chip), "%s · %d", names[i], counts[i]);
-        const float w = ui::Chip(vg, t, x, 92, chip, i == m_filter);
-        AddHit(x - 4, 82, w + 8, 54, HitKind::Chip, i); // taller than drawn: easy to hit
-        x += w + 10;
+        std::snprintf(chips[i], sizeof(chips[i]), "%s · %d", names[i], counts[i]);
+        chip_x[i] = x;
+        chip_w[i] = ui::Chip(vg, t, x, 92, chips[i], false);
+        AddHit(x - 4, 82, chip_w[i] + 8, 54, HitKind::Chip, i); // taller than drawn: easy to hit
+        x += chip_w[i] + 10;
     }
+    // the pill of the filter chosen glides to it (9A), its name over it
+    const int on = std::clamp(m_filter, 0, kFilters - 1);
+    const float px = m_chip_x.Step(chip_x[on]), pw = m_chip_w.Step(chip_w[on]);
+    ui::FillRound(vg, px, 92, pw, 34, 17, t.work);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, px, 92, pw, 34);
+    ui::Text(vg, chip_x[on] + chip_w[on] / 2, 109, 16, t.on_work, chips[on], NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgRestore(vg);
     }
     if (!m_search.empty()) {
         const std::string label = "“" + m_search + "”  ×";
@@ -2472,11 +2883,26 @@ void App::DrawLibrary(NVGcontext* vg) {
         if (i == m_focus) {
             continue; // drawn last, over its neighbours
         }
-        const std::string format = FormatOf(g);
-        ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), g_cover >= 110 ? format.c_str() : nullptr, false,
-                  false, 10, m_covers.Get(g.cover));
+        // a wave from the top left when the filter changes or NXDock opens (9A, 4A), and the cover
+        // under a finger sinks a little (15A)
+        const int col = i % g_columns, row = i / g_columns - int(m_scroll / g_row_pitch);
+        const double at = m_wave_at + 0.035 * double(std::max(0, row) + col);
+        const float in = m_time - m_wave_at < 1.5 ? ui::Appear(at, 0.42f) : 1.f;
+        const float pressed = i == m_press_cover && m_press_live && m_touching ? ui::EaseOut(ui::Appear(m_press_at, 0.08f)) : 0.f;
+        nvgSave(vg);
+        if (in < 1 || pressed > 0) {
+            const float k = ui::Lively() ? ui::EaseOutBack(in) : 1.f;
+            const float sc = (0.9f + 0.1f * k) * (1 - 0.06f * pressed);
+            nvgTranslate(vg, cx + g_cover / 2, cy + g_cover / 2 + (1 - k) * 16);
+            nvgScale(vg, sc, sc);
+            nvgTranslate(vg, -(cx + g_cover / 2), -(cy + g_cover / 2));
+            nvgGlobalAlpha(vg, std::min(1.f, in * 1.25f));
+        }
+        // no format on the covers: it is in the band of the game in focus (5A)
+        ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, m_covers.Get(g.cover));
         CoverLoading(vg, cx, cy, g_cover, g.cover);
         InstalledBadge(vg, g, cx, cy, g_cover);
+        nvgRestore(vg);
     }
     if (m_focus >= 0 && m_focus < int(m_view.size())) {
         // a little more room above and below for the lifted cover and its glow
@@ -2484,33 +2910,96 @@ void App::DrawLibrary(NVGcontext* vg) {
         const float cx = kGridX + (m_focus % g_columns) * (g_cover + kGridGap);
         const float cy = kGridTop + (m_focus / g_columns) * g_row_pitch - m_scroll;
         const Game& g = m_games[m_view[m_focus]];
+        const float in = m_time - m_wave_at < 1.5 ? ui::Appear(m_wave_at + 0.035 * double(m_focus % g_columns), 0.3f) : 1.f;
+        nvgGlobalAlpha(vg, std::min(1.f, in * 1.25f));
         DrawLiftedCover(vg, g, cx, cy, g_cover);
+        nvgGlobalAlpha(vg, 1.f);
+        if (m_touch_focus && m_quick < 0 && cy + g_cover > kGridTop && cy < kGridTop + g_view_h) {
+            // marked by a finger: a bubble on it says a second touch opens it (19A)
+            const char* open = TrM().tap_open;
+            const float bw = ui::TextWidth(vg, 17, open) + 48, bh = 40;
+            const float bx = cx + g_cover / 2 - bw / 2, by = std::min(cy + g_cover - bh / 2 - 6, kGridTop + g_view_h - bh);
+            const float pop = ui::EaseOutBack(ui::Appear(m_touch_focus_at + 0.1, 0.3f));
+            nvgSave(vg);
+            nvgTranslate(vg, bx + bw / 2, by + bh / 2);
+            nvgScale(vg, 0.6f + 0.4f * pop, 0.6f + 0.4f * pop);
+            nvgTranslate(vg, -(bx + bw / 2), -(by + bh / 2));
+            nvgGlobalAlpha(vg, std::min(1.f, pop * 1.5f));
+            nvgBeginPath(vg);
+            nvgRect(vg, bx - 20, by - 10, bw + 40, bh + 34);
+            nvgFillPaint(vg, nvgBoxGradient(vg, bx, by + 6, bw, bh, bh / 2, 14, nvgRGBAf(0, 0, 0, 0.35f), nvgRGBAf(0, 0, 0, 0)));
+            nvgFill(vg);
+            ui::FillRound(vg, bx, by, bw, bh, bh / 2, t.work);
+            ui::Text(vg, bx + 18, by + bh / 2, 17, t.on_work, open);
+            // the arrow
+            const float ax = bx + bw - 20, ay = by + bh / 2;
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, ax - 3, ay - 6);
+            nvgLineTo(vg, ax + 3, ay);
+            nvgLineTo(vg, ax - 3, ay + 6);
+            nvgStrokeColor(vg, t.on_work);
+            nvgStrokeWidth(vg, 2.2f);
+            nvgLineCap(vg, NVG_ROUND);
+            nvgLineJoin(vg, NVG_ROUND);
+            nvgStroke(vg);
+            nvgRestore(vg);
+            AddHit(bx - 6, by - 6, bw + 12, bh + 12, HitKind::OpenBubble);
+        }
     }
     nvgRestore(vg);
     if (m_view.empty()) {
-        ui::Text(vg, kWidth / 2, kGridTop + g_view_h / 2, 18, t.muted, s.empty_filter, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, kGridX + (g_az_x - kGridX) / 2, kGridTop + g_view_h / 2, 18, t.muted, s.empty_filter, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
 
-    // The A-Z bar, or the scroll indicator when the order has no letters.
+    // pulled down at the top: the icon of NXDock and a ring that fills; let go full, the library is
+    // read again (21A)
+    if ((m_scroll < -2 || m_refreshing) && !m_shop_active) {
+        const float pull = std::max(0.f, -m_scroll);
+        const float p = std::clamp(pull / kPullArm, 0.f, 1.f);
+        const float cxp = kGridX + (g_az_x - kGridX) / 2, cyp = kGridTop + std::max(26.f, pull / 2) - 4;
+        nvgGlobalAlpha(vg, m_refreshing ? 1.f : std::min(1.f, p * 1.4f));
+        ui::Brand(vg, cxp - 16, cyp - 16, 32);
+        NVGcolor track = t.work;
+        track.a = 0.2f;
+        nvgBeginPath(vg);
+        nvgCircle(vg, cxp, cyp, 25);
+        nvgStrokeColor(vg, track);
+        nvgStrokeWidth(vg, 3.5f);
+        nvgStroke(vg);
+        nvgBeginPath(vg);
+        if (m_refreshing) {
+            const float a0 = ui::Still() ? 0.f : float(m_time) * 6.f;
+            nvgArc(vg, cxp, cyp, 25, a0, a0 + 1.8f, NVG_CW);
+        } else {
+            nvgArc(vg, cxp, cyp, 25, -NVG_PI / 2, -NVG_PI / 2 + 2 * NVG_PI * std::max(0.01f, p), NVG_CW);
+        }
+        nvgStrokeColor(vg, t.work);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgStroke(vg);
+        nvgGlobalAlpha(vg, 1.f);
+    }
+
+    // The A-Z bar, or the scroll indicator when the order has no letters; with the bar, a thin line
+    // beside it says where the grid is while it moves (16A)
     DrawAzBar(vg);
-
-    // Name of the game in focus, with what matters of it.
-    if (!m_view.empty()) {
-        const Game& g = m_games[m_view[m_focus]];
-        const float ny = kGridTop + g_view_h + 22;
-        nvgSave(vg);
-        nvgScissor(vg, kGridX, ny - 20, 700, 40);
-        const float nw = ui::Text(vg, kGridX, ny, 22, t.text, g.name.c_str()) - kGridX;
-        nvgRestore(vg);
-        std::string facts = FormatOf(g) + " · " + SizeText(g.SizeOfAll());
-        if (!g.Dlc().empty()) facts += " · " + std::to_string(g.Dlc().size()) + " DLC";
-        facts += " · ";
-        facts += g.installed.base ? s.on_console : s.not_on_console;
-        ui::Text(vg, kGridX + std::min(nw, 700.f) + 16, ny + 1, 16, t.muted, facts.c_str());
+    if (AzBarShown() && m_time - m_scroll_seen_at < 1.0 && MaxScroll() > 0) {
+        const float track_h = g_view_h, thumb_h = std::max(30.f, track_h * g_view_h / (g_view_h + MaxScroll()));
+        const float thumb_y = kGridTop + (track_h - thumb_h) * std::clamp(m_scroll / MaxScroll(), 0.f, 1.f);
+        NVGcolor c = t.muted;
+        c.a = 0.55f * float(std::min(1.0, (1.0 - (m_time - m_scroll_seen_at)) * 3));
+        ui::FillRound(vg, g_az_x - 9, thumb_y, 4, thumb_h, 2, c);
     }
 
-    // Queue strip, always in sight; tapping it opens the queue.
-    DrawQueueStrip(vg, m_ui.library_size == 0 ? 556.f : 594.f); // below the rows of the size chosen
+    // The game in focus: a band under the covers (2A) or a panel on the right (2B), as chosen in
+    // Settings; the queue at work floats as a pill (3A), nothing when it is empty
+    const bool pill = QueueAtWork();
+    if (!pill) m_pill_shown = false; // it pops in again the next time
+    if (!m_view.empty()) {
+        const Game& g = m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]];
+        if (m_ui.focus_view == 1) DrawFocusPanel(vg, g, pill);
+        else DrawFocusBand(vg, g, pill);
+    }
+    if (pill && (m_ui.focus_view != 1 || m_view.empty())) DrawQueuePill(vg, kWidth - 36 - 400, 600, 400);
 
     static const std::string shop_glyphs = std::string(ui::glyph::ZL) + " " + ui::glyph::ZR;
     std::vector<ui::Hint> hints = {{ui::glyph::A, s.view, HidNpadButton_A}};
@@ -2534,13 +3023,569 @@ void App::DrawLibrary(NVGcontext* vg) {
     ui::HintBar(vg, t, status.c_str(), hints, m_hint_rects);
 }
 
+namespace {
+std::string ShortDuration(double seconds);
+float JobFraction(const InstallQueue::Live& l);
+} // namespace
+
+void App::DrawBackdrop(NVGcontext* vg, const Game& g, bool at_once) {
+    // 1A: the cover of the game in focus, made tiny and soft (Covers::Thumb), stretched behind
+    // everything under a veil, so the screen takes the colours of the game. It changes when the
+    // focus rests 0.15 s (moving fast, it does not flicker) and fades in; a cover without a picture
+    // gives its colour. Three images: the one shown, the one fading out, and a spare that the GPU is
+    // no longer drawing, so writing it never touches a picture in use.
+    const Theme& t = m_theme;
+    const std::string want = g.cover.empty() ? "#" + g.key : g.cover;
+    if (want != m_bd_want) {
+        m_bd_want = want;
+        m_bd_want_at = m_time;
+    }
+    if (m_bd_key != m_bd_want && (at_once || m_time - m_bd_want_at >= 0.15)) {
+        unsigned char px[Covers::kThumb * Covers::kThumb * 4];
+        const bool has = !g.cover.empty() && m_covers.Thumb(g.cover, px);
+        // a picture still on its way is waited for; one that never comes gives the colour
+        if (has || g.cover.empty() || !m_covers.Loading(g.cover)) {
+            int slot = 0;
+            while (slot == m_bd_front || slot == m_bd_back) slot++;
+            if (has) {
+                if (!m_bd_img[slot]) m_bd_img[slot] = nvgCreateImageRGBA(vg, Covers::kThumb, Covers::kThumb, 0, px);
+                else nvgUpdateImage(vg, m_bd_img[slot], px);
+            }
+            m_bd_has[slot] = has && m_bd_img[slot];
+            m_bd_color[slot] = PlaceholderColor(g.key);
+            m_bd_back = m_bd_front;
+            m_bd_front = slot;
+            m_bd_key = m_bd_want;
+            m_bd_at = m_time;
+        }
+    }
+    if (m_bd_front < 0) return;
+    const float base = t.dark ? 0.55f : 0.42f;
+    const auto layer = [&](int slot, float alpha) {
+        if (slot < 0 || alpha <= 0.01f) return;
+        nvgBeginPath(vg);
+        nvgRect(vg, 0, 0, kWidth, kHeight);
+        if (m_bd_has[slot]) {
+            // square, wider than the screen: its middle shows
+            nvgFillPaint(vg, nvgImagePattern(vg, -100, (kHeight - 1480) / 2, 1480, 1480, 0, m_bd_img[slot], base * alpha));
+        } else {
+            nvgFillPaint(vg, nvgRadialGradient(vg, 360, 300, 60, 900, Hex(m_bd_color[slot], (t.dark ? 0.30f : 0.20f) * alpha), Hex(0, 0)));
+        }
+        nvgFill(vg);
+    };
+    const float fade = ui::Still() ? 1.f : ui::EaseOut(float(std::min(1.0, (m_time - m_bd_at) / 0.35)));
+    if (fade < 1) layer(m_bd_back, 1);
+    layer(m_bd_front, fade);
+    // the veil: the text stays easy to read, more of it near the bottom
+    NVGcolor top = t.bg, mid = t.bg, low = t.bg;
+    top.a = 0.62f;
+    mid.a = 0.55f;
+    low.a = 0.84f;
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, 400);
+    nvgFillPaint(vg, nvgLinearGradient(vg, 0, 0, 0, 400, top, mid));
+    nvgFill(vg);
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 400, kWidth, kHeight - 400);
+    nvgFillPaint(vg, nvgLinearGradient(vg, 0, 400, 0, kHeight, mid, low));
+    nvgFill(vg);
+}
+
+void App::FocusPills(NVGcontext* vg, const Game& g, float x, float y, float right, bool wrap) {
+    // what matters of the game in focus, in small pills: its format, its size, its DLC, whether
+    // it is on the console (green), and what it lacks (cyan)
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    struct Pill { std::string text; NVGcolor color; bool tinted; int mark; }; // mark: 0 none, 1 tick, 2 arrow
+    std::vector<Pill> pills;
+    const std::string format = FormatOf(g);
+    if (!format.empty()) pills.push_back({format, t.text, false, 0});
+    pills.push_back({SizeText(g.SizeOfAll()), t.text, false, 0});
+    if (!g.Dlc().empty()) pills.push_back({std::to_string(g.Dlc().size()) + " DLC", t.text, false, 0});
+    if (g.installed.base) pills.push_back({s.on_console, t.ok, true, 1});
+    else pills.push_back({s.not_on_console, t.muted, false, 0});
+    if (g.installed.base && g.UpdateAvailable() && g.NewestUpdate()) pills.push_back({VersionText(g.NewestUpdate()->version), t.cyan, true, 2});
+    else if (g.installed.base && g.MissingDlc()) pills.push_back({TrM().lb_needs_dlc, t.cyan, true, 0});
+    float px = x, py = y;
+    for (const auto& p : pills) {
+        const float w = ui::TextWidth(vg, 15, p.text.c_str()) + 24 + (p.mark ? 18 : 0);
+        if (px + w > right) {
+            if (!wrap || px == x) break;
+            px = x;
+            py += 34;
+        }
+        NVGcolor fill = p.tinted ? p.color : t.panel2;
+        fill.a = p.tinted ? 0.13f : 0.85f;
+        ui::FillRound(vg, px, py, w, 28, 14, fill);
+        NVGcolor edge = p.tinted ? p.color : t.line;
+        edge.a = p.tinted ? 0.5f : 1.f;
+        ui::StrokeRound(vg, px + .5f, py + .5f, w - 1, 27, 13.5f, edge, 1);
+        float tx = px + 12;
+        if (p.mark == 1) {
+            ui::CheckMark(vg, tx + 6, py + 14, 11, p.color, 2);
+            tx += 18;
+        } else if (p.mark == 2) {
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, tx + 6, py + 20);
+            nvgLineTo(vg, tx + 6, py + 8);
+            nvgMoveTo(vg, tx + 1.5f, py + 12.5f);
+            nvgLineTo(vg, tx + 6, py + 8);
+            nvgLineTo(vg, tx + 10.5f, py + 12.5f);
+            nvgStrokeColor(vg, p.color);
+            nvgStrokeWidth(vg, 2);
+            nvgLineCap(vg, NVG_ROUND);
+            nvgLineJoin(vg, NVG_ROUND);
+            nvgStroke(vg);
+            tx += 18;
+        }
+        ui::Text(vg, tx, py + 14, 15, p.color, p.text.c_str());
+        px += w + 8;
+    }
+}
+
+namespace {
+
+// The button of the game in focus: A and "View and install", in the blue of work; tapping it is A.
+float FocusButton(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, const char* label) {
+    nvgBeginPath(vg);
+    nvgRect(vg, x - 20, y - 10, w + 40, h + 36);
+    NVGcolor glow = t.work;
+    glow.a = 0.35f;
+    nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 6, w, h, 16, 18, glow, Hex(0, 0)));
+    nvgFill(vg);
+    ui::FillRound(vg, x, y, w, h, 16, t.work);
+    const float gw = ui::SymbolWidth(vg, 24, ui::glyph::A);
+    const float lw = ui::TextWidth(vg, 19, label);
+    const float start = x + (w - gw - 10 - lw) / 2;
+    ui::Symbol(vg, t, start + gw / 2, y + h / 2, 24, ui::glyph::A, t.on_work, HidNpadButton_A);
+    ui::Text(vg, start + gw + 10, y + h / 2, 19, t.on_work, label);
+    return w;
+}
+
+} // namespace
+
+void App::DrawFocusBand(NVGcontext* vg, const Game& g, bool pill) {
+    // 2A: under the covers, the name in large, its pills, and a button that opens it
+    const Theme& t = m_theme;
+    const bool big = m_ui.library_size == 0;
+    const float top = kGridTop + g_view_h + (big ? 14.f : 10.f);
+    const char* open = TrM().fv_open;
+    const float bh = big ? 56.f : 46.f, bw = ui::TextWidth(vg, 19, open) + 90;
+    const float bx = kWidth - 36 - bw, by = top + 2;
+    nvgSave(vg);
+    nvgScissor(vg, kGridX, top - 6, bx - 24 - kGridX, 48);
+    ui::Title(vg, kGridX, top + (big ? 18.f : 14.f), big ? 30.f : 24.f, t.text, g.name.c_str());
+    nvgRestore(vg);
+    // the pills stop before the button, and before the pill of the queue when it is beside them
+    const float py = top + (big ? 40.f : 34.f);
+    const float right = (pill && py + 28 > 596) ? kWidth - 36 - 400 - 16 : bx - 16;
+    FocusPills(vg, g, kGridX, py, right, false);
+    FocusButton(vg, t, bx, by, bw, bh, open);
+    m_hits.push_back({{bx, by, bw, bh, HidNpadButton_A}, HitKind::Button, 0});
+}
+
+void App::DrawFocusPanel(NVGcontext* vg, const Game& g, bool pill) {
+    // 2B: a panel on the right with its cover, its name, its pills and the button; the queue at
+    // work at its foot
+    const Theme& t = m_theme;
+    const float x = kPanelX, y = kGridTop - 10, w = kPanelW, h = 664 - 14 - y;
+    ui::Glass(vg, t, x, y, w, h, 18);
+    const float cs = pill ? 160.f : 180.f, cx = x + (w - cs) / 2, cy = y + 18;
+    nvgBeginPath(vg);
+    nvgRect(vg, cx - 20, cy - 10, cs + 40, cs + 40);
+    nvgFillPaint(vg, nvgBoxGradient(vg, cx + 4, cy + 10, cs - 8, cs, 12, 22, nvgRGBAf(0, 0, 0, t.dark ? 0.45f : 0.2f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 12, m_covers.Get(g.cover));
+    CoverLoading(vg, cx, cy, cs, g.cover);
+    const float ny = cy + cs + 26;
+    nvgSave(vg);
+    nvgScissor(vg, x + 20, ny - 20, w - 40, 40);
+    if (ui::TextWidth(vg, 24, g.name.c_str()) > w - 40) ui::Marquee(vg, x + 20, ny, w - 40, 24, t.text, g.name.c_str(), m_time);
+    else ui::Title(vg, x + 20, ny, 24, t.text, g.name.c_str());
+    nvgRestore(vg);
+    FocusPills(vg, g, x + 20, ny + 22, x + w - 20, true);
+    const char* open = TrM().fv_open;
+    const float bh = 52, by = pill ? y + h - 18 - 56 - 12 - bh : y + h - 18 - bh;
+    FocusButton(vg, t, x + 20, by, w - 40, bh, open);
+    m_hits.push_back({{x + 20, by, w - 40, bh, HidNpadButton_A}, HitKind::Button, 0});
+    if (pill) DrawQueuePill(vg, x + 12, y + h - 12 - 56, w - 24);
+}
+
+bool App::QueueAtWork() const {
+    return m_queue && (m_queue->Busy() || m_queue->GetLive().running);
+}
+
+void App::DrawQueuePill(NVGcontext* vg, float x, float y, float w) {
+    // 3A: the queue at work, floating: the cover in a ring that fills, what is installed, a thin bar
+    // and its figures; tapping it opens the queue
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    if (!m_pill_shown) {
+        m_pill_shown = true;
+        m_pill_at = m_time;
+    }
+    const float h = 56;
+    const float pop = ui::EaseOutBack(ui::Appear(m_pill_at, 0.35f));
+    nvgSave(vg);
+    nvgTranslate(vg, x + w / 2, y + h / 2 + (1 - pop) * 20);
+    nvgScale(vg, 0.92f + 0.08f * pop, 0.92f + 0.08f * pop);
+    nvgTranslate(vg, -(x + w / 2), -(y + h / 2));
+    nvgGlobalAlpha(vg, std::min(1.f, pop * 1.4f));
+    nvgBeginPath(vg);
+    nvgRect(vg, x - 20, y - 10, w + 40, h + 40);
+    nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 8, w, h, h / 2, 22, nvgRGBAf(0, 0, 0, t.dark ? 0.45f : 0.16f), nvgRGBAf(0, 0, 0, 0)));
+    nvgFill(vg);
+    NVGcolor fill = t.panel;
+    fill.a = t.dark ? 0.9f : 0.94f;
+    ui::FillRound(vg, x, y, w, h, h / 2, fill);
+    NVGcolor edge = nvgLerpRGBA(t.line, t.work, 0.45f);
+    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, h / 2 - .5f, edge, 1.2f);
+    AddHit(x, y, w, h, HitKind::QueueStrip);
+
+    const auto live = m_queue->GetLive();
+    const auto jobs = m_queue->Jobs();
+    const auto it = std::find_if(jobs.begin(), jobs.end(), [&](const InstallJob& j) { return j.id == live.job; });
+    const float frac = live.running ? JobFraction(live) : 0.f;
+    const NVGcolor bar = live.merging ? t.violet : t.work;
+    // the ring with the cover inside
+    const float rcx = x + 8 + 22, rcy = y + h / 2;
+    NVGcolor track = bar;
+    track.a = 0.2f;
+    nvgBeginPath(vg);
+    nvgCircle(vg, rcx, rcy, 21);
+    nvgStrokeColor(vg, track);
+    nvgStrokeWidth(vg, 3.5f);
+    nvgStroke(vg);
+    nvgBeginPath(vg);
+    if (live.running && live.total > 0) {
+        nvgArc(vg, rcx, rcy, 21, -NVG_PI / 2, -NVG_PI / 2 + 2 * NVG_PI * std::max(0.01f, frac), NVG_CW);
+    } else {
+        const float a0 = ui::Still() ? 0.f : float(m_time) * 5.f;
+        nvgArc(vg, rcx, rcy, 21, a0, a0 + 1.5f, NVG_CW);
+    }
+    nvgStrokeColor(vg, bar);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgStroke(vg);
+    if (it != jobs.end()) {
+        ui::Cover(vg, t, rcx - 15, rcy - 15, 30, PlaceholderColor(it->color_key), Initial(it->game).c_str(), nullptr, false, false, 15,
+                  m_covers.Get(it->cover));
+    }
+    // what, and how far
+    const float tx = x + 62, keyw = 34, tw = w - 62 - keyw - 14;
+    std::string head = s.preparing;
+    if (it != jobs.end()) {
+        char title[160];
+        std::snprintf(title, sizeof(title), s.installing_name, it->game.c_str());
+        head = title;
+    }
+    char figures[200] = "";
+    if (live.running) {
+        if (live.merging) {
+            std::snprintf(figures, sizeof(figures), "%s… %d %%", TrM().qm_merging, int(frac * 100));
+        } else if (live.copying_save) {
+            std::snprintf(figures, sizeof(figures), "%s…", TrM().sc_copying);
+        } else if (live.phase >= 3) {
+            std::snprintf(figures, sizeof(figures), "%s…", s.registering);
+        } else if (live.total == 0) {
+            std::snprintf(figures, sizeof(figures), "%s… · %.0f MB/s", s.preparing, live.net_rate);
+        } else {
+            const double left = live.write_rate > 0.1 ? double(live.total - std::min(live.total, live.written)) / (live.write_rate * 1024 * 1024) : -1;
+            char rest[64] = "";
+            if (left >= 0) std::snprintf(rest, sizeof(rest), TrM().qs_left_fmt, ShortDuration(left).c_str());
+            std::snprintf(figures, sizeof(figures), "%d %% · %.0f MB/s%s%s", int(frac * 100), live.write_rate, rest[0] ? " · " : "", rest);
+        }
+    }
+    const int waiting = m_queue->Waiting();
+    if (waiting > 0) {
+        char more[48];
+        std::snprintf(more, sizeof(more), s.in_queue_count, waiting);
+        std::strncat(figures, figures[0] ? " · " : "", sizeof(figures) - std::strlen(figures) - 1);
+        std::strncat(figures, more, sizeof(figures) - std::strlen(figures) - 1);
+    }
+    nvgSave(vg);
+    nvgIntersectScissor(vg, tx, y, tw, h);
+    ui::Text(vg, tx, y + 17, 15, t.text, head.c_str());
+    ui::Progress(vg, t, tx, y + 29, tw, 5, frac, bar, m_time, live.running);
+    ui::Text(vg, tx, y + 44, 13, t.muted, figures);
+    nvgRestore(vg);
+    ui::Symbol(vg, t, x + w - 14 - keyw / 2, rcy, 24, ui::glyph::X, t.text, HidNpadButton_X);
+    nvgRestore(vg);
+}
+
+void App::DrawBoot(NVGcontext* vg) {
+    // 4A: the icon assembles itself (the card falls into the dock, the bar lights, the lamp comes
+    // on) with the name under it, then it flies to its place in the top bar while the library
+    // shows; gentle animations only fade the icon. Any button or touch skips it (Frame).
+    if (m_boot_at < 0 || m_wizard) return;
+    const double a = m_time - m_boot_at;
+    const bool lively = ui::Lively();
+    if (a < 0 || a > (lively ? 1.5 : 0.7)) return;
+    const Theme& t = m_theme;
+    float veil, x = 540, y = 200, s = 200, card = 1, bar = 1, lamp = 1, name = 0;
+    if (lively) {
+        veil = a < 1.05 ? 1.f : float(std::max(0.0, 1 - (a - 1.05) / 0.35));
+        card = ui::EaseOutBack(float(std::clamp((a - 0.15) / 0.5, 0.0, 1.0)));
+        bar = ui::EaseOut(float(std::clamp((a - 0.55) / 0.45, 0.0, 1.0)));
+        lamp = float(std::clamp((a - 0.95) / 0.2, 0.0, 1.0));
+        name = float(std::clamp((a - 0.35) / 0.3, 0.0, 1.0)) * float(std::clamp((1.1 - a) / 0.2, 0.0, 1.0));
+        const float m = float(std::clamp((a - 1.05) / 0.45, 0.0, 1.0));
+        const float e = m < 0.5f ? 4 * m * m * m : 1 - std::pow(-2 * m + 2, 3.f) / 2;
+        x += (36 - x) * e;
+        y += (19 - y) * e;
+        s += (34 - s) * e;
+    } else {
+        veil = a < 0.35 ? 1.f : float(std::max(0.0, 1 - (a - 0.35) / 0.35));
+        name = veil;
+    }
+    NVGcolor bg = t.bg;
+    bg.a = veil;
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillColor(vg, bg);
+    nvgFill(vg);
+    nvgGlobalAlpha(vg, lively ? 1.f : veil);
+    // a soft light under the icon while it is in the middle
+    if (veil > 0.01f) {
+        NVGcolor glow = t.work;
+        glow.a = 0.25f * veil;
+        nvgBeginPath(vg);
+        nvgCircle(vg, x + s / 2, y + s / 2, s);
+        nvgFillPaint(vg, nvgRadialGradient(vg, x + s / 2, y + s / 2, s * 0.3f, s, glow, Hex(0, 0)));
+        nvgFill(vg);
+    }
+    ui::Brand(vg, x, y, s, card, bar, lamp);
+    if (name > 0.01f) {
+        nvgGlobalAlpha(vg, name);
+        ui::Title(vg, kWidth / 2, 448, 36, t.text, "NXDock", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
+    nvgGlobalAlpha(vg, 1.f);
+}
+
+void App::DrawSkeleton(NVGcontext* vg, const char* line, float frac, bool known) {
+    // 14A: the shape of the library while it is read, a light running over it, and below how far
+    const Theme& t = m_theme;
+    NVGcolor ghost = nvgLerpRGBA(t.panel, t.muted, 0.16f);
+    ghost.a = 0.9f;
+    const float widths[] = {110, 140, 120, 170, 80};
+    float x = kGridX;
+    for (float w : widths) {
+        NVGcolor c = ghost;
+        c.a = 0.55f;
+        ui::FillRound(vg, x, 92, w, 34, 17, c);
+        x += w + 10;
+    }
+    const int rows = int((g_view_h + kGridGap) / g_row_pitch);
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < g_columns; c++) {
+            const float cx = kGridX + c * (g_cover + kGridGap), cy = kGridTop + r * g_row_pitch;
+            ui::FillRound(vg, cx, cy, g_cover, g_cover, 10, ghost);
+            if (ui::Still()) continue;
+            // the light: a soft band that crosses each cover, one after another
+            const float p = float(std::fmod(m_time * 0.7 + (r + c) * 0.08, 1.6)) - 0.3f;
+            const float gx = cx + p * g_cover * 1.4f, bw = g_cover * 0.35f;
+            nvgSave(vg);
+            nvgIntersectScissor(vg, cx, cy, g_cover, g_cover);
+            const NVGcolor clear = nvgRGBAf(1, 1, 1, 0), light = nvgRGBAf(1, 1, 1, t.dark ? 0.08f : 0.55f);
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, cx, cy, g_cover, g_cover, 10);
+            nvgFillPaint(vg, nvgLinearGradient(vg, gx - bw, cy, gx, cy, clear, light));
+            nvgFill(vg);
+            nvgBeginPath(vg);
+            nvgRect(vg, gx, cy, bw, g_cover);
+            nvgFillPaint(vg, nvgLinearGradient(vg, gx, cy, gx + bw, cy, light, clear));
+            nvgFill(vg);
+            nvgRestore(vg);
+        }
+    }
+    const float by = kGridTop + g_view_h + 16;
+    NVGcolor c = ghost;
+    c.a = 0.55f;
+    ui::FillRound(vg, kGridX, by, 360, 30, 8, c);
+    ui::Text(vg, kGridX, by + 58, 16, t.muted, line);
+    ui::Progress(vg, t, kGridX, by + 76, 460, 6, known ? frac : 0.f, t.work, m_time, true);
+}
+
+std::vector<int> App::QuickRows() const {
+    // 18A: install what it lacks to the SD card, its page, and for a game on the console its check
+    // and its cheats and mods
+    std::vector<int> rows = {0, 1};
+    if (m_quick < 0 || m_quick >= int(m_view.size())) return rows;
+    const Game& g = m_games[m_view[m_quick]];
+    if (g.installed.base || !g.installed.dlc.empty()) rows.push_back(2);
+    if (g.installed.base && !m_shop_active) rows.push_back(3);
+    return rows;
+}
+
+void App::OpenQuick(int view_index) {
+    if (view_index < 0 || view_index >= int(m_view.size())) return;
+    m_quick = view_index;
+    m_quick_focus = 0;
+    m_quick_at = m_time;
+    m_focus = view_index;
+    m_touch_focus = false;
+    KeepFocusVisible();
+}
+
+void App::UpdateQuick(u64 down, u64 held) {
+    const int rows = int(QuickRows().size());
+    if (Repeat(down, held, HidNpadButton_AnyUp) && m_quick_focus > 0) m_quick_focus--;
+    if (Repeat(down, held, HidNpadButton_AnyDown) && m_quick_focus < rows - 1) m_quick_focus++;
+    if (down & HidNpadButton_A) ActivateQuick(m_quick_focus);
+    else if (down & (HidNpadButton_B | HidNpadButton_Plus)) m_quick = -1;
+}
+
+void App::ActivateQuick(int row) {
+    const auto rows = QuickRows();
+    if (m_quick < 0 || row < 0 || row >= int(rows.size())) {
+        m_quick = -1;
+        return;
+    }
+    const int view = m_quick;
+    m_quick = -1;
+    switch (rows[size_t(row)]) {
+        case 0:
+            // what is missing, as the page would mark it, to the SD card
+            OpenDetail(view);
+            m_detail = false;
+            m_to_nand = false;
+            EnqueuePicked();
+            break;
+        case 1: OpenDetail(view); break;
+        case 2: {
+            OpenDetail(view);
+            m_detail = false;
+            const Game& g = m_games[m_detail_game];
+            if (m_queue->StartVerify(g.title_id)) {
+                m_dialog = Dialog{};
+                m_dialog.kind = DialogKind::Verify;
+                m_dialog.game = m_detail_game;
+                m_dialog.single = true;
+            } else {
+                Notice(Tr().verify_wait);
+            }
+            break;
+        }
+        case 3: {
+            const Game& g = m_games[m_view[size_t(view)]];
+            OpenMods();
+            OpenModsGame(g.title_id, g.name);
+            m_mods_from_detail = false;
+            m_tab = Tab::More;
+            break;
+        }
+    }
+}
+
+void App::DrawQuick(NVGcontext* vg) {
+    // 18A: beside the cover held, a small menu of glass; behind it a little dark, a tap there closes it
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    if (m_quick < 0 || m_quick >= int(m_view.size())) {
+        m_quick = -1;
+        return;
+    }
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 73, kWidth, 664 - 73);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.25f));
+    nvgFill(vg);
+    AddHit(0, 0, kWidth, kHeight, HitKind::QuickBack);
+    const auto rows = QuickRows();
+    m_quick_focus = std::clamp(m_quick_focus, 0, int(rows.size()) - 1);
+    const float rh = 54, pad = 8, w = 320, h = pad * 2 + rh * float(rows.size());
+    const float gx = kGridX + (m_quick % g_columns) * (g_cover + kGridGap);
+    const float gy = kGridTop + (m_quick / g_columns) * g_row_pitch - m_scroll;
+    float x = gx + g_cover + 16;
+    if (x + w > kWidth - 24) x = gx - 16 - w;
+    const float y = std::clamp(gy - 10, 84.f, 650.f - h);
+    const float pop = ui::EaseOutBack(ui::Appear(m_quick_at, 0.3f));
+    const float ox = x < gx ? x + w : x; // it grows out of the side of the cover
+    nvgSave(vg);
+    nvgTranslate(vg, ox, y + 30);
+    nvgScale(vg, 0.85f + 0.15f * pop, 0.85f + 0.15f * pop);
+    nvgTranslate(vg, -ox, -(y + 30));
+    nvgGlobalAlpha(vg, std::min(1.f, pop * 1.5f));
+    ui::Glass(vg, t, x, y, w, h, 18);
+    NVGcolor solid = t.panel;
+    solid.a = 0.85f; // over the covers it is read clearly
+    ui::FillRound(vg, x, y, w, h, 18, solid);
+    AddHit(x, y, w, h, HitKind::Button); // the panel itself does nothing
+    const char* labels[] = {TrM().qm_install_sd, TrM().qm_page, s.verify, TrM().t_mods};
+    for (size_t i = 0; i < rows.size(); i++) {
+        const float ry = y + pad + float(i) * rh;
+        const bool on = int(i) == m_quick_focus;
+        if (on) {
+            NVGcolor sel = t.work;
+            sel.a = 0.18f;
+            ui::FillRound(vg, x + pad, ry, w - 2 * pad, rh, 12, sel);
+            ui::StrokeRound(vg, x + pad + 1, ry + 1, w - 2 * pad - 2, rh - 2, 11, t.work, 2);
+        }
+        AddHit(x + pad, ry, w - 2 * pad, rh, HitKind::QuickRow, int(i));
+        // its little picture, in blue
+        const float ix = x + pad + 24, iy = ry + rh / 2;
+        nvgStrokeColor(vg, t.work);
+        nvgStrokeWidth(vg, 2.2f);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgLineJoin(vg, NVG_ROUND);
+        nvgBeginPath(vg);
+        switch (rows[i]) {
+            case 0: // an arrow into a tray
+                nvgMoveTo(vg, ix, iy - 9);
+                nvgLineTo(vg, ix, iy + 3);
+                nvgMoveTo(vg, ix - 5, iy - 2);
+                nvgLineTo(vg, ix, iy + 3);
+                nvgLineTo(vg, ix + 5, iy - 2);
+                nvgMoveTo(vg, ix - 9, iy + 5);
+                nvgLineTo(vg, ix - 9, iy + 9);
+                nvgLineTo(vg, ix + 9, iy + 9);
+                nvgLineTo(vg, ix + 9, iy + 5);
+                nvgStroke(vg);
+                break;
+            case 1: // a page
+                nvgRoundedRect(vg, ix - 8, iy - 10, 16, 20, 3);
+                nvgMoveTo(vg, ix - 4, iy - 3);
+                nvgLineTo(vg, ix + 4, iy - 3);
+                nvgMoveTo(vg, ix - 4, iy + 3);
+                nvgLineTo(vg, ix + 4, iy + 3);
+                nvgStroke(vg);
+                break;
+            case 2: // a tick in a circle
+                nvgCircle(vg, ix, iy, 9);
+                nvgStroke(vg);
+                ui::CheckMark(vg, ix, iy + 0.5f, 10, t.work, 2.2f);
+                break;
+            default: // a wand
+                nvgMoveTo(vg, ix - 8, iy + 8);
+                nvgLineTo(vg, ix + 5, iy - 5);
+                nvgStroke(vg);
+                nvgBeginPath(vg);
+                nvgCircle(vg, ix + 7, iy - 7, 2.6f);
+                nvgFillColor(vg, t.work);
+                nvgFill(vg);
+                break;
+        }
+        ui::Text(vg, x + pad + 50, ry + rh / 2, 17, t.text, labels[rows[i]]);
+    }
+    nvgRestore(vg);
+    std::vector<ui::HitRect> rects;
+    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.choose, HidNpadButton_A}, {ui::glyph::B, s.close, HidNpadButton_B}}, rects);
+    AddHints(rects);
+}
+
+bool App::InSubScreen() const {
+    // a page or a tool open in a tab: sliding to the right goes back, as B (20A)
+    return (GridTab() && m_detail) || (m_tab == Tab::More && m_more != MoreScreen::Tiles) ||
+           (m_tab == Tab::Installed && m_installed_view == 0 && m_console_app != 0) || (m_tab == Tab::Shops && m_shop_active);
+}
+
 void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float s) {
     const Theme& t = m_theme;
     const double age = m_time - m_lift_at;
     // up in a fifth of a second, slowing at the end
     const float p = float(std::min(1.0, age / 0.2));
     const float e = 1 - (1 - p) * (1 - p) * (1 - p);
-    const float lift = 6 * e, scale = 1 + 0.05f * e;
+    // under a finger it sinks a little (15A)
+    const float pressed = m_press_cover == m_focus && m_press_live && m_touching ? ui::EaseOut(ui::Appear(m_press_at, 0.08f)) : 0.f;
+    const float lift = 6 * e * (1 - pressed), scale = (1 + 0.05f * e) * (1 - 0.05f * pressed);
     // the lean settles like a card set down: a few degrees, gone in a quarter of a second
     const float settle = float(std::exp(-age * 10.0) * std::cos(age * 15.0));
     const float angle = -0.045f * settle * std::clamp(m_lift_dx, -1.f, 1.f);
@@ -2559,9 +3604,7 @@ void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float
     nvgScale(vg, scale, scale * squash);
     nvgTranslate(vg, -s / 2, -s / 2);
     ui::Focus(vg, t, 0, 0, s, s, 10, m_time);
-    const std::string format = FormatOf(g);
-    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), s >= 110 ? format.c_str() : nullptr, false, false, 10,
-              m_covers.Get(g.cover));
+    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, m_covers.Get(g.cover));
     CoverLoading(vg, 0, 0, s, g.cover);
     InstalledBadge(vg, g, 0, 0, s);
     // a light that passes once over it
@@ -2590,12 +3633,15 @@ void App::DrawDetail(NVGcontext* vg) {
     const Game& g = m_games[m_detail_game];
     const float top = 72, bottom = 664;
 
-    // the colour of the cover, blurred behind everything
-    const NVGcolor tint = Hex(PlaceholderColor(g.key), t.dark ? 0.20f : 0.14f);
-    nvgBeginPath(vg);
-    nvgRect(vg, 0, top, kWidth, bottom - top);
-    nvgFillPaint(vg, nvgRadialGradient(vg, 300, 330, 40, 700, tint, Hex(0, 0)));
-    nvgFill(vg);
+    (void)bottom; // the cover itself, soft, is behind everything (DrawBackdrop, 6A)
+    // 7A: its parts come in one after another, from the right; gentle animations only fade them
+    const auto in = [&](int i) { return ui::EaseOut(ui::Appear(m_detail_at + 0.06 + 0.04 * i, 0.34f)); };
+    const auto enter = [&](int i) {
+        nvgSave(vg);
+        const float k = in(i);
+        if (ui::Lively()) nvgTranslate(vg, 26 * (1 - k), 0);
+        nvgGlobalAlpha(vg, k);
+    };
 
     // the cover
     const float cs = 330, cx = 48, cy = top + 34;
@@ -2606,13 +3652,27 @@ void App::DrawDetail(NVGcontext* vg) {
         nvgFill(vg);
         ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, m_covers.Get(g.cover));
         CoverLoading(vg, cx, cy, cs, g.cover);
+        // its reflection on the floor, fading away in thin bands (6A)
+        const float ry = cy + cs + 10, rh = 120, band = 10;
+        const int image = m_covers.Get(g.cover);
+        for (int b = 0; b < int(rh / band); b++) {
+            nvgSave(vg);
+            nvgIntersectScissor(vg, cx, ry + b * band, cs, band);
+            nvgGlobalAlpha(vg, (t.dark ? 0.24f : 0.3f) * (1 - float(b) / (rh / band)));
+            nvgTranslate(vg, 0, 2 * ry);
+            nvgScale(vg, 1, -1);
+            ui::Cover(vg, t, cx, ry, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, image);
+            nvgRestore(vg);
+        }
     }
 
     // name and facts
     const float rx = cx + cs + 44, rw = kWidth - rx - 48;
+    enter(0);
     nvgSave(vg);
-    nvgScissor(vg, rx, cy, rw, 60);
-    ui::Text(vg, rx, cy + 26, 32, t.text, g.name.c_str());
+    nvgScissor(vg, rx, cy - 4, rw, 64);
+    ui::Title(vg, rx, cy + 26, 36, t.text, g.name.c_str());
+    nvgRestore(vg);
     nvgRestore(vg);
     const CatalogFile* newest = g.NewestUpdate();
     u64 picked_size = 0;
@@ -2654,6 +3714,7 @@ void App::DrawDetail(NVGcontext* vg) {
         std::snprintf(text, sizeof(text), TrM().cz_saves_fmt, SizeText(saved).c_str());
         facts.insert(facts.end() - 1, {TrM().cz_badge, text, t.work});
     }
+    enter(1);
     float fx = rx;
     const float fy = cy + 62;
     for (size_t i = 0; i < facts.size(); i++) {
@@ -2670,6 +3731,7 @@ void App::DrawDetail(NVGcontext* vg) {
         }
         fx += w + 10;
     }
+    nvgRestore(vg);
 
     // what to install: the game, the newest update, every DLC
     std::vector<int> rows;
@@ -2680,8 +3742,8 @@ void App::DrawDetail(NVGcontext* vg) {
     const float lh = 46;
     // room below for where it goes (two large cards) and Install
     const float list_h = std::min({float(rows.size()) * lh + 12, 250.f, std::max(2 * lh + 12, 664 - 14 - 52 - 18 - 64 - 16 - ly)});
-    ui::FillRound(vg, rx, ly, rw, list_h, 12, Hex(0, t.dark ? 0.22f : 0.03f));
-    ui::StrokeRound(vg, rx + .5f, ly + .5f, rw - 1, list_h - 1, 12, t.line, 1);
+    enter(2);
+    ui::Glass(vg, t, rx, ly, rw, list_h, 12);
     ListArea(rx, ly, rw, list_h, lh);
     nvgSave(vg);
     nvgScissor(vg, rx, ly, rw, list_h);
@@ -2737,24 +3799,29 @@ void App::DrawDetail(NVGcontext* vg) {
                  NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     }
     nvgRestore(vg);
+    nvgRestore(vg);
 
     // where, in large (the SD card unless chosen otherwise), and Install saying where
     const float cards_y = ly + list_h + 16;
+    enter(3);
     DestCards(vg, rx, cards_y, rw, 64, m_to_nand, picked_size, HitKind::Dest);
+    nvgRestore(vg);
     const float dy = cards_y + 64 + 18;
     char install[160];
     std::snprintf(install, sizeof(install), m_to_nand ? TrM().dc_install_nand_fmt : TrM().dc_install_sd_fmt, SizeText(picked_size).c_str());
     const float bw = ui::TextWidth(vg, 20, install) + 64, bx = kWidth - 48 - bw;
     // under the cards, in the room left of Install: it never runs under the button
+    enter(4);
+    const float k4 = in(4);
     if (m_to_nand) TextBox(vg, rx, dy - 2, std::max(120.f, bx - rx - 20), 14, t.orange, TrM().dc_once);
     const bool can = picked_size > 0;
     if (m_detail_focus == int(rows.size())) {
         ui::Focus(vg, t, bx, dy - 4, bw, 52, 12, m_time);
     }
-    nvgGlobalAlpha(vg, can ? 1.f : 0.45f);
+    nvgGlobalAlpha(vg, (can ? 1.f : 0.45f) * k4);
     ui::FillRound(vg, bx, dy - 4, bw, 52, 12, t.work);
     ui::Text(vg, bx + bw / 2, dy + 22, 20, t.on_work, install, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgGlobalAlpha(vg, 1.f);
+    nvgRestore(vg);
     AddHit(bx, dy - 4, bw, 52, HitKind::Install, int(rows.size()));
     static const std::string where_glyphs = std::string(ui::glyph::ZL) + " " + ui::glyph::ZR;
     std::vector<ui::Hint> hints = {{ui::glyph::A, s.select, HidNpadButton_A}, {where_glyphs.c_str(), TrM().dc_switch, HidNpadButton_ZR}};
@@ -3865,6 +4932,8 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.theme, themes[theme], true},
         {s.sounds_row, yes(m_ui.sounds), m_ui.sounds},
         {m.anim_row, m_ui.anim == 2 ? m.anim_none : m_ui.anim == 1 ? m.anim_soft : m.anim_full, m_ui.anim != 2},
+        {m.st_focus_row, m_ui.focus_view == 1 ? m.st_focus_panel : m.st_focus_band, true},
+        {m.st_touch_rumble, yes(m_ui.touch_rumble), m_ui.touch_rumble},
         {s.wiz_row, s.wiz_repeat, true},
         {m.hm_row, m_home.running_from ? m.hm_in_use : m_home.installed ? m.hm_on : s.no_word, m_home.installed},
         {m.hm_remove_row, "", false},

@@ -48,6 +48,43 @@ constexpr unsigned long kReuseFrames = 4;
 constexpr const char* kCacheDir = "sdmc:/switch/NXDock/covers";
 
 // The file a cover is kept in: its address hashed, so any name of the app is a safe file name.
+// The cover made small (kThumb a side, each pixel the average of the ones it covers) and blurred
+// twice: stretched across the screen it is a soft light of the cover's colours.
+std::vector<unsigned char> MakeThumb(const std::vector<unsigned char>& rgba) {
+    constexpr int n = Covers::kThumb, block = kMaxSide / n;
+    std::vector<unsigned char> small(size_t(n) * n * 4);
+    for (int y = 0; y < n; y++) {
+        for (int x = 0; x < n; x++) {
+            unsigned sum[4] = {0, 0, 0, 0};
+            for (int sy = y * block; sy < (y + 1) * block; sy++) {
+                const unsigned char* row = rgba.data() + (size_t(sy) * kMaxSide + size_t(x) * block) * 4;
+                for (int sx = 0; sx < block; sx++) {
+                    for (int c = 0; c < 4; c++) sum[c] += row[sx * 4 + c];
+                }
+            }
+            for (int c = 0; c < 4; c++) small[(size_t(y) * n + x) * 4 + c] = static_cast<unsigned char>(sum[c] / (block * block));
+        }
+    }
+    std::vector<unsigned char> tmp(small.size());
+    for (int pass = 0; pass < 2; pass++) {
+        for (int y = 0; y < n; y++) {
+            for (int x = 0; x < n; x++) {
+                unsigned sum[4] = {0, 0, 0, 0};
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        const int sx = std::clamp(x + dx, 0, n - 1), sy = std::clamp(y + dy, 0, n - 1);
+                        for (int c = 0; c < 4; c++) sum[c] += small[(size_t(sy) * n + sx) * 4 + c];
+                    }
+                }
+                for (int c = 0; c < 4; c++) tmp[(size_t(y) * n + x) * 4 + c] = static_cast<unsigned char>(sum[c] / 9);
+            }
+        }
+        small.swap(tmp);
+    }
+    for (size_t i = 3; i < small.size(); i += 4) small[i] = 255; // all of it shows
+    return small;
+}
+
 std::string CachePath(const std::string& path) {
     char name[64];
     std::snprintf(name, sizeof(name), "%s/%016zx.img", kCacheDir, std::hash<std::string>{}(path));
@@ -343,6 +380,9 @@ void Covers::Work(int net) {
                 stbi_image_free(pixels);
             }
         }
+        // made here, outside the lock: the drawing thread never waits for it
+        std::vector<unsigned char> thumb;
+        if (!d.rgba.empty()) thumb = MakeThumb(d.rgba);
         std::lock_guard lock(m_mutex);
         if (d.rgba.empty() && dropped) {
             // left the screen while downloading: asked again at once if it comes back
@@ -355,9 +395,27 @@ void Covers::Work(int net) {
             // no cover: remembered as none, the placeholder stays
             m_images[path] = 0;
         } else {
+            // the small soft picture of it, for the light behind the game in focus (1A)
+            if (!m_thumbs.count(path)) {
+                m_thumbs[path] = std::move(thumb);
+                m_thumb_order.push_back(path);
+                while (m_thumb_order.size() > kMaxThumbs) {
+                    m_thumbs.erase(m_thumb_order.front());
+                    m_thumb_order.pop_front();
+                }
+            }
             m_decoded.push_back(std::move(d));
         }
     }
+}
+
+bool Covers::Thumb(const std::string& path, unsigned char* out) {
+    if (path.empty()) return false;
+    std::lock_guard lock(m_mutex);
+    const auto it = m_thumbs.find(path);
+    if (it == m_thumbs.end()) return false;
+    std::copy(it->second.begin(), it->second.end(), out);
+    return true;
 }
 
 } // namespace nxdock

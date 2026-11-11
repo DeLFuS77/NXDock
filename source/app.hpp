@@ -63,7 +63,8 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip };
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
+                         OpenBubble, QuickRow, QuickBack };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -109,7 +110,8 @@ private:
     void DrawMore(NVGcontext* vg);
     void UpdateMore(u64 down, u64 held);
     void DrawTiles(NVGcontext* vg);
-    void DrawTileIcon(NVGcontext* vg, int tile, float x, float cy);
+    // `ink`: its colour (the blue of work when none)
+    void DrawTileIcon(NVGcontext* vg, int tile, float x, float cy, const NVGcolor* ink = nullptr);
     void UpdateTiles(u64 down, u64 held);
     // the SD card and USB disks (4A)
     void FollowPlaces();
@@ -265,7 +267,8 @@ private:
     bool m_dest_touched = false; // the destination was chosen on the page, so "ask each time" does not ask
 
     void ReadTouch(u64& down);
-    void Tap(float x, float y, u64& down);
+    // true when the tap landed on something
+    bool Tap(float x, float y, u64& down);
     void Update(u64 down, u64 held);
     void Draw(NVGcontext* vg);
     void DrawLibrary(NVGcontext* vg);
@@ -452,7 +455,7 @@ private:
     void FollowFinish();
     void DrawFinish(NVGcontext* vg);
     void InitRumble();
-    void SendRumble(bool on);
+    void SendRumble(bool on, float strength = 1.f);
     bool m_queue_was_busy = false;
     std::vector<int> m_counted_jobs;   // finished jobs already counted in a batch
     int m_batch_done = 0, m_batch_failed = 0;
@@ -543,6 +546,70 @@ private:
 
     // Library grid scroll, in pixels: drawn value eases toward the target.
     float m_scroll = 0, m_scroll_target = 0;
+
+    // The new look (11/11, all the recommended options of the visual test)
+    // 1A: the cover of the game in focus, made small and soft, behind everything
+    void DrawBackdrop(NVGcontext* vg, const Game& g, bool at_once);
+    int m_bd_img[3] = {0, 0, 0};         // three images: the one shown, the one fading out, a spare
+    bool m_bd_has[3] = {false, false, false};
+    unsigned m_bd_color[3] = {0, 0, 0}; // the colour of a cover without a picture
+    int m_bd_front = -1, m_bd_back = -1;
+    std::string m_bd_key, m_bd_want;     // the cover shown, and the one asked for
+    double m_bd_want_at = -100, m_bd_at = -100;
+    // 2A / 2B: the game in focus, in a band under the covers or in a panel on the right
+    void DrawFocusBand(NVGcontext* vg, const Game& g, bool pill);
+    void DrawFocusPanel(NVGcontext* vg, const Game& g, bool pill);
+    void FocusPills(NVGcontext* vg, const Game& g, float x, float y, float right, bool wrap);
+    // 3A: the queue at work, as a floating pill (nothing when the queue is empty)
+    bool QueueAtWork() const;
+    void DrawQueuePill(NVGcontext* vg, float x, float y, float w);
+    double m_pill_at = -100;
+    bool m_pill_shown = false;
+    // 4A: the opening (the icon assembles itself, then the covers come in)
+    void DrawBoot(NVGcontext* vg);
+    double m_boot_at = -100;
+    // 9A: the covers come in as a wave when the filter changes; the filter pill glides
+    double m_wave_at = -100;
+    ui::Glide m_chip_x, m_chip_w;
+    // 10A: the last game installed falls into the dock
+    std::string m_finish_cover, m_finish_key, m_finish_name;
+    // 14A: the shape of the library while it is read the first time
+    void DrawSkeleton(NVGcontext* vg, const char* line, float frac, bool known);
+    // 15A: what a finger presses sinks and a wave comes out of the finger
+    ui::HitRect m_press_rect{};
+    HitKind m_press_kind = HitKind::Button;
+    int m_press_cover = -1;          // the cover pressed, in the view
+    bool m_press_live = false;       // still under the finger and not dragged
+    double m_press_at = -100, m_release_at = -100;
+    // 16A: the grid goes on after the finger with its speed, and gives a little at its ends
+    float m_fling_v = 0, m_drag_v = 0, m_touch_y_prev = 0, m_touch_x_prev = 0, m_drag_vx = 0;
+    double m_touch_t_prev = 0, m_scroll_seen_at = -100;
+    bool m_fling_end_told = false;
+    float m_list_fling = 0, m_list_fling_d = 0, m_list_fling_pitch = 0;
+    // 17A: a very short vibration when a touch does something
+    void TouchTick();
+    double m_tick_off_at = -1;
+    // 18A: a cover held opens its quick menu
+    std::vector<int> QuickRows() const; // 0 install to the SD card, 1 its page, 2 check, 3 cheats and mods
+    void OpenQuick(int view_index);
+    void UpdateQuick(u64 down, u64 held);
+    void ActivateQuick(int row);
+    void DrawQuick(NVGcontext* vg);
+    int m_quick = -1, m_quick_focus = 0;
+    double m_quick_at = -100;
+    bool m_long_fired = false;
+    // 19A: a cover tapped once shows a bubble that opens it
+    bool m_touch_focus = false;
+    double m_touch_focus_at = -100;
+    // 20A: sliding sideways changes the tab (or goes back from a page)
+    bool InSubScreen() const;
+    bool m_swipe = false;
+    float m_swipe_dx = 0, m_swipe_back = 0, m_tab_from = 0, m_tab_from_next = 0;
+    double m_swipe_back_at = -100;
+    // 21A: pulling the library down reads it again
+    bool m_refreshing = false;
+    double m_refresh_at = -100;
+    s64 m_sd_total_bytes = -1;
 
     // Touch state.
     std::vector<Hit> m_hits;
