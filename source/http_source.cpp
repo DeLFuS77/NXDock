@@ -87,7 +87,7 @@ CURL* NewHandle(const std::string& url, const std::string& key) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 5000L);
     // a connection that stalls is dropped and asked again from where it stopped
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 15L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 8L);
     curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 512L * 1024);
     curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
@@ -239,6 +239,8 @@ Result HttpSource::Fetch(void* curl, unsigned char* dst, s64 off, size_t size, P
     while (size > 0) {
         size_t got = 0;
         bool retry = false;
+        // after a stall, a new connection: the old one may be stuck for good
+        curl_easy_setopt(static_cast<CURL*>(curl), CURLOPT_FRESH_CONNECT, attempt > 0 ? 1L : 0L);
         const Result rc = FetchOnce(curl, dst, off, size, got, piece, retry);
         if (R_SUCCEEDED(rc)) {
             R_SUCCEED();
@@ -252,14 +254,13 @@ Result HttpSource::Fetch(void* curl, unsigned char* dst, s64 off, size_t size, P
         size -= got;
         if (got > 0) {
             last_progress = Clock::now();
-            attempt = 0;
         }
         if (Clock::now() - last_progress > std::chrono::seconds(m_opt.give_up_seconds)) {
             R_THROW(Result_NetworkLost);
         }
         // 0.25 s, 0.5, 1, 2, then 3 s between tries while the network is away
-        const s64 wait_ms = std::min<s64>(250LL << std::min(attempt, 3), 3000);
-        attempt++;
+        const s64 wait_ms = got > 0 ? 0 : std::min<s64>(250LL << std::min(attempt, 3), 3000);
+        attempt = got > 0 ? 1 : attempt + 1;
         for (s64 waited = 0; waited < wait_ms; waited += 50) {
             if (Stopping() || (piece && piece->dropped)) {
                 R_THROW(Result_TransferCancelled);

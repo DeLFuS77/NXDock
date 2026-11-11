@@ -104,7 +104,10 @@ extern "C" void log_write_arg(const char* s, va_list* v) {
         g_log_line_start = nl != nullptr;
         p += n;
     }
-    std::fflush(g_log);
+    // NXDock's own lines and failures reach the card at once; the many lines of the core wait in the buffer
+    if (std::strncmp(text, "[NXDock]", 8) == 0 || std::strncmp(text, "[http]", 6) == 0 || std::strncmp(text, "[fail]", 6) == 0) {
+        std::fflush(g_log);
+    }
 }
 
 extern "C" void log_write(const char* s, ...) {

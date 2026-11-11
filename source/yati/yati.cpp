@@ -863,15 +863,12 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
 
         for (s64 off = 0; off < size;) {
             if (!ncz_section || !ncz_section->InRange(written)) {
-                log_write("[NCZ] looking for new section: %zu off: %zu size: %zu\n", written, off, size);
                 auto it = std::ranges::find_if(t->ncz_sections, [written](auto& e){
-                    log_write("\t[NCZ] checking offset: %zu size: %zu written: %zu\n", e.offset, e.size, written);
                     return e.InRange(written);
                 });
 
                 R_UNLESS(it != t->ncz_sections.cend(), Result_YatiNczSectionNotFound);
                 ncz_section = &(*it);
-                log_write("[NCZ] found new section: %zu\n", written);
 
                 if (ncz_section->crypto_type >= nca::EncryptionType_AesCtr) {
                     // NXDock: NCZSECT2/3 may move the counter of the section.
