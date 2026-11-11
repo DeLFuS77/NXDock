@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/icon.jpg" alt="NXDock" width="128"></p>
+<p align="center"><img src="assets/icon.png" alt="NXDock" width="128"></p>
 
 # NXDock
 
