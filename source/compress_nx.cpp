@@ -342,7 +342,7 @@ bool FindPair(Storage& s, u64 app, Pair& p) {
     }
     p.base = keys_found[0];
     const u64 patch_id = app | 0x800;
-    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Patch, patch_id, patch_id, patch_id,
+    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Patch, app, patch_id, patch_id,
                                             NcmContentInstallType_Full)) ||
         written < 1) {
         log_write("[NXDock] %016llX: no update in this storage\n", (unsigned long long)app);
