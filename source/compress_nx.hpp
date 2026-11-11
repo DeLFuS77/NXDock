@@ -11,10 +11,15 @@
 // game as it was.
 //  - A game Nintendo compressed with its fast level 0 is packed again at level 9 (25A); one it
 //    compressed with its HC levels is as small as LZ4 gets, and stays.
-//  - A game with its update installed is not compressed: the update reads the base game by the
-//    places of its stored bytes, so the base written again would break it, and an official update
-//    cannot be installed over a compressed game later either (25A).
-//  - The firmware the game needs is not raised.
+//  - A game with its update installed is merged with it (25D, merge_game): the update reads the
+//    base game by the places of its stored bytes, so the base cannot be written again alone. One
+//    program NCA is made from the two (what the update no longer reads left out, what it reads more
+//    than once stored once), with a CNMT of one Application of the version of the update and no
+//    required version; the database and the record of the game are changed to it, the console
+//    reads the whole RomFS through its own file system, and only then do the base and the update
+//    go (a failure puts everything back). An official update cannot be installed over it (25E).
+//  - The firmware the game needs is not raised (a merged game asks at least 12.0.0, the one of the
+//    LZ4 layer, as its CNMT is made again).
 //  - The NCA header is no longer signed by Nintendo: the game needs sigpatches (compress_meta).
 // An analysis first, from a sample of the RomFS of each game, says what it would save.
 #include "compress_meta.hpp"
@@ -37,7 +42,7 @@ struct GameEstimate {
     double gain = 0;               // share of the RomFS saved, from a sample
     unsigned long long bytes = 0;  // the program NCA now
     unsigned long long saved = 0;  // what it would save (Worth, Low), or saved (Ours)
-    enum class Why { None, NotFound, Sparse, Key, Read, Update };
+    enum class Why { None, NotFound, Sparse, Key, Read, Update }; // Update: being measured with its update
     Why why = Why::None;           // Unsupported: why
 };
 

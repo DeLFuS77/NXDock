@@ -9,18 +9,24 @@
 #include "i18n_more.hpp"
 #include "log.hpp"
 #include "net.hpp"
+#include "merge_game.hpp"
+#include "merge_meta.hpp"
 #include "romfs_lz4.hpp"
 #include "yati/nx/crypto.hpp"
 #include "yati/nx/es.hpp"
 #include "yati/nx/keys.hpp"
 #include "yati/nx/nca.hpp"
 #include "yati/nx/ncm.hpp"
+#include "yati/nx/ns.hpp"
 
 #include <switch.h>
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cstring>
 #include <ctime>
+#include <functional>
 #include <memory>
 
 namespace nxdock {
@@ -28,6 +34,8 @@ namespace {
 
 namespace nca = sphaira::nca;
 namespace keys = sphaira::keys;
+namespace ncm = sphaira::ncm;
+namespace ns = sphaira::ns;
 
 // The LZ4 HC of Nintendo at level 9 (a hash chain of 256 tries): on real games 9 % to 21 % smaller
 // than its fast level 0, and levels 12 and 16 gain under 1 % more for far more time (25A).
@@ -289,6 +297,419 @@ Result RegisterAs(NcmContentStorage& cs, const NcmContentId& id, const NcmPlaceH
     return sphaira::ncm::Register(&cs, &id, &ph);
 }
 
+// ---- Merge and compress (25D): a game with its update installed becomes one Application ----
+
+// The contents of a key of the database.
+bool Contents(Storage& s, const NcmContentMetaKey& key, std::vector<NcmContentInfo>& out) {
+    out.resize(64);
+    s32 n = 0;
+    if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, out.data(), s32(out.size()), &key, 0))) return false;
+    out.resize(size_t(std::max(n, 0)));
+    return true;
+}
+
+const NcmContentInfo* OfType(const std::vector<NcmContentInfo>& infos, u8 type) {
+    for (const auto& i : infos) {
+        if (i.content_type == type && i.id_offset == 0) return &i;
+    }
+    return nullptr;
+}
+
+// A base game and its update, in the same storage.
+struct Pair {
+    NcmContentMetaKey base{}, patch{};
+    std::vector<NcmContentInfo> base_infos, patch_infos;
+    NcmContentId base_program{}, patch_program{}, base_meta{}, patch_meta{};
+    u64 before = 0; // what the two programs take now
+};
+
+bool FindPair(Storage& s, u64 app, Pair& p) {
+    NcmContentMetaKey keys_found[8];
+    s32 total = 0, written = 0;
+    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Application, app, app, app,
+                                            NcmContentInstallType_Full)) ||
+        written < 1) {
+        return false;
+    }
+    p.base = keys_found[0];
+    const u64 patch_id = app | 0x800;
+    if (R_FAILED(ncmContentMetaDatabaseList(&s.db, &total, &written, keys_found, 8, NcmContentMetaType_Patch, patch_id, patch_id, patch_id,
+                                            NcmContentInstallType_Full)) ||
+        written < 1) {
+        return false;
+    }
+    p.patch = keys_found[0];
+    for (s32 i = 1; i < written; i++) {
+        if (keys_found[i].version > p.patch.version) p.patch = keys_found[i];
+    }
+    if (!Contents(s, p.base, p.base_infos) || !Contents(s, p.patch, p.patch_infos)) return false;
+    const auto* bp = OfType(p.base_infos, NcmContentType_Program);
+    const auto* up = OfType(p.patch_infos, NcmContentType_Program);
+    const auto* bm = OfType(p.base_infos, NcmContentType_Meta);
+    const auto* um = OfType(p.patch_infos, NcmContentType_Meta);
+    // the CNMTs are needed to make the new one
+    if (!bp || !up || !bm || !um) return false;
+    p.base_program = bp->content_id;
+    p.patch_program = up->content_id;
+    p.base_meta = bm->content_id;
+    p.patch_meta = um->content_id;
+    s64 a = 0, b = 0;
+    if (R_FAILED(ncmContentStorageGetSizeFromContentId(&s.cs, &a, &p.base_program)) ||
+        R_FAILED(ncmContentStorageGetSizeFromContentId(&s.cs, &b, &p.patch_program))) {
+        return false;
+    }
+    p.before = u64(a) + u64(b);
+    return true;
+}
+
+// The RomFS section of a program NCA (IVFC, RomFS), whatever else it is (sparse, a patch).
+int RomfsIndex(const nca::Header& h) {
+    for (int i = 0; i < NCA_SECTION_TOTAL; i++) {
+        const auto* fsh = reinterpret_cast<const u8*>(&h.fs_header[i]);
+        if (h.fs_table[i].IsValid() && fsh[2] == 0 && fsh[3] == 3) return i;
+    }
+    return -1;
+}
+
+// What the merger reads: an NCA of the storage, in pieces the storage takes.
+patchview::RawRead NcaReader(NcmContentStorage& cs, const NcmContentId& id) {
+    return [&cs, id](u64 o, u8* b, size_t n) {
+        while (n) {
+            const size_t k = std::min<size_t>(n, 4 * 1024 * 1024);
+            if (R_FAILED(ncmContentStorageReadContentIdFile(&cs, b, k, &id, s64(o)))) return false;
+            o += k;
+            b += k;
+            n -= k;
+        }
+        return true;
+    };
+}
+
+void CtrCrypt(const u8 key[16], const u8 ctr[16], u8* data, size_t n) {
+    Aes128CtrContext ctx;
+    aes128CtrContextCreate(&ctx, key, ctr);
+    aes128CtrCrypt(&ctx, data, data, n);
+}
+
+patchview::NcaSection SectionOf(NcmContentStorage& cs, const NcmContentId& id, const nca::Header& h, int i, const u8 key[16]) {
+    patchview::NcaSection s;
+    s.raw = NcaReader(cs, id);
+    s.ctr = CtrCrypt;
+    std::memcpy(s.key.data(), key, 16);
+    std::memcpy(s.fsh.data(), &h.fs_header[i], 0x200);
+    s.start = h.fs_table[i].GetOffset();
+    s.size = h.fs_table[i].GetOffsetEnd() - s.start;
+    return s;
+}
+
+// The base game and its update opened for the merge. `why` set when they cannot be.
+struct Opened {
+    nca::Header base_h{}, patch_h{};
+    keys::KeyEntry base_key{}, patch_key{};
+};
+
+bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, mergegame::Merger& m, GameEstimate::Why& why) {
+    u8 raw[0xC00];
+    why = GameEstimate::Why::Read;
+    if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &p.base_program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, o.base_h))) {
+        return false;
+    }
+    if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &p.patch_program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, o.patch_h))) {
+        return false;
+    }
+    why = GameEstimate::Why::Key;
+    nca::Header c1 = o.base_h, c2 = o.patch_h;
+    if (R_FAILED(nca::GetDecryptedTitleKey(c1, k, o.base_key)) || R_FAILED(nca::GetDecryptedTitleKey(c2, k, o.patch_key))) return false;
+    why = GameEstimate::Why::Read;
+    const int bi = RomfsIndex(o.base_h), ui = RomfsIndex(o.patch_h);
+    if (bi < 0 || ui < 0) return false;
+    mergegame::Input in;
+    in.base = SectionOf(s.cs, p.base_program, o.base_h, bi, o.base_key.key);
+    in.update = SectionOf(s.cs, p.patch_program, o.patch_h, ui, o.patch_key.key);
+    in.update_index = ui;
+    in.update_header.assign(reinterpret_cast<const u8*>(&o.patch_h), reinterpret_cast<const u8*>(&o.patch_h) + 0xC00);
+    in.update_raw = NcaReader(s.cs, p.patch_program);
+    in.hash = Sha256;
+    const u8* header_key = k.header_key;
+    in.encrypt_header = [header_key](u8* h, size_t n) {
+        std::vector<u8> plain(h, h + n);
+        sphaira::crypto::cryptoAes128Xts(plain.data(), h, header_key, 0, 0x200, n, true);
+    };
+    in.level = kLevel;
+    in.min_gain = kMinGain;
+    in.threads = kThreads;
+    std::string error;
+    if (!m.Open(std::move(in), error)) {
+        log_write("[NXDock] merge: %s\n", error.c_str());
+        return false;
+    }
+    why = GameEstimate::Why::None;
+    return true;
+}
+
+// The decrypted .cnmt of a meta NCA of the storage, with its header (to make another from it).
+bool ReadCnmt(Storage& s, const keys::Keys& k, const NcmContentId& id, nca::Header& h, keys::KeyEntry& key, mergemeta::Cnmt& out) {
+    s64 size = 0;
+    if (R_FAILED(ncmContentStorageGetSizeFromContentId(&s.cs, &size, &id)) || size <= 0xC00 || size > 16 * 1024 * 1024) return false;
+    std::vector<u8> nca_bytes(static_cast<size_t>(size));
+    if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, nca_bytes.data(), nca_bytes.size(), &id, 0)) || R_FAILED(nca::DecryptHeader(nca_bytes.data(), k, h))) {
+        return false;
+    }
+    nca::Header copy = h;
+    if (R_FAILED(nca::GetDecryptedTitleKey(copy, k, key))) return false;
+    const u64 st = h.fs_table[0].GetOffset(), en = h.fs_table[0].GetOffsetEnd();
+    if (en > nca_bytes.size() || st >= en) return false;
+    std::vector<u8> section(nca_bytes.begin() + std::ptrdiff_t(st), nca_bytes.begin() + std::ptrdiff_t(en));
+    u8 ctr[16];
+    CtrAt(h.fs_header[0], st, ctr);
+    CtrCrypt(key.key, ctr, section.data(), section.size());
+    std::vector<u8> cnmt;
+    return mergemeta::CnmtFromSection(section, reinterpret_cast<const u8*>(&h.fs_header[0]), cnmt) && mergemeta::ParseCnmt(cnmt.data(), cnmt.size(), out);
+}
+
+// The whole RomFS of the game read by the file system of the console, as the game reads it: every
+// block checked by the console against its hashes, and decompressed by it. False when a read
+// fails; `could` false when the console would not open it for NXDock (then nothing is known).
+bool CheckWithSystem(u64 app, const std::atomic<bool>& stop, const std::function<void(u64, u64)>& progress, bool& could) {
+    FsStorage st{};
+    could = R_SUCCEEDED(fsOpenDataStorageByProgramId(&st, app));
+    if (!could) return true;
+    s64 size = 0;
+    bool ok = R_SUCCEEDED(fsStorageGetSize(&st, &size));
+    std::vector<u8> buf(4 * 1024 * 1024);
+    for (s64 o = 0; ok && o < size && !stop; o += s64(buf.size())) {
+        const size_t n = size_t(std::min<s64>(s64(buf.size()), size - o));
+        ok = R_SUCCEEDED(fsStorageRead(&st, o, buf.data(), n));
+        progress(u64(o) + n, u64(size));
+    }
+    fsStorageClose(&st);
+    return ok && !stop;
+}
+
+// A placeholder written whole from memory and registered under the SHA-256 of its bytes.
+Result PutContent(NcmContentStorage& cs, const std::vector<u8>& bytes, NcmContentId& id, NcmPlaceHolderId& ph) {
+    u8 hash[32];
+    sha256CalculateHash(hash, bytes.data(), bytes.size());
+    std::memcpy(&id, hash, sizeof(id));
+    R_TRY(ncmContentStorageGeneratePlaceHolderId(&cs, &ph));
+    R_TRY(ncmContentStorageCreatePlaceHolder(&cs, &id, &ph, s64(bytes.size())));
+    if (const Result rc = ncmContentStorageWritePlaceHolder(&cs, &ph, 0, bytes.data(), bytes.size()); R_FAILED(rc)) {
+        ncmContentStorageDeletePlaceHolder(&cs, &ph);
+        return rc;
+    }
+    R_SUCCEED();
+}
+
+// The merge of one game (25D), in this order, so that a failure or a cut before the end leaves the
+// game as it was (the base and its update installed and registered):
+//  1. the merged program NCA measured, then written into a placeholder and checked against what
+//     was measured; its CNMT made from those of the base and the update;
+//  2. both registered under new ids, next to the old contents;
+//  3. the database of ncm and the record of ns changed to the one Application, the console told the
+//     version it has (no update asked for);
+//  4. the whole RomFS read by the console's own file system: a failure puts the database and the
+//     record back as they were and removes the new contents;
+//  5. only then the contents of the base and the update not used any more are deleted.
+void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std::atomic<bool>& stop,
+              const std::function<void(int, u64, u64)>& progress, std::string& error, u64& saved, NcmContentId& new_program) {
+    const More& m = TrM();
+    const auto failed = [&](Result rc = 0) { error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d, rc); };
+    Opened o;
+    mergegame::Merger merger;
+    GameEstimate::Why why{};
+    if (!OpenMerger(s, k, p, o, merger, why)) {
+        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+        return;
+    }
+    std::string what;
+    // 1. measured, then written
+    const u64 virt = merger.RomfsSize();
+    if (!merger.Measure([&](u64 d) { progress(1, d, virt); return !stop; }, what)) {
+        log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
+        return failed();
+    }
+    const u64 new_size = merger.NcaSize();
+    if (new_size >= p.before) {
+        error = Packed(m.cz_low_t, m.cz_low_d);
+        return;
+    }
+    Result rc = 0;
+    NcmPlaceHolderId ph{};
+    if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
+        R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &p.patch_program, &ph, s64(new_size)))) {
+        error = Packed(m.cz_room_t, m.cz_room_d, rc);
+        return;
+    }
+    bool keep_ph = false;
+    const auto drop_ph = [&] {
+        if (!keep_ph) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
+    };
+    {
+        Writer w(s.cs, ph);
+        Result wrc = 0;
+        const bool ok = merger.Write([&](const u8* d, size_t n) { return R_SUCCEEDED(wrc = w.Write(d, n)); },
+                                     [&](u64 d) { progress(2, d, virt); return !stop; }, what);
+        if (!ok || R_FAILED(wrc = w.Flush()) || w.At() != new_size) {
+            log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
+            drop_ph();
+            return failed(wrc);
+        }
+        u8 hash[32];
+        w.Hash(hash);
+        std::memcpy(&new_program, hash, sizeof(new_program));
+        // its CNMT: the base's, with the version and the contents of the update
+        progress(3, 0, 1);
+        nca::Header bmh, umh;
+        keys::KeyEntry bmk, umk;
+        mergemeta::Cnmt bc, uc, mc;
+        if (!ReadCnmt(s, k, p.base_meta, bmh, bmk, bc) || !ReadCnmt(s, k, p.patch_meta, umh, umk, uc)) {
+            drop_ph();
+            return failed();
+        }
+        mergemeta::Content prog;
+        for (const auto& c : uc.contents) {
+            if (c.type == mergemeta::kContentProgram && c.id_offset == 0) prog = c;
+        }
+        std::memcpy(prog.hash.data(), hash, 32);
+        std::memcpy(prog.id.data(), &new_program, 16);
+        prog.size = new_size;
+        std::vector<u8> mheader, msection;
+        if (!mergemeta::MergedCnmt(bc, uc, prog, mc) ||
+            !mergemeta::MetaNca(reinterpret_cast<const u8*>(&bmh), mc, Sha256, mheader, msection)) {
+            drop_ph();
+            return failed();
+        }
+        // the meta NCA: its section encrypted at 0xC00 with the key of the base's, its header with
+        // the header key
+        {
+            u8 ctr[16];
+            nca::FsHeader fh;
+            std::memcpy(&fh, mheader.data() + 0x400, sizeof(fh));
+            CtrAt(fh, 0xC00, ctr);
+            CtrCrypt(bmk.key, ctr, msection.data(), msection.size());
+        }
+        std::vector<u8> meta_nca(0xC00);
+        sphaira::crypto::cryptoAes128Xts(mheader.data(), meta_nca.data(), k.header_key, 0, 0x200, 0xC00, true);
+        meta_nca.insert(meta_nca.end(), msection.begin(), msection.end());
+        NcmContentId new_meta{};
+        NcmPlaceHolderId mph{};
+        if (R_FAILED(rc = PutContent(s.cs, meta_nca, new_meta, mph))) {
+            drop_ph();
+            return failed(rc);
+        }
+
+        // 2. both registered, next to the old contents
+        if (R_FAILED(rc = RegisterAs(s.cs, new_program, ph))) {
+            ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
+            drop_ph();
+            return failed(rc);
+        }
+        keep_ph = true;
+        if (R_FAILED(rc = RegisterAs(s.cs, new_meta, mph))) {
+            ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
+            sphaira::ncm::Delete(&s.cs, &new_program);
+            return failed(rc);
+        }
+        const auto remove_new = [&] {
+            sphaira::ncm::Delete(&s.cs, &new_program);
+            sphaira::ncm::Delete(&s.cs, &new_meta);
+        };
+
+        // 3. the database and the record: the one Application of the version of the update. What
+        // was there is kept, to be put back.
+        std::vector<u8> old_base(0x10000), old_patch(0x10000);
+        u64 base_size = 0, patch_size = 0;
+        if (R_FAILED(rc = ncmContentMetaDatabaseGet(&s.db, &p.base, &base_size, old_base.data(), old_base.size())) ||
+            R_FAILED(rc = ncmContentMetaDatabaseGet(&s.db, &p.patch, &patch_size, old_patch.data(), old_patch.size()))) {
+            remove_new();
+            return failed(rc);
+        }
+        old_base.resize(size_t(base_size));
+        old_patch.resize(size_t(patch_size));
+        s64 meta_size = s64(meta_nca.size());
+        std::array<u8, 16> meta_id;
+        std::memcpy(meta_id.data(), &new_meta, 16);
+        const std::vector<u8> record = mergemeta::DbRecord(mc, meta_id, u64(meta_size));
+        NcmContentMetaKey key = p.base;
+        key.version = mc.version;
+        key.type = NcmContentMetaType_Application;
+        key.install_type = NcmContentInstallType_Full;
+        if (R_FAILED(rc = ns::Initialize())) {
+            remove_new();
+            return failed(rc);
+        }
+        std::vector<ncm::ContentStorageRecord> old_records;
+        if (R_FAILED(rc = ns::GetApplicationRecords(app, old_records))) {
+            ns::Exit();
+            remove_new();
+            return failed(rc);
+        }
+        const auto put_back = [&] {
+            ncmContentMetaDatabaseRemove(&s.db, &key);
+            ncmContentMetaDatabaseSet(&s.db, &p.base, old_base.data(), old_base.size());
+            ncmContentMetaDatabaseSet(&s.db, &p.patch, old_patch.data(), old_patch.size());
+            ncmContentMetaDatabaseCommit(&s.db);
+            ns::DeleteApplicationRecord(app);
+            if (!old_records.empty()) {
+                ns::PushApplicationRecord(app, old_records.data(), u32(old_records.size()));
+                ns::SetLowestLaunchVersion(app, old_records);
+            }
+            ns::InvalidateApplicationControlCache(app);
+            remove_new();
+        };
+        std::vector<ncm::ContentStorageRecord> records;
+        for (const auto& r : old_records) {
+            const bool ours = r.storage_id == s.id && r.key.id == p.base.id && (r.key.type == p.base.type || r.key.type == p.patch.type);
+            const bool patch = r.storage_id == s.id && r.key.id == p.patch.id && r.key.type == p.patch.type;
+            if (!ours && !patch) records.push_back(r);
+        }
+        ncm::ContentStorageRecord merged{};
+        merged.key = key;
+        merged.storage_id = u8(s.id);
+        records.insert(records.begin(), merged);
+        bool db_ok = R_SUCCEEDED(rc = ncmContentMetaDatabaseRemove(&s.db, &p.patch));
+        if (db_ok && key.version != p.base.version) db_ok = R_SUCCEEDED(rc = ncmContentMetaDatabaseRemove(&s.db, &p.base));
+        if (db_ok) db_ok = R_SUCCEEDED(rc = ncmContentMetaDatabaseSet(&s.db, &key, record.data(), record.size()));
+        if (db_ok) db_ok = R_SUCCEEDED(rc = ncmContentMetaDatabaseCommit(&s.db));
+        if (db_ok) db_ok = R_SUCCEEDED(rc = ns::DeleteApplicationRecord(app));
+        if (db_ok) db_ok = R_SUCCEEDED(rc = ns::PushApplicationRecord(app, records.data(), u32(records.size())));
+        if (!db_ok) {
+            put_back();
+            ns::Exit();
+            return failed(rc);
+        }
+        ns::SetLowestLaunchVersion(app, records);
+        ns::InvalidateApplicationControlCache(app);
+
+        // 4. read by the console as the game reads it
+        bool could = false;
+        if (!CheckWithSystem(app, stop, [&](u64 d, u64 t) { progress(3, d, t); }, could)) {
+            log_write("[NXDock] merge %016llX: the console could not read it, put back\n", (unsigned long long)app);
+            put_back();
+            ns::Exit();
+            return failed();
+        }
+        if (!could) log_write("[NXDock] merge %016llX: not read by the console (no access), checked by its hashes only\n", (unsigned long long)app);
+        ns::Exit();
+
+        // 5. the old contents not used any more
+        const auto used = [&](const NcmContentId& id) {
+            if (!std::memcmp(&id, &new_program, sizeof(id)) || !std::memcmp(&id, &new_meta, sizeof(id))) return true;
+            for (const auto& c : mc.contents) {
+                if (!std::memcmp(c.id.data(), &id, sizeof(id))) return true;
+            }
+            return false;
+        };
+        for (const auto* list : {&p.base_infos, &p.patch_infos}) {
+            for (const auto& i : *list) {
+                if (!used(i.content_id)) sphaira::ncm::Delete(&s.cs, &i.content_id);
+            }
+        }
+    }
+    saved = p.before - new_size;
+    log_write("[NXDock] merged %016llX v%u: %llu bytes saved\n", (unsigned long long)app, p.patch.version, (unsigned long long)saved);
+}
+
 } // namespace
 
 Compressor::~Compressor() {
@@ -382,8 +803,10 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                 if (r < 0) {
                     e.why = sparse ? GameEstimate::Why::Sparse : GameEstimate::Why::Read;
                 } else if (HasUpdate(app)) {
-                    // compressing the base game would break its update
+                    // merged with its update (25D): measured from a sample of the two read together
+                    e.state = GameEstimate::State::Possible;
                     e.why = GameEstimate::Why::Update;
+                    possible.push_back(app);
                 } else {
                     e.state = GameEstimate::State::Possible;
                     e.why = GameEstimate::Why::None;
@@ -415,6 +838,28 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                 if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) break;
                 bool already = false, sparse = false;
                 const int r = RomfsSection(h, already, sparse);
+                if (e.why == GameEstimate::Why::Update) {
+                    // the base and its update read together, a block in kSample
+                    Pair pair;
+                    Opened o;
+                    mergegame::Merger merger;
+                    GameEstimate::Why why{};
+                    if (!FindPair(s, app, pair) || !OpenMerger(s, k, pair, o, merger, why)) {
+                        e.state = GameEstimate::State::Unsupported;
+                        e.why = why == GameEstimate::Why::None ? GameEstimate::Why::Read : why;
+                        break;
+                    }
+                    const double gain = lz4pack::EstimateGain(merger.RomfsSize(), kLevel, kSample, [&](u64 o2, u8* b, size_t n) {
+                        return !m_stop && merger.ReadRomfs(o2, b, n);
+                    });
+                    const double after = double(merger.RomfsSize()) * (1.0 - gain);
+                    e.bytes = pair.before;
+                    e.saved = after < double(pair.before) ? u64(double(pair.before) - after) : 0;
+                    e.gain = pair.before ? double(e.saved) / double(pair.before) : 0;
+                    e.state = e.gain >= kCompressWorth ? GameEstimate::State::Worth : GameEstimate::State::Low;
+                    e.why = GameEstimate::Why::None;
+                    break;
+                }
                 if (r < 0) break;
                 nca::Header copy = h;
                 keys::KeyEntry key;
@@ -501,6 +946,23 @@ bool Compressor::StartCompress(unsigned long long app) {
                 GameContents g;
                 if (!s.ok || !FindGame(s, app, g)) continue;
                 log_write("[NXDock] compressing %016llX\n", (unsigned long long)app);
+                // with its update installed: merged with it into one Application (25D)
+                if (HasUpdate(app)) {
+                    Pair pair;
+                    if (!FindPair(s, app, pair)) {
+                        error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
+                        return;
+                    }
+                    NcmContentId merged{};
+                    MergeOne(s, app, k, pair, m_stop, progress, error, saved, merged);
+                    if (error.empty()) {
+                        auto marks = LoadCompressed(kCompressedList);
+                        std::erase_if(marks, [app](const CompressedGame& c) { return c.app_id == app; });
+                        marks.push_back({app, Hex(&merged, sizeof(merged)), saved, (long long)time(nullptr)});
+                        SaveCompressed(kCompressedList, marks);
+                    }
+                    return;
+                }
                 // 1. the program NCA and its RomFS
                 u8 raw[0xC00];
                 nca::Header h;
