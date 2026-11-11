@@ -2809,9 +2809,11 @@ void App::DrawQueue(NVGcontext* vg) {
         const float cx = px + 168;
         nvgSave(vg);
         nvgScissor(vg, cx, py + 16, pw - 168 - 140, 48);
-        const float nw = ui::Text(vg, cx, py + 40, 24, t.text, j.game.c_str()) - cx;
         const std::string sub = j.label + " · " + Upper(j.format) + " · " + (j.nand ? s.internal : "SD") +
                                 (live.merging ? std::string(" · ") + TrM().qm_tag : std::string());
+        // a long name glides to be read whole; what it is keeps its room after it
+        const float room = pw - 168 - 140, sub_w = std::min(ui::TextWidth(vg, 16, sub.c_str()), room * 0.45f);
+        const float nw = ui::Marquee(vg, cx, py + 40, room - sub_w - 14, 24, t.text, j.game.c_str(), m_time) - cx;
         ui::Text(vg, cx + nw + 14, py + 41, 16, t.muted, sub.c_str());
         nvgRestore(vg);
 
@@ -2987,7 +2989,7 @@ void App::DrawQueue(NVGcontext* vg) {
         ui::Cover(vg, t, 62, y, 44, PlaceholderColor(j.color_key), Initial(j.game).c_str(), nullptr, false, false, 8, m_covers.Get(j.cover));
         nvgSave(vg);
         nvgScissor(vg, 122, y, 600, 44);
-        ui::Text(vg, 122, y + 22, 17, t.text, FileLabel(j).c_str());
+        ui::Marquee(vg, 122, y + 22, 590, 17, t.text, FileLabel(j).c_str(), m_time);
         nvgRestore(vg);
         std::string info = Upper(j.format) + " · " + SizeText(j.size) + " · " + (j.nand ? s.internal_short : "SD");
         if (j.state == InstallJob::State::Done) info += " · " + Duration(j.seconds);

@@ -73,6 +73,26 @@ void Focus(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, f
     StrokeRound(vg, x - 5, y - 5, w + 10, h + 10, r + 5, t.work, 4);
 }
 
+float Marquee(NVGcontext* vg, float x, float y, float w, float size, NVGcolor color, const char* str, double time) {
+    const float tw = TextWidth(vg, size, str);
+    if (tw <= w) return Text(vg, x, y, size, color, str);
+    const float travel = tw - w;
+    const float speed = 40.f, pause = 1.6f; // pixels a second; seconds at each end
+    const float run = travel / speed;
+    const float period = 2 * (pause + run);
+    float at = Still() ? 0.f : std::fmod(float(time), period);
+    float offset;
+    if (at < pause) offset = 0;
+    else if ((at -= pause) < run) offset = at * speed;
+    else if ((at -= run) < pause) offset = travel;
+    else offset = travel - (at - pause) * speed;
+    nvgSave(vg);
+    nvgIntersectScissor(vg, x, y - size, w, size * 2);
+    Text(vg, x - offset, y, size, color, str);
+    nvgRestore(vg);
+    return x + w;
+}
+
 void Progress(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float frac,
               NVGcolor color, double time, bool moving) {
     NVGcolor track = color;

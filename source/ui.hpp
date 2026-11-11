@@ -52,6 +52,10 @@ float Chip(NVGcontext* vg, const Theme& t, float x, float y, const char* label, 
 // The focus ring with a soft glow that breathes.
 void Focus(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r, double time);
 
+// A line of text in `w`: when it does not fit, it glides left and right, with a pause at each end,
+// to show it whole (still, cut at the start, with the animations off). Gives where it ends.
+float Marquee(NVGcontext* vg, float x, float y, float w, float size, NVGcolor color, const char* str, double time);
+
 // A bar of work in progress: fill with moving stripes (still when done).
 void Progress(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float frac,
               NVGcolor color, double time, bool moving = true);
