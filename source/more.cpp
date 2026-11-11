@@ -413,6 +413,17 @@ void App::InstallMarkedFiles() {
 
 // Jobs that do not come from the library: the internal memory asks first, as on a game's page.
 void App::QueueLocal(std::vector<InstallJob> jobs) {
+    // in the order they go on: each game, then its update, then its DLC (an update is merged with
+    // a game NXDock merged, and the console asks for the game before its DLC)
+    const auto rank = [](const InstallJob& j) {
+        u64 id = 0;
+        u32 v = 0;
+        if (!TitleFromName(j.game + " " + j.label, id, v)) return std::pair<u64, int>{~0ull, 0};
+        const int kind = TitleKind(id);
+        const u64 app = kind == 0 ? id : kind == 1 ? id & ~u64(0xFFF) : (id - 0x1000) & ~u64(0xFFF);
+        return std::pair<u64, int>{app, kind};
+    };
+    std::stable_sort(jobs.begin(), jobs.end(), [&](const InstallJob& a, const InstallJob& b) { return rank(a) < rank(b); });
     if (!jobs.empty() && jobs.front().nand) {
         m_sd_checked = -100;
         CheckSdSpace();
@@ -498,10 +509,22 @@ void App::DrawFiles(NVGcontext* vg) {
             std::snprintf(split, sizeof(split), m.split_fmt, int(e.parts.size()));
             name += "  (" + std::string(split) + ")";
         }
+        u64 tid = 0;
+        u32 tver = 0;
+        const bool titled = !e.dir && TitleFromName(e.name, tid, tver);
         nvgSave(vg);
-        nvgScissor(vg, lx + 90, y, lw - 90 - 220, 44);
+        nvgScissor(vg, lx + 90, y, lw - 90 - (titled ? 340 : 220), 44);
         ui::Text(vg, lx + 90, cy, 16, t.text, name.c_str());
         nvgRestore(vg);
+        if (titled) {
+            // what it is, as the numbers alone do not say it
+            const int kind = TitleKind(tid);
+            const char* tag = kind == 0 ? m.game_word : kind == 1 ? m.ic_update_word : m.ic_dlc_word;
+            const NVGcolor col = kind == 0 ? t.work : kind == 1 ? t.cyan : t.violet;
+            const float tw = ui::TextWidth(vg, 12, tag) + 14, tx = lx + lw - 170 - tw;
+            ui::StrokeRound(vg, tx, cy - 9, tw, 18, 9, col, 1.f);
+            ui::Text(vg, tx + tw / 2, cy, 12, col, tag, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
         if (!e.dir) {
             std::string fmt = e.format;
             for (auto& c : fmt) c = char(std::toupper((unsigned char)c));

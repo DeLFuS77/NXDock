@@ -40,6 +40,26 @@ bool StorageSpace(NcmStorageId storage, s64& free_bytes, s64& total_bytes) {
     return ok;
 }
 
+bool HasContent(u64 id, u32 version) {
+    if (!id || R_FAILED(ncmInitialize())) return false;
+    bool has = false;
+    for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+        NcmContentMetaDatabase db{};
+        if (R_FAILED(ncmOpenContentMetaDatabase(&db, sid))) continue;
+        NcmContentMetaKey keys[8];
+        s32 total = 0, written = 0;
+        if (R_SUCCEEDED(ncmContentMetaDatabaseList(&db, &total, &written, keys, 8, NcmContentMetaType_Unknown, 0, id, id, NcmContentInstallType_Full))) {
+            for (s32 i = 0; i < written && i < 8; i++) {
+                if (keys[i].id == id && keys[i].version == version) has = true;
+            }
+        }
+        ncmContentMetaDatabaseClose(&db);
+        if (has) break;
+    }
+    ncmExit();
+    return has;
+}
+
 s64 StorageFreeSpace(NcmStorageId storage) {
     s64 free_bytes, total_bytes;
     StorageSpace(storage, free_bytes, total_bytes);

@@ -37,6 +37,11 @@ unsigned PlaceholderColor(const std::string& key);
 std::string Initial(const std::string& name);
 
 enum class Tab { Library, Queue, Installed, More, Settings };
+
+// The title ID and the version in a file name ("Game [0100…][v65536].nsz"); false without an ID.
+bool TitleFromName(const std::string& name, u64& id, u32& version);
+// What a title ID is: 0 a game, 1 its update, 2 a DLC.
+int TitleKind(u64 id);
 inline constexpr int kTabs = 5;
 
 class App {
@@ -406,7 +411,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

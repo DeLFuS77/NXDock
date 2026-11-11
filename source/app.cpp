@@ -2599,6 +2599,33 @@ void App::FollowPush() {
     }
 }
 
+bool TitleFromName(const std::string& name, u64& id, u32& version) {
+    id = 0;
+    version = 0;
+    for (size_t at = name.find('['); at != std::string::npos; at = name.find('[', at + 1)) {
+        if (at + 18 > name.size() || name[at + 17] != ']' || name[at + 1] != '0') continue;
+        u64 v = 0;
+        bool hex = true;
+        for (size_t i = at + 1; i < at + 17 && hex; i++) {
+            const char c = name[i];
+            const int d = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+            if (d < 0) hex = false;
+            v = v << 4 | u64(d < 0 ? 0 : d);
+        }
+        if (!hex) continue;
+        id = v;
+        const size_t vat = name.find("[v", at + 18);
+        if (vat != std::string::npos) version = u32(std::strtoul(name.c_str() + vat + 2, nullptr, 10));
+        return true;
+    }
+    return false;
+}
+
+int TitleKind(u64 id) {
+    const u64 low = id & 0xFFF;
+    return low == 0 ? 0 : low == 0x800 ? 1 : 2;
+}
+
 void App::AddJobs(std::vector<InstallJob> jobs) {
     const auto& s = Tr();
     // a file from the SD card, a USB disk or the computer: the cover and the name of its game in
@@ -2625,6 +2652,34 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
             j.color_key = g.key;
             if (j.title_id == 0) j.title_id = id;
             break;
+        }
+    }
+    // the same version installed already: asked first, as it would end at once and change nothing
+    {
+        bool any = false;
+        for (auto& j : jobs) {
+            if (j.reinstall_ok || !j.repair.empty() || j.downgrade || j.resumed) continue;
+            u64 id = j.title_id;
+            u32 version = j.version;
+            if (j.origin != InstallJob::Origin::Library) {
+                u64 named = 0;
+                u32 v = 0;
+                if (TitleFromName(j.game + " " + j.label, named, v)) {
+                    id = named;
+                    version = v;
+                }
+            }
+            if (id && HasContent(id, version)) {
+                any = true;
+            } else {
+                j.reinstall_ok = true; // not installed: nothing to ask
+            }
+        }
+        if (any) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::Reinstall;
+            m_dialog.jobs = std::move(jobs);
+            return;
         }
     }
     // the firmware, the keys and Atmosphère against what the contents ask for (2A): a window
@@ -3926,6 +3981,22 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::SpaceDump:
             SpaceDialogText(title, body, primary);
             break;
+        case DialogKind::Reinstall: {
+            const More& m = TrM();
+            int count = 0;
+            for (const auto& j : m_dialog.jobs) {
+                if (j.reinstall_ok) continue;
+                count++;
+                lines.push_back({j.game + " · " + j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+            }
+            char text[200];
+            std::snprintf(text, sizeof(text), count == 1 ? m.ri_title_one : m.ri_title_fmt, count);
+            title = text;
+            body = m.ri_body;
+            primary = m.ri_go;
+            cancel_label = m.ri_skip;
+            break;
+        }
         case DialogKind::ConsoleRemove: {
             const More& m = TrM();
             char text[300];
@@ -4364,6 +4435,16 @@ void App::UpdateDialog(u64 down, u64 held) {
         if (Repeat(down, held, HidNpadButton_AnyLeft)) m_dialog.focus = 0;
         if (Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.focus = 1; // a disabled action falls back when drawn
     }
+    if (m_dialog.kind == DialogKind::Reinstall && ((down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0))) {
+        // skipped: those installed stay out, the rest goes on
+        std::vector<InstallJob> rest;
+        for (auto& j : m_dialog.jobs) {
+            if (j.reinstall_ok) rest.push_back(std::move(j));
+        }
+        m_dialog = Dialog{};
+        if (!rest.empty()) AddJobs(std::move(rest));
+        return;
+    }
     if (m_dialog.kind == DialogKind::Nand && (down & HidNpadButton_Y)) {
         // to the SD card instead, the default
         auto jobs = std::move(m_dialog.jobs);
@@ -4489,6 +4570,13 @@ void App::ConfirmDialog() {
         case DialogKind::SpaceDump:
             ConfirmSpaceDialog();
             break;
+        case DialogKind::Reinstall: {
+            auto jobs = std::move(m_dialog.jobs);
+            for (auto& j : jobs) j.reinstall_ok = true;
+            m_dialog = Dialog{};
+            AddJobs(std::move(jobs));
+            return;
+        }
         case DialogKind::ConsoleRemove:
             // taking contents off while the queue installs could take those of the install going on
             if (m_queue && (m_queue->Busy() || m_queue->Undoing())) {

@@ -498,6 +498,11 @@ constexpr More kEnglish{
     .ic_rm_failed_d = "Try again. Nothing else of the game was touched.",
     .ic_rm_running_t = "It is the game NXDock runs in",
     .ic_rm_running_d = "Open NXDock from another game or from the Album, then delete it.",
+    .ri_title_one = "It is installed already",
+    .ri_title_fmt = "%d are installed already",
+    .ri_body = "The console has this same version. Installing it over changes nothing; to check it, use Verify on the page of the game.",
+    .ri_go = "Install over",
+    .ri_skip = "Skip",
 };
 
 constexpr More kSpanish{
@@ -989,6 +994,11 @@ constexpr More kSpanish{
     .ic_rm_failed_d = "Vuelve a intentarlo. No se ha tocado nada más del juego.",
     .ic_rm_running_t = "Es el juego desde el que has abierto NXDock",
     .ic_rm_running_d = "Abre NXDock desde otro juego o desde el Álbum y bórralo entonces.",
+    .ri_title_one = "Ya está instalado",
+    .ri_title_fmt = "Ya hay %d instalados",
+    .ri_body = "La consola ya tiene esta misma versión. Instalarla encima no cambia nada; para revisarla, usa Comprobar en la página del juego.",
+    .ri_go = "Instalar encima",
+    .ri_skip = "Saltar",
 };
 
 constexpr More kFrench{
@@ -1480,6 +1490,11 @@ constexpr More kFrench{
     .ic_rm_failed_d = "Réessayez. Rien d'autre du jeu n'a été touché.",
     .ic_rm_running_t = "C'est le jeu depuis lequel NXDock est ouvert",
     .ic_rm_running_d = "Ouvrez NXDock depuis un autre jeu ou l'Album, puis supprimez-le.",
+    .ri_title_one = "Déjà installé",
+    .ri_title_fmt = "%d sont déjà installés",
+    .ri_body = "La console a déjà cette version. L'installer par-dessus ne change rien ; pour la contrôler, utilisez Vérifier sur la page du jeu.",
+    .ri_go = "Installer par-dessus",
+    .ri_skip = "Passer",
 };
 
 constexpr More kGerman{
@@ -1971,6 +1986,11 @@ constexpr More kGerman{
     .ic_rm_failed_d = "Versuche es erneut. Sonst wurde nichts vom Spiel berührt.",
     .ic_rm_running_t = "Es ist das Spiel, aus dem NXDock läuft",
     .ic_rm_running_d = "Öffne NXDock aus einem anderen Spiel oder dem Album und lösche es dann.",
+    .ri_title_one = "Schon installiert",
+    .ri_title_fmt = "%d sind schon installiert",
+    .ri_body = "Die Konsole hat genau diese Version. Darüber installieren ändert nichts; zum Prüfen nutze Prüfen auf der Seite des Spiels.",
+    .ri_go = "Darüber installieren",
+    .ri_skip = "Überspringen",
 };
 
 constexpr More kItalian{
@@ -2462,6 +2482,11 @@ constexpr More kItalian{
     .ic_rm_failed_d = "Riprova. Nient'altro del gioco è stato toccato.",
     .ic_rm_running_t = "È il gioco da cui hai aperto NXDock",
     .ic_rm_running_d = "Apri NXDock da un altro gioco o dall'Album, poi eliminalo.",
+    .ri_title_one = "Già installato",
+    .ri_title_fmt = "%d sono già installati",
+    .ri_body = "La console ha già questa versione. Installarla sopra non cambia nulla; per controllarla usa Verifica nella pagina del gioco.",
+    .ri_go = "Installa sopra",
+    .ri_skip = "Salta",
 };
 
 constexpr More kPortuguese{
@@ -2953,6 +2978,11 @@ constexpr More kPortuguese{
     .ic_rm_failed_d = "Tenta de novo. Nada mais do jogo foi tocado.",
     .ic_rm_running_t = "É o jogo a partir do qual abriste o NXDock",
     .ic_rm_running_d = "Abre o NXDock a partir de outro jogo ou do Álbum e apaga-o então.",
+    .ri_title_one = "Já está instalado",
+    .ri_title_fmt = "%d já estão instalados",
+    .ri_body = "A consola já tem esta versão. Instalá-la por cima não muda nada; para a verificar, usa Verificar na página do jogo.",
+    .ri_go = "Instalar por cima",
+    .ri_skip = "Saltar",
 };
 
 constexpr More kDutch{
@@ -3444,6 +3474,11 @@ constexpr More kDutch{
     .ic_rm_failed_d = "Probeer opnieuw. Verder is niets van het spel aangeraakt.",
     .ic_rm_running_t = "Het is het spel waaruit NXDock draait",
     .ic_rm_running_d = "Open NXDock vanuit een ander spel of het Album en wis het dan.",
+    .ri_title_one = "Al geïnstalleerd",
+    .ri_title_fmt = "%d zijn al geïnstalleerd",
+    .ri_body = "De console heeft deze versie al. Eroverheen installeren verandert niets; controleer het met Controleren op de pagina van het spel.",
+    .ri_go = "Eroverheen installeren",
+    .ri_skip = "Overslaan",
 };
 
 constexpr More kRussian{
@@ -3935,6 +3970,11 @@ constexpr More kRussian{
     .ic_rm_failed_d = "Попробуйте снова. Остальное в игре не тронуто.",
     .ic_rm_running_t = "Это игра, из которой запущен NXDock",
     .ic_rm_running_d = "Откройте NXDock из другой игры или из Альбома и удалите её тогда.",
+    .ri_title_one = "Уже установлено",
+    .ri_title_fmt = "Уже установлено: %d",
+    .ri_body = "На консоли уже эта версия. Установка поверх ничего не изменит; для проверки используйте «Проверить» на странице игры.",
+    .ri_go = "Установить поверх",
+    .ri_skip = "Пропустить",
 };
 
 constexpr More kJapanese{
@@ -4426,6 +4466,11 @@ constexpr More kJapanese{
     .ic_rm_failed_d = "もう一度お試しください。ゲームの他の部分は変更されていません。",
     .ic_rm_running_t = "NXDock を起動しているゲームです",
     .ic_rm_running_d = "別のゲームかアルバムから NXDock を開いて削除してください。",
+    .ri_title_one = "インストール済みです",
+    .ri_title_fmt = "%d 件がインストール済みです",
+    .ri_body = "本体には同じバージョンがあります。上書きしても何も変わりません。確認するにはゲームのページの「チェック」を使ってください。",
+    .ri_go = "上書きインストール",
+    .ri_skip = "スキップ",
 };
 
 constexpr More kKorean{
@@ -4917,6 +4962,11 @@ constexpr More kKorean{
     .ic_rm_failed_d = "다시 시도하세요. 게임의 다른 부분은 건드리지 않았습니다.",
     .ic_rm_running_t = "NXDock을 실행 중인 게임입니다",
     .ic_rm_running_d = "다른 게임이나 앨범에서 NXDock을 열고 삭제하세요.",
+    .ri_title_one = "이미 설치됨",
+    .ri_title_fmt = "%d개가 이미 설치됨",
+    .ri_body = "본체에 같은 버전이 있습니다. 덮어 설치해도 바뀌지 않습니다. 확인하려면 게임 페이지의 검사를 사용하세요.",
+    .ri_go = "덮어 설치",
+    .ri_skip = "건너뛰기",
 };
 
 constexpr More kChinese{
@@ -5408,6 +5458,11 @@ constexpr More kChinese{
     .ic_rm_failed_d = "请重试。游戏的其他部分未被改动。",
     .ic_rm_running_t = "这是运行 NXDock 的游戏",
     .ic_rm_running_d = "请从其他游戏或相册打开 NXDock 后再删除。",
+    .ri_title_one = "已安装",
+    .ri_title_fmt = "已安装 %d 项",
+    .ri_body = "主机上已有相同版本。覆盖安装不会有任何改变；如需检查，请在游戏页面使用“校验”。",
+    .ri_go = "覆盖安装",
+    .ri_skip = "跳过",
 };
 
 // In the order of LanguageName in i18n.cpp.

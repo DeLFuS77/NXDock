@@ -98,6 +98,8 @@ struct More {
     const char *nand_sd_hint;
     // In the console, of the Installed tab: every game installed, and taking contents off
     const char *ic_console, *ic_reading, *ic_empty, *ic_not_lib, *ic_dlc_needs_tag, *ic_dlc_fmt, *ic_archived_sub, *ic_names_fmt, *ic_open, *ic_meta_fmt, *ic_archived_note, *ic_needs_fmt, *ic_with_game, *ic_marked_fmt, *ic_mark, *ic_remove_marked, *ic_from_library, *ic_removing, *ic_not_in_view, *ic_nothing, *ic_update_word, *ic_dlc_word, *ic_rm_title_fmt, *ic_rm_body_fmt, *ic_rm_go, *ic_done_remove, *ic_rm_failed_t, *ic_rm_failed_d, *ic_rm_running_t, *ic_rm_running_d;
+    // installing what is installed already, the same version
+    const char *ri_title_one, *ri_title_fmt, *ri_body, *ri_go, *ri_skip;
 };
 
 const More& TrM();

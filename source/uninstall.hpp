@@ -12,6 +12,10 @@ namespace nxdock {
 // Result_GameRunning when the content belongs to the game NXDock was opened from.
 Result RemoveInstalled(const NcmContentMetaKey& key, NcmStorageId storage);
 
+// Whether the console has this content (its title ID and version) in the SD card or the internal
+// memory. Listed by ID alone: ncm does not filter by game on every firmware.
+bool HasContent(u64 id, u32 version);
+
 // The program NXDock runs in: the game it was opened from with R, or the Album.
 u64 OwnProgramId();
 
