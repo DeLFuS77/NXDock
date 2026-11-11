@@ -300,8 +300,8 @@ void BrandMark(NVGcontext* vg, const Theme& /*t*/, float x, float y, float s) {
 
 float Battery(NVGcontext* vg, const Theme& t, float right, float cy, int percent, bool charging) {
     percent = std::clamp(percent, 0, 100);
-    // red only when it is really low, as an error would be; amber a little before
-    const NVGcolor color = percent < 10 ? t.err : percent < 20 ? t.warn : t.text;
+    // red is only for errors: amber when it gets low
+    const NVGcolor color = percent < 20 ? t.warn : t.text;
     const NVGcolor outline = percent < 20 ? color : t.muted;
     const float bw = 30, bh = 15, bx = right - bw - 4, by = cy - bh / 2;
     StrokeRound(vg, bx, by, bw, bh, 4, outline, 2);

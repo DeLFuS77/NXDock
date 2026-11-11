@@ -297,6 +297,7 @@ private:
     void DrawQueue(NVGcontext* vg);
     void UpdateQueue(u64 down, u64 held);
     void DrawQueueStrip(NVGcontext* vg, float y);
+    float StripKey(NVGcontext* vg, float qy);
     // The marked files of the page of a game go to the queue; to the internal memory, only after
     // the question (1A).
     void EnqueuePicked();

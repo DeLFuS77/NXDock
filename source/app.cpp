@@ -1595,7 +1595,8 @@ void App::FollowFinish() {
             } else {
                 std::snprintf(text, sizeof(text), s.finish_all, m_batch_done, SizeText(m_batch_bytes).c_str());
             }
-            Notice(text);
+            if (m_batch_failed > 0) Notice(text);
+            else NoticeOk(text);
             m_notice_until = m_time + 5;
             if (m_ui.finish_effect) {
                 m_finish_at = m_time;
@@ -2496,7 +2497,16 @@ void App::DrawDetail(NVGcontext* vg) {
     } else {
         facts.push_back({s.on_console, "—", t.muted});
     }
-    if (compressed && g.installed.base) facts.insert(facts.end() - 1, {TrM().cz_badge, "LZ4", t.work}); // 24A
+    if (compressed && g.installed.base) {
+        // 24A: what it saved
+        u64 saved = 0;
+        for (const auto& c : m_compressed_marks) {
+            if (c.app_id == g.title_id) saved = c.saved;
+        }
+        char text[96];
+        std::snprintf(text, sizeof(text), TrM().cz_saves_fmt, SizeText(saved).c_str());
+        facts.insert(facts.end() - 1, {TrM().cz_badge, text, t.work});
+    }
     float fx = rx;
     const float fy = cy + 62;
     for (size_t i = 0; i < facts.size(); i++) {
@@ -2585,10 +2595,11 @@ void App::DrawDetail(NVGcontext* vg) {
     const float cards_y = ly + list_h + 16;
     DestCards(vg, rx, cards_y, rw, 64, m_to_nand, picked_size, HitKind::Dest);
     const float dy = cards_y + 64 + 18;
-    if (m_to_nand) ui::Text(vg, rx, dy + 22, 14, t.orange, TrM().dc_once);
     char install[160];
     std::snprintf(install, sizeof(install), m_to_nand ? TrM().dc_install_nand_fmt : TrM().dc_install_sd_fmt, SizeText(picked_size).c_str());
     const float bw = ui::TextWidth(vg, 20, install) + 64, bx = kWidth - 48 - bw;
+    // under the cards, in the room left of Install: it never runs under the button
+    if (m_to_nand) TextBox(vg, rx, dy - 2, std::max(120.f, bx - rx - 20), 14, t.orange, TrM().dc_once);
     const bool can = picked_size > 0;
     if (m_detail_focus == int(rows.size())) {
         ui::Focus(vg, t, bx, dy - 4, bw, 52, 12, m_time);
@@ -2636,6 +2647,8 @@ void App::OpenVersions() {
 }
 
 namespace {
+
+std::string ShortDuration(double seconds);
 
 std::string FileLabel(const InstallJob& j) {
     return j.label.empty() ? j.game : j.game + " · " + j.label;
@@ -3225,7 +3238,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
         }
     }
     if (added) {
-        Notice(s.added_to_queue);
+        NoticeOk(s.added_to_queue);
         // little battery and no charger: said before the install starts, it is not stopped
         if (m_ui.battery_notice && m_battery >= 0 && m_battery < m_ui.battery_level && !m_charging) {
             char text[200];
@@ -3318,7 +3331,7 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     if (!live.running) {
         const float qw = ui::Text(vg, 58, qy + 27, 16, t.muted, s.queue_empty) - 58;
         ui::Text(vg, 58 + qw + 12, qy + 27, 15, t.muted, m_queue->Busy() ? s.preparing : s.queue_empty_hint);
-        ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        StripKey(vg, qy);
         return;
     }
     const auto jobs = m_queue->Jobs();
@@ -3355,18 +3368,28 @@ void App::DrawQueueStrip(NVGcontext* vg, float qy) {
     } else if (live.total == 0) {
         std::snprintf(figures, sizeof(figures), "%s… · %s %.0f MB/s", s.preparing, s.network, live.net_rate);
     } else {
+        // 45 % · 25 MB/s · 2:10 left
         const double left = live.write_rate > 0.1 ? double(live.total - std::min(live.total, live.written)) / (live.write_rate * 1024 * 1024) : -1;
-        std::snprintf(figures, sizeof(figures), "%d %% · %s %.0f · %s %.0f · %s %.0f MB/s · %u/%u%s%s", int(frac * 100), s.network,
-                      live.net_rate, s.decompress, live.ready_rate, it->nand ? s.internal_short : "SD", live.write_rate, live.checked, live.ncas,
-                      left >= 0 ? " · " : "", left >= 0 ? (std::string(s.left) + " " + Duration(left)).c_str() : "");
+        char rest[64] = "";
+        if (left >= 0) std::snprintf(rest, sizeof(rest), TrM().qs_left_fmt, ShortDuration(left).c_str());
+        std::snprintf(figures, sizeof(figures), "%d %% · %.0f MB/s%s%s", int(frac * 100), live.write_rate, rest[0] ? " · " : "", rest);
     }
     const float fw = ui::TextWidth(vg, 15, figures);
-    const float bar_x = 494, bar_end = 1196 - fw - 18;
+    const float key_x = StripKey(vg, qy);
+    const float bar_x = 494, bar_end = key_x - 16 - fw - 18;
     if (bar_end - bar_x > 40) {
         ui::Progress(vg, t, bar_x, qy + 23, bar_end - bar_x, 8, frac, live.merging ? t.violet : t.work, m_time);
     }
-    ui::Text(vg, 1196, qy + 27, 15, t.muted, figures, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    ui::Text(vg, 1222, qy + 28, 24, t.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    ui::Text(vg, key_x - 16, qy + 27, 15, t.muted, figures, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+}
+
+float App::StripKey(NVGcontext* vg, float qy) {
+    // "X Queue" at the right end of the strip; returns where it starts
+    const float lw = ui::TextWidth(vg, 15, Tr().queue);
+    const float lx = kWidth - kGridX - 16 - lw;
+    ui::Text(vg, lx, qy + 27, 15, m_theme.text, Tr().queue);
+    ui::Text(vg, lx - 16, qy + 28, 22, m_theme.text, ui::glyph::X, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    return lx - 30;
 }
 
 void App::DrawQueue(NVGcontext* vg) {
@@ -3457,7 +3480,7 @@ void App::DrawQueue(NVGcontext* vg) {
             };
             const auto unit = [&](int phase) { return std::string(live.merge_phase == phase ? "MB/s" : live.merge_phase > phase ? "%" : ""); };
             lanes.push_back({TrM().qm_read, t.work, rate(1), unit(1), step(1), -1});
-            lanes.push_back({std::string(TrM().qm_pack) + " \u00b7 3 " + s.threads, t.violet, rate(2), unit(2), step(2), -1});
+            lanes.push_back({TrM().qm_pack, t.violet, rate(2), unit(2), step(2), -1});
             lanes.push_back({TrM().qm_check, t.ok, live.merge_phase >= 3 ? rate(3) : "\u2014", live.merge_phase >= 3 ? "MB/s" : TrM().qm_at_end, step(3), -1});
         } else {
         std::snprintf(v, sizeof(v), "%.0f", live.net_rate);
@@ -3466,11 +3489,7 @@ void App::DrawQueue(NVGcontext* vg) {
             lanes.push_back({s.decompress, t.violet, "—", s.not_compressed, -1, 0});
         } else {
             std::snprintf(v, sizeof(v), "%.0f", live.ready_rate);
-            std::string title = s.decompress;
-            if (live.threads > 0) {
-                title += " · " + std::to_string(live.threads) + " " + (live.threads == 1 ? s.thread_one : s.threads);
-            }
-            lanes.push_back({title, t.violet, v, "MB/s", -1, std::max(0, live.threads)});
+            lanes.push_back({s.decompress, t.violet, v, "MB/s", -1, std::max(0, live.threads)});
         }
         std::snprintf(v, sizeof(v), "%.0f", live.write_rate);
         lanes.push_back({j.nand ? s.write_nand : s.write_sd, t.orange, v, "MB/s", live.total ? float(double(live.written) / double(live.total)) : 0.f, -1});
@@ -3826,7 +3845,8 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     } else if (v.state == State::Choose && v.found.empty()) {
         TextBox(vg, lx + 26, y + 6, lw - 52, 15, t.warn, s.none_found);
     } else if (v.state == State::Offline) {
-        TextBox(vg, lx + 26, y + 6, lw - 52, 15, t.warn, v.error.c_str());
+        const std::string text = v.error + "\n" + TrM().pr_todo_search;
+        TextBox(vg, lx + 26, y + 6, lw - 52, 15, t.warn, text.c_str());
     }
 
     // Right: the code and what to do with it.
@@ -3895,7 +3915,9 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     } else if (v.state == State::Asking) {
         ui::Spinner(vg, rx + 36, sy, 8, t.work, m_time);
     } else if (!v.error.empty() && v.state != State::Offline) {
-        TextBox(vg, rx + 26, sy - 10, rw - 52, 15, v.state == State::Failed ? t.err : t.warn, v.error.c_str());
+        // what happened, and what to do now: another code
+        const std::string text = v.error + "\n" + TrM().pr_todo_code;
+        TextBox(vg, rx + 26, sy - 10, rw - 52, 15, v.state == State::Failed ? t.err : t.warn, text.c_str());
     }
 
     // Remember: on by default; off, the link lasts until NXDock closes.
@@ -4866,6 +4888,16 @@ void App::DrawDialog(NVGcontext* vg) {
     AddHit(x, y, w, h, HitKind::Button);
 
     float cy = y + pad;
+    if (ui::TextWidth(vg, 26, title.c_str()) > iw) {
+        // cut with an ellipsis, on a whole character
+        const std::string dots = "\xE2\x80\xA6";
+        while (!title.empty() && ui::TextWidth(vg, 26, (title + dots).c_str()) > iw) {
+            size_t cut = title.size() - 1;
+            while (cut > 0 && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80) cut--;
+            title.erase(cut);
+        }
+        title += dots;
+    }
     nvgSave(vg);
     nvgScissor(vg, x + pad, cy - 4, iw, 44);
     ui::Text(vg, x + pad, cy + 16, 26, t.text, title.c_str());
@@ -4973,7 +5005,7 @@ void App::DrawDialog(NVGcontext* vg) {
             ui::StrokeRound(vg, lx + .5f, ly - 5.5f, 11, 11, 3, t.line, 1);
             ui::Text(vg, lx + 18, ly, 15, t.muted, c);
         } else {
-            ui::Text(vg, x + pad, cy + bh / 2, 15, t.muted, "?");
+            ui::Text(vg, x + pad, cy + bh / 2, 15, t.muted, TrM().pc_unknown);
         }
         cy += 64;
     }

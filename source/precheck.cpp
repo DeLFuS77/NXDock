@@ -89,7 +89,7 @@ PreCheck CheckBeforeInstall(const SystemInfo& info, unsigned required) {
             p.atmosphere.right = Printf(m.pc_ams_low, version, FirmwareString(target), FirmwareString(want));
         } else {
             p.atmosphere.state = PreCheck::State::Fine;
-            p.atmosphere.right = Printf(m.pc_ams_ok, version, FirmwareString(want ? want : target));
+            p.atmosphere.right = Printf(m.pc_ams_ok, version, FirmwareString(target)); // how far it goes
         }
     }
     return p;

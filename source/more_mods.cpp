@@ -260,7 +260,7 @@ void App::UpdateMods(u64 down, u64 held) {
         const std::string path = CheatFile(m_mods_app, build);
         if (Exists(path)) {
             std::remove(path.c_str());
-            Notice(m.cm_removed);
+            NoticeOk(m.cm_removed);
             return;
         }
         MakeDirs(path);
@@ -272,14 +272,14 @@ void App::UpdateMods(u64 down, u64 held) {
             fail(m.cm_failed_t, m.cm_failed_d, path);
             return;
         }
-        Notice(m.cm_put);
+        NoticeOk(m.cm_put);
         return;
     }
     if (m_mods_focus >= int(m_mods.size())) return;
     const auto& p = m_mods[size_t(m_mods_focus)];
     if (p.on) {
         if (!RemoveMod(p, m_mods_app, ContentsDir(m_mods_app), ModsStateDir())) fail(m.cm_failed_t, m.cm_failed_d, p.name);
-        else Notice(m.cm_removed);
+        else NoticeOk(m.cm_removed);
     } else {
         std::string conflict;
         if (!InstallMod(p, m_mods_app, ContentsDir(m_mods_app), ModsStateDir(), conflict)) {
@@ -291,7 +291,7 @@ void App::UpdateMods(u64 down, u64 held) {
                 fail(m.cm_failed_t, m.cm_failed_d, p.name);
             }
         } else {
-            Notice(m.cm_put);
+            NoticeOk(m.cm_put);
         }
     }
     m_mods = ModPackages(ModsDir(), ModsStateDir(), m_mods_app);

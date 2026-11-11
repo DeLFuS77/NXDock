@@ -400,7 +400,7 @@ void App::FollowCompress(const Compressor::View& c) {
     }
     char text[160];
     std::snprintf(text, sizeof(text), m.cz_done_fmt, draw::Size(c.saved).c_str());
-    Notice(text);
+    NoticeOk(text);
     if (m_ui.sounds) m_sound.Play(synth::Effect::Finish);
     // in the history, as an install of its own
     HistoryEntry entry;

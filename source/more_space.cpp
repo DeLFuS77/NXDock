@@ -206,10 +206,10 @@ void App::FollowSpace() {
         return;
     }
     switch (v.last) {
-        case Space::Task::Clean: Notice(m.done_clean); break;
-        case Space::Task::Archive: Notice(m.done_archive); break;
-        case Space::Task::Move: Notice(m.done_move); break;
-        case Space::Task::Dump: Notice(m.done_dump); break;
+        case Space::Task::Clean: NoticeOk(m.done_clean); break;
+        case Space::Task::Archive: NoticeOk(m.done_archive); break;
+        case Space::Task::Move: NoticeOk(m.done_move); break;
+        case Space::Task::Dump: NoticeOk(m.done_dump); break;
         case Space::Task::Remove: {
             NoticeOk(m_console_done_text.empty() ? std::string(m.ic_done_remove) : m_console_done_text);
             // a line "Removed" for each in the history
@@ -250,12 +250,12 @@ void App::DrawSpace(NVGcontext* vg) {
     }
     const float lx = 48, rx = 664, cw = 568;
     char line[200];
-    std::snprintf(line, sizeof(line), m.sp_sd_fmt, v.storage.sd_free >= 0 ? draw::Size(u64(v.storage.sd_free)).c_str() : "?",
-                  v.storage.sd_total >= 0 ? draw::Size(u64(v.storage.sd_total)).c_str() : "?");
+    std::snprintf(line, sizeof(line), m.sp_sd_fmt, v.storage.sd_free >= 0 ? draw::Size(u64(v.storage.sd_free)).c_str() : m.pc_unknown,
+                  v.storage.sd_total >= 0 ? draw::Size(u64(v.storage.sd_total)).c_str() : m.pc_unknown);
     draw::Section(vg, t, lx, 100, line);
     Bar(vg, t, lx, 114, cw, v.storage.sd_free, v.storage.sd_total);
-    std::snprintf(line, sizeof(line), m.sp_nand_fmt, v.storage.nand_free >= 0 ? draw::Size(u64(v.storage.nand_free)).c_str() : "?",
-                  v.storage.nand_total >= 0 ? draw::Size(u64(v.storage.nand_total)).c_str() : "?");
+    std::snprintf(line, sizeof(line), m.sp_nand_fmt, v.storage.nand_free >= 0 ? draw::Size(u64(v.storage.nand_free)).c_str() : m.pc_unknown,
+                  v.storage.nand_total >= 0 ? draw::Size(u64(v.storage.nand_total)).c_str() : m.pc_unknown);
     draw::Section(vg, t, lx, 154, line);
     Bar(vg, t, lx, 168, cw, v.storage.nand_free, v.storage.nand_total);
 
@@ -263,7 +263,8 @@ void App::DrawSpace(NVGcontext* vg) {
     const unsigned long long need = QueueNeedsOnSd();
     std::string sub[8], right[8];
     char text[200];
-    std::snprintf(text, sizeof(text), m.cl_sub_fmt, v.leftovers.contents, v.leftovers.placeholders, v.leftovers.addons, v.leftovers.tickets);
+    // what deleted games left, and the installs left half done
+    std::snprintf(text, sizeof(text), m.cl_sub_fmt, v.leftovers.contents + v.leftovers.addons + v.leftovers.tickets, v.leftovers.placeholders);
     sub[0] = v.scanned ? text : m.scanning;
     right[0] = v.scanned ? draw::Size(v.leftovers.bytes) : "";
     sub[1] = m.a_archive_sub;

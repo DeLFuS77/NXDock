@@ -74,7 +74,7 @@ void App::FollowVault() {
     m_vault_finished = v.finished;
     const More& m = TrM();
     if (v.error.empty()) {
-        Notice(v.last_restore ? m.restored : m.copied);
+        NoticeOk(v.last_restore ? m.restored : m.copied);
     } else {
         // the card of the error, as in the queue
         m_dialog = Dialog{};
