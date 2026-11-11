@@ -879,12 +879,13 @@ void App::Update(u64 down, u64 held) {
         }
         m_menu = false;
     }
-    // inside a tool of the More tab the shoulders are its own; B leaves the tool first
-    const bool in_tool = m_tab == Tab::More && m_more != MoreScreen::Tiles;
-    if ((down & HidNpadButton_L) && !in_tool) {
+    // L and R change the tab from anywhere, as on the HOME menu; a tool of More stays open, and is
+    // there again when coming back
+    const bool in_tool = m_tab == Tab::More && m_more != MoreScreen::Tiles; // B leaves the tool first
+    if (down & HidNpadButton_L) {
         m_tab = Tab((int(m_tab) + kTabs - 1) % kTabs);
     }
-    if ((down & HidNpadButton_R) && !in_tool) {
+    if (down & HidNpadButton_R) {
         m_tab = Tab((int(m_tab) + 1) % kTabs);
     }
 
@@ -2584,6 +2585,32 @@ void App::FollowPush() {
 
 void App::AddJobs(std::vector<InstallJob> jobs) {
     const auto& s = Tr();
+    // a file from the SD card, a USB disk or the computer: the cover and the name of its game in
+    // the library, found by the title ID in its name ("Game [0100…][v0].nsz")
+    for (auto& j : jobs) {
+        if (!j.cover.empty()) continue;
+        const size_t at = j.game.find("[01");
+        if (at == std::string::npos || at + 18 > j.game.size() || j.game[at + 17] != ']') continue;
+        u64 id = 0;
+        bool hex = true;
+        for (size_t i = at + 1; i < at + 17; i++) {
+            const char c = j.game[i];
+            const int v = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+            if (v < 0) hex = false;
+            id = id << 4 | u64(v < 0 ? 0 : v);
+        }
+        if (!hex) continue;
+        // the game of an update (…800) or of a DLC (its game's ID plus 0x1000 and a number)
+        const u64 low = id & 0xFFF;
+        const u64 app = low == 0 || low == 0x800 ? id & ~u64(0xFFF) : (id - 0x1000) & ~u64(0xFFF);
+        for (const auto& g : m_games) {
+            if (g.title_id != app) continue;
+            j.cover = g.cover;
+            j.color_key = g.key;
+            if (j.title_id == 0) j.title_id = id;
+            break;
+        }
+    }
     // the firmware, the keys and Atmosphère against what the contents ask for (2A): a window
     // only when something does not fit; NXDock never installs firmware or sigpatches
     u32 required = 0;
@@ -2878,17 +2905,21 @@ void App::DrawQueue(NVGcontext* vg) {
             ui::Text(vg, lx + 14 + vw + 6, ly + 50, 14, t.muted, lane.unit.c_str());
             nvgRestore(vg);
             if (lane.segments < 0) {
-                NVGcolor track = t.text;
-                track.a = 0.10f;
-                ui::FillRound(vg, lx + 14, ly + 70, lw - 28, 6, 3, track);
-                ui::FillRound(vg, lx + 14, ly + 70, (lw - 28) * std::clamp(lane.meter, 0.f, 1.f), 6, 3, lane.color);
+                // with the moving stripes of the main bar while it works, still once it is full
+                const float frac = std::clamp(lane.meter, 0.f, 1.f);
+                ui::Progress(vg, t, lx + 14, ly + 70, lw - 28, 6, frac, lane.color, m_time, frac < 1.f);
             } else {
-                // One segment per decompression thread; the fourth core is the system's.
+                // One segment per decompression thread; the fourth core is the system's. The ones
+                // at work carry the moving stripes.
                 const float sw = (lw - 28 - 12) / 4;
                 for (int k = 0; k < 4; k++) {
-                    NVGcolor c = lane.color;
-                    c.a = k < lane.segments ? 1.f : 0.25f;
-                    ui::FillRound(vg, lx + 14 + k * (sw + 4), ly + 70, sw, 6, 3, c);
+                    if (k < lane.segments) {
+                        ui::Progress(vg, t, lx + 14 + k * (sw + 4), ly + 70, sw, 6, 1.f, lane.color, m_time, true);
+                    } else {
+                        NVGcolor c = lane.color;
+                        c.a = 0.25f;
+                        ui::FillRound(vg, lx + 14 + k * (sw + 4), ly + 70, sw, 6, 3, c);
+                    }
                 }
             }
         }
@@ -3726,7 +3757,7 @@ void App::DrawDialog(NVGcontext* vg) {
     switch (m_dialog.kind) {
         case DialogKind::Nand: {
             title = s.nand_title;
-            body = s.nand_body;
+            body = std::string(s.nand_body) + "\n" + TrM().nand_sd_hint;
             for (const auto& j : m_dialog.jobs) {
                 size += j.size;
                 lines.push_back({j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
@@ -4291,6 +4322,14 @@ void App::UpdateDialog(u64 down, u64 held) {
     } else if (!info) {
         if (Repeat(down, held, HidNpadButton_AnyLeft)) m_dialog.focus = 0;
         if (Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.focus = 1; // a disabled action falls back when drawn
+    }
+    if (m_dialog.kind == DialogKind::Nand && (down & HidNpadButton_Y)) {
+        // to the SD card instead, the default
+        auto jobs = std::move(m_dialog.jobs);
+        for (auto& j : jobs) j.nand = false;
+        m_dialog = Dialog{};
+        AddJobs(std::move(jobs));
+        return;
     }
     const bool declined = (down & HidNpadButton_B) || ((down & HidNpadButton_A) && m_dialog.focus == 0);
     if (declined) {

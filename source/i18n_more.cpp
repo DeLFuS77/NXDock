@@ -467,6 +467,7 @@ constexpr More kEnglish{
     .e_shop_key_t = "The shop's certificate changed",
     .e_shop_key_w = "The shop answered with another key than the one kept the first time it opened. Someone may be in between.",
     .e_shop_key_d = "If the shop changed its certificate, edit it (Y) and save it again: its new key is kept. If not, do not open it on this network.",
+    .nand_sd_hint = "Y installs them to the SD card instead.",
 };
 
 constexpr More kSpanish{
@@ -927,6 +928,7 @@ constexpr More kSpanish{
     .e_shop_key_t = "El certificado de la tienda ha cambiado",
     .e_shop_key_w = "La tienda ha respondido con otra clave distinta de la que se guardó la primera vez que se abrió. Puede que haya alguien en medio.",
     .e_shop_key_d = "Si la tienda ha cambiado de certificado, edítala (Y) y guárdala de nuevo: se guarda su clave nueva. Si no, no la abras en esta red.",
+    .nand_sd_hint = "Y los instala en la tarjeta SD en su lugar.",
 };
 
 constexpr More kFrench{
@@ -1387,6 +1389,7 @@ constexpr More kFrench{
     .e_shop_key_t = "Le certificat de la boutique a changé",
     .e_shop_key_w = "La boutique a répondu avec une autre clé que celle gardée la première fois qu’elle a été ouverte. Quelqu’un est peut-être entre les deux.",
     .e_shop_key_d = "Si la boutique a changé de certificat, modifiez-la (Y) et enregistrez-la à nouveau : sa nouvelle clé est gardée. Sinon, ne l’ouvrez pas sur ce réseau.",
+    .nand_sd_hint = "Y les installe plutôt sur la carte SD.",
 };
 
 constexpr More kGerman{
@@ -1847,6 +1850,7 @@ constexpr More kGerman{
     .e_shop_key_t = "Das Zertifikat des Shops hat sich geändert",
     .e_shop_key_w = "Der Shop hat mit einem anderen Schlüssel geantwortet als dem, der beim ersten Öffnen gespeichert wurde. Vielleicht sitzt jemand dazwischen.",
     .e_shop_key_d = "Wenn der Shop sein Zertifikat geändert hat, bearbeite ihn (Y) und speichere ihn erneut: Sein neuer Schlüssel wird gespeichert. Sonst öffne ihn nicht in diesem Netzwerk.",
+    .nand_sd_hint = "Y installiert sie stattdessen auf der SD-Karte.",
 };
 
 constexpr More kItalian{
@@ -2307,6 +2311,7 @@ constexpr More kItalian{
     .e_shop_key_t = "Il certificato del negozio è cambiato",
     .e_shop_key_w = "Il negozio ha risposto con una chiave diversa da quella salvata la prima volta che è stato aperto. Potrebbe esserci qualcuno in mezzo.",
     .e_shop_key_d = "Se il negozio ha cambiato certificato, modificalo (Y) e salvalo di nuovo: la sua nuova chiave viene salvata. Altrimenti, non aprirlo su questa rete.",
+    .nand_sd_hint = "Y li installa invece sulla scheda SD.",
 };
 
 constexpr More kPortuguese{
@@ -2767,6 +2772,7 @@ constexpr More kPortuguese{
     .e_shop_key_t = "O certificado da loja mudou",
     .e_shop_key_w = "A loja respondeu com uma chave diferente da que foi guardada da primeira vez que foi aberta. Pode haver alguém pelo meio.",
     .e_shop_key_d = "Se a loja mudou de certificado, edita-a (Y) e guarda-a de novo: a nova chave fica guardada. Se não, não a abras nesta rede.",
+    .nand_sd_hint = "Y instala-os antes no cartão SD.",
 };
 
 constexpr More kDutch{
@@ -3227,6 +3233,7 @@ constexpr More kDutch{
     .e_shop_key_t = "Het certificaat van de winkel is veranderd",
     .e_shop_key_w = "De winkel antwoordde met een andere sleutel dan die bij de eerste keer openen is bewaard. Misschien zit er iemand tussen.",
     .e_shop_key_d = "Als de winkel een nieuw certificaat heeft, bewerk hem (Y) en sla hem opnieuw op: de nieuwe sleutel wordt bewaard. Zo niet, open hem dan niet op dit netwerk.",
+    .nand_sd_hint = "Y installeert ze in plaats daarvan op de SD-kaart.",
 };
 
 constexpr More kRussian{
@@ -3687,6 +3694,7 @@ constexpr More kRussian{
     .e_shop_key_t = "Сертификат магазина изменился",
     .e_shop_key_w = "Магазин ответил другим ключом, а не тем, что был сохранён при первом открытии. Возможно, кто-то вмешивается в соединение.",
     .e_shop_key_d = "Если магазин сменил сертификат, измените его (Y) и сохраните снова: новый ключ будет сохранён. Если нет, не открывайте его в этой сети.",
+    .nand_sd_hint = "Y установит их на SD-карту вместо этого.",
 };
 
 constexpr More kJapanese{
@@ -4147,6 +4155,7 @@ constexpr More kJapanese{
     .e_shop_key_t = "ショップの証明書が変わりました",
     .e_shop_key_w = "ショップが、最初に開いたときに保存したものとは別の鍵で応答しました。間に誰かがいる可能性があります。",
     .e_shop_key_d = "ショップが証明書を変えた場合は、編集（Y）してもう一度保存してください。新しい鍵が保存されます。そうでなければ、このネットワークでは開かないでください。",
+    .nand_sd_hint = "Y で代わりに SD カードにインストールします。",
 };
 
 constexpr More kKorean{
@@ -4607,6 +4616,7 @@ constexpr More kKorean{
     .e_shop_key_t = "상점의 인증서가 바뀌었습니다",
     .e_shop_key_w = "상점이 처음 열었을 때 저장한 것과 다른 키로 응답했습니다. 중간에 누군가 있을 수 있습니다.",
     .e_shop_key_d = "상점이 인증서를 바꿨다면 편집(Y)해서 다시 저장하세요. 새 키가 저장됩니다. 그렇지 않다면 이 네트워크에서 열지 마세요.",
+    .nand_sd_hint = "Y를 누르면 대신 SD 카드에 설치합니다.",
 };
 
 constexpr More kChinese{
@@ -5067,6 +5077,7 @@ constexpr More kChinese{
     .e_shop_key_t = "商店的证书已更改",
     .e_shop_key_w = "商店使用的密钥与第一次打开时保存的不同。可能有人在中间拦截。",
     .e_shop_key_d = "如果商店更换了证书，请编辑（Y）并重新保存：会保存新的密钥。否则，请不要在此网络中打开它。",
+    .nand_sd_hint = "按 Y 改为安装到 SD 卡。",
 };
 
 // In the order of LanguageName in i18n.cpp.

@@ -226,29 +226,54 @@ void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text) {
 
 namespace {
 
-// Brand mark: a tray with an arrow going in, as in the icon.
-void BrandMark(NVGcontext* vg, const Theme& t, float x, float y, float s) {
+// Brand mark, as the icon (assets/icon.svg): the dock of the console seen from the front, a game card
+// going into its slot with an arrow on its label, a progress bar and the light on its front, on the
+// blue and violet of NXDock. Drawn from the icon's own 256 px layout, scaled to `s`.
+void BrandMark(NVGcontext* vg, const Theme& /*t*/, float x, float y, float s) {
+    const float k = s / 256.f;
+    const auto rect = [&](float rx, float ry, float rw, float rh, float r, NVGcolor c) {
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x + rx * k, y + ry * k, rw * k, rh * k, r * k);
+        nvgFillColor(vg, c);
+        nvgFill(vg);
+    };
+    // the background
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, x, y, s, s, s * 0.26f);
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + s, y + s, t.work, Hex(0x6a4ae0)));
+    nvgRoundedRect(vg, x, y, s, s, s * 0.22f);
+    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + s, y + s, Hex(0x4fc8f5), Hex(0x5a2fc0)));
     nvgFill(vg);
+    // the game card, its lower part already in the dock
+    nvgSave(vg);
+    nvgIntersectScissor(vg, x, y, s, 117 * k);
+    rect(96, 34, 64, 100, 8, Hex(0x45454b));
+    rect(106, 42, 44, 3, 1.5f, Hex(0x1a1a1d));
+    rect(102, 57, 52, 70, 5, Hex(0xe8202f));
     nvgStrokeColor(vg, nvgRGB(255, 255, 255));
-    nvgStrokeWidth(vg, s * 0.09f);
+    nvgStrokeWidth(vg, std::max(1.2f, 9 * k));
     nvgLineCap(vg, NVG_ROUND);
     nvgLineJoin(vg, NVG_ROUND);
     nvgBeginPath(vg);
-    nvgMoveTo(vg, x + s * 0.26f, y + s * 0.55f);
-    nvgLineTo(vg, x + s * 0.26f, y + s * 0.76f);
-    nvgLineTo(vg, x + s * 0.74f, y + s * 0.76f);
-    nvgLineTo(vg, x + s * 0.74f, y + s * 0.55f);
+    nvgMoveTo(vg, x + 128 * k, y + 70 * k);
+    nvgLineTo(vg, x + 128 * k, y + 100 * k);
+    nvgMoveTo(vg, x + 116 * k, y + 88 * k);
+    nvgLineTo(vg, x + 128 * k, y + 100 * k);
+    nvgLineTo(vg, x + 140 * k, y + 88 * k);
     nvgStroke(vg);
+    nvgRestore(vg);
+    // the dock: its back, the slot, its front with the step, the bar and the light
+    rect(30, 110, 196, 118, 9, Hex(0x2c2c30));
+    rect(70, 111, 116, 7, 3.5f, Hex(0x0d0d10));
+    rect(30, 120, 196, 108, 9, Hex(0x232326));
+    rect(38, 120, 180, 2, 1, Hex(0x6b6b72));
+    rect(58, 196, 140, 12, 6, nvgRGBA(0, 0, 0, 90));
     nvgBeginPath(vg);
-    nvgMoveTo(vg, x + s * 0.5f, y + s * 0.2f);
-    nvgLineTo(vg, x + s * 0.5f, y + s * 0.6f);
-    nvgMoveTo(vg, x + s * 0.36f, y + s * 0.47f);
-    nvgLineTo(vg, x + s * 0.5f, y + s * 0.61f);
-    nvgLineTo(vg, x + s * 0.64f, y + s * 0.47f);
-    nvgStroke(vg);
+    nvgRoundedRect(vg, x + 58 * k, y + 196 * k, 98 * k, 12 * k, 6 * k);
+    nvgFillPaint(vg, nvgLinearGradient(vg, x + 58 * k, y, x + 156 * k, y, Hex(0x29d0ff), Hex(0x7c5cff)));
+    nvgFill(vg);
+    nvgBeginPath(vg);
+    nvgCircle(vg, x + 212 * k, y + 216 * k, std::max(1.f, 5 * k));
+    nvgFillColor(vg, Hex(0x3ee87a));
+    nvgFill(vg);
 }
 
 } // namespace

@@ -94,6 +94,8 @@ struct More {
     const char *cz_why_redo, *cz_redo_t, *cz_redo_d, *cz_undo_redo_body;
     // the certificate of an https shop changed since it was first opened
     const char *e_shop_key_t, *e_shop_key_w, *e_shop_key_d;
+    // the question of the internal memory: the SD card instead
+    const char *nand_sd_hint;
 };
 
 const More& TrM();

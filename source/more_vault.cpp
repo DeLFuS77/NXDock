@@ -197,7 +197,7 @@ void App::DrawVault(NVGcontext* vg) {
     std::vector<ui::Hint> hints;
     if (linked && !m_vault_saves.empty()) hints.push_back({ui::glyph::X, m.copy_now, HidNpadButton_X});
     if (linked && !copies.empty()) hints.push_back({ui::glyph::A, m.restore, HidNpadButton_A});
-    if (m_vault_users.size() > 1) hints.push_back({ui::glyph::R, m.user_word, HidNpadButton_R});
+    if (m_vault_users.size() > 1) hints.push_back({ui::glyph::ZR, m.user_word, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
@@ -224,7 +224,7 @@ void App::UpdateVault(u64 down, u64 held) {
         if (Repeat(down, held, HidNpadButton_AnyUp) && m_vault_copy > 0) m_vault_copy--;
         if (Repeat(down, held, HidNpadButton_AnyDown) && m_vault_copy < std::min(n, 6) - 1) m_vault_copy++;
     }
-    if ((down & HidNpadButton_R) && m_vault_users.size() > 1) {
+    if ((down & HidNpadButton_ZR) && m_vault_users.size() > 1) {
         m_vault_user = (m_vault_user + 1) % int(m_vault_users.size());
         m_vault_saves = m_vault->Saves(m_vault_users[m_vault_user]);
         m_vault_focus = m_vault_copy = 0;

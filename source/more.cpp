@@ -66,6 +66,7 @@ void App::OpenMoreScreen(MoreScreen screen) {
         return;
     }
     m_more = screen;
+    m_files_nand = false; // the SD card, always, unless chosen for this install
     switch (screen) {
         case MoreScreen::Files:
             UsbDisksStart();
@@ -407,6 +408,7 @@ void App::InstallMarkedFiles() {
     }
     std::fill(m_marked.begin(), m_marked.end(), 0);
     QueueLocal(std::move(jobs));
+    m_files_nand = false; // the next ones go to the SD card again
 }
 
 // Jobs that do not come from the library: the internal memory asks first, as on a game's page.
@@ -521,7 +523,7 @@ void App::DrawFiles(NVGcontext* vg) {
     const float sy = 596, sh = 52;
     draw::Panel(vg, t, lx, sy, lw, sh, 12);
     AddHit(lx, sy, lw, sh, HitKind::Button);
-    m_hits.back().rect.button = HidNpadButton_R; // a tap on the strip changes where it goes
+    m_hits.back().rect.button = HidNpadButton_ZR; // a tap on the strip changes where it goes
     char text[200];
     std::snprintf(text, sizeof(text), m.marked_fmt, count, draw::Size(bytes).c_str(), m_files_nand ? s.internal : s.sd_card);
     ui::CheckMark(vg, lx + 24, sy + sh / 2, 12, t.work, 2.4f);
@@ -536,7 +538,7 @@ void App::DrawFiles(NVGcontext* vg) {
     std::vector<ui::Hint> hints = {{ui::glyph::Y, m.mark, HidNpadButton_Y},
                                    {ui::glyph::A, s.select, HidNpadButton_A},
                                    {ui::glyph::X, m.install_marked, HidNpadButton_X},
-                                   {ui::glyph::R, m.sd_or_internal, HidNpadButton_R},
+                                   {ui::glyph::ZR, m.sd_or_internal, HidNpadButton_ZR},
                                    {ui::glyph::B, s.back, HidNpadButton_B}};
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
@@ -544,7 +546,7 @@ void App::DrawFiles(NVGcontext* vg) {
 void App::UpdateFiles(u64 down, u64 held) {
     if (Repeat(down, held, HidNpadButton_AnyLeft)) m_files_side = true;
     if (Repeat(down, held, HidNpadButton_AnyRight)) m_files_side = false;
-    if (down & HidNpadButton_R) m_files_nand = !m_files_nand;
+    if (down & HidNpadButton_ZR) m_files_nand = !m_files_nand;
     if (m_files_side) {
         if (Repeat(down, held, HidNpadButton_AnyUp) && m_place > 0) m_place--;
         if (Repeat(down, held, HidNpadButton_AnyDown) && m_place < int(m_place_roots.size()) - 1) m_place++;
@@ -609,6 +611,7 @@ void App::FollowUsb() {
         }
         m_usb_active = true;
         QueueLocal(std::move(jobs));
+        m_files_nand = false; // the next ones go to the SD card again
         return;
     }
     if (m_usb_active && m_dialog.kind == DialogKind::None) {
@@ -743,7 +746,7 @@ void App::DrawArrival(NVGcontext* vg) {
 
     std::vector<ui::Hint> hints;
     if (mtp && !mv.nand_allowed) hints.push_back({ui::glyph::X, m.allow_nand, HidNpadButton_X});
-    if (!mtp) hints.push_back({ui::glyph::R, m_files_nand ? s.internal : s.sd_card, HidNpadButton_R});
+    if (!mtp) hints.push_back({ui::glyph::ZR, m_files_nand ? s.internal : s.sd_card, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, m.stop_back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
@@ -755,7 +758,7 @@ void App::UpdateArrival(u64 down, u64 /*held*/) {
         m_dialog.kind = DialogKind::MtpNand;
         return;
     }
-    if (m_more == MoreScreen::Usb && (down & HidNpadButton_R)) m_files_nand = !m_files_nand;
+    if (m_more == MoreScreen::Usb && (down & HidNpadButton_ZR)) m_files_nand = !m_files_nand;
     if (down & HidNpadButton_B) LeaveMoreScreen();
 }
 
