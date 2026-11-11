@@ -711,7 +711,7 @@ void App::DrawTour(NVGcontext* vg) {
     const auto& s = Tr();
     const int stop = std::clamp(int((m_time - m_tour_at) / kTourStop), 0, 3);
     const double in_stop = m_time - m_tour_at - stop * kTourStop;
-    static constexpr int kStopTab[] = {0, 1, 2, 3}; // Library, Queue, Installed, More
+    static constexpr int kStopTab[] = {int(Tab::Library), int(Tab::Queue), int(Tab::Installed), int(Tab::More)};
     const ui::HitRect r = m_tab_rects[kStopTab[stop]];
     const float x = r.x + 2, y = 16, w = r.w - 4, h = 40;
     // everything goes dark but the tab, which glows

@@ -117,8 +117,8 @@ void App::FollowShop() {
     m_focus = 0;
     m_scroll = m_scroll_target = 0;
     RebuildView();
-    m_more = MoreScreen::Tiles;
-    m_tab = Tab::Library;
+    m_tab = Tab::Shops;
+    m_tab_seen = Tab::Shops;
 }
 
 void App::LeaveShop() {
@@ -182,6 +182,65 @@ void App::DrawShops(NVGcontext* vg) {
     hints.push_back({ui::glyph::X, m.sh_add, HidNpadButton_X});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
+}
+
+void App::EnterShopsTab() {
+    m_shops = LoadShops(ShopsPath());
+    m_shop_focus = std::clamp(m_shop_focus, 0, std::max(0, int(m_shops.size()) - 1));
+    if (!m_shop_loader) m_shop_loader = std::make_unique<ShopLoader>();
+    // the shop that was open, as it was: not loaded again
+    if (!m_shop_active && m_shop_cached >= 0 && m_shop_cached < int(m_shops.size()) && !m_shop_cache.empty()) {
+        const auto& shop = m_shops[size_t(m_shop_cached)];
+        m_shop_active = true;
+        m_shop_opening = m_shop_cached;
+        m_shop_name = shop.name;
+        m_shop_key = ShopKey(shop);
+        m_shop_url = shop.url;
+        m_games = m_shop_cache;
+        if (m_queue) {
+            const auto installed = m_queue->Installed();
+            for (auto& g : m_games) {
+                const auto it = installed.find(g.title_id);
+                g.installed = it != installed.end() ? it->second : InstalledState{};
+            }
+        }
+        m_detail = false;
+        m_focus = 0;
+        m_scroll = m_scroll_target = 0;
+        RebuildView();
+    }
+}
+
+void App::LeaveShopsTab() {
+    // the Library and the other tabs see the library app again; the shop is kept to come back to
+    if (!m_shop_active) return;
+    m_shop_cache = m_games;
+    m_shop_cached = m_shop_opening;
+    LeaveShop();
+}
+
+void App::OpenShopAt(int index) {
+    if (index < 0 || index >= int(m_shops.size()) || !m_shop_loader || m_shop_loader->Busy()) return;
+    m_shop_focus = index;
+    m_shop_opening = index;
+    m_shop_loader->Start(m_shops[size_t(index)]);
+}
+
+// Above the games of a shop: a pill for each shop (ZL and ZR, or a tap) and one to add a shop.
+void App::DrawShopChips(NVGcontext* vg) {
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    float x = 36;
+    for (int i = 0; i <= int(m_shops.size()); i++) {
+        const bool add = i == int(m_shops.size());
+        std::string label = add ? std::string("+ ") + m.sh_add : m_shops[size_t(i)].name;
+        if (!add && i == m_shop_opening) label += " · " + std::to_string(m_view.size());
+        const float w = ui::Chip(vg, t, x, 92, label.c_str(), !add && i == m_shop_opening);
+        AddHit(x - 4, 82, w + 8, 54, HitKind::ShopChip, i);
+        if (!add && m_shop_loader && m_shop_loader->Busy() && m_shop_opening == i) ui::Spinner(vg, x + w + 14, 92, 7, t.work, m_time);
+        x += w + (add ? 0 : 10);
+        if (x > kWidth - 300) break;
+    }
 }
 
 void App::UpdateShops(u64 down, u64 held) {

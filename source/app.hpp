@@ -37,13 +37,13 @@ namespace nxdock {
 unsigned PlaceholderColor(const std::string& key);
 std::string Initial(const std::string& name);
 
-enum class Tab { Library, Queue, Installed, More, Settings };
+enum class Tab { Library, Shops, Queue, Installed, More, Settings };
 
 // The title ID and the version in a file name ("Game [0100…][v65536].nsz"); false without an ID.
 bool TitleFromName(const std::string& name, u64& id, u32& version);
 // What a title ID is: 0 a game, 1 its update, 2 a DLC.
 int TitleKind(u64 id);
-inline constexpr int kTabs = 5;
+inline constexpr int kTabs = 6;
 
 class App {
 public:
@@ -55,7 +55,7 @@ public:
 private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
-                         InstalledView, InstalledRow, ConsoleSize, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
+                         InstalledView, InstalledRow, ConsoleSize, ShopChip, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow };
     struct Hit {
         ui::HitRect rect;
@@ -197,6 +197,14 @@ private:
     bool EditShop(ShopConfig& shop, bool fresh);
     void FollowShop();
     void LeaveShop();
+    // the Shops tab: the list of shops, or the games of the one open with a pill for each above
+    void EnterShopsTab();
+    void LeaveShopsTab();
+    void OpenShopAt(int index);
+    void DrawShopChips(NVGcontext* vg);
+    bool GridTab() const { return m_tab == Tab::Library || m_tab == Tab::Shops; }
+    std::vector<Game> m_shop_cache; // the games of the shop open, kept while another tab is shown
+    int m_shop_cached = -1;
     void DrawShops(NVGcontext* vg);
     void UpdateShops(u64 down, u64 held);
     std::vector<ShopConfig> m_shops;

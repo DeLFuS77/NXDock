@@ -334,19 +334,19 @@ float Battery(NVGcontext* vg, const Theme& t, float right, float cy, int percent
     return bx - 7 - tw;
 }
 
-void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[5], const char* sd_free, int battery,
+void TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[6], const char* sd_free, int battery,
             bool charging) {
     BrandMark(vg, t, 36, 19, 34);
     Text(vg, 80, 36, 24, t.text, "NXDock");
 
     const auto& s = Tr();
-    const char* tabs[] = {s.library, s.queue, s.installed, TrM().more_tab, s.settings};
+    const char* tabs[] = {s.library, TrM().t_shops, s.queue, s.installed, TrM().more_tab, s.settings};
     float x = 236;
     Text(vg, x - 10, 37, 22, t.muted, glyph::L, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     x += 14;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         const float tw = TextWidth(vg, 17, tabs[i]);
-        const float badge = (i == 1 && queue_count > 0) ? 32.f : 0.f;
+        const float badge = (i == 2 && queue_count > 0) ? 32.f : 0.f;
         const float w = tw + 32 + badge;
         if (i == tab) {
             NVGcolor bgc = t.work;

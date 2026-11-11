@@ -658,7 +658,7 @@ void App::ReadTouch(u64& down) {
             JumpToLetter(slot, 0);
             return;
         }
-        const bool in_grid = m_tab == Tab::Library && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + g_view_h;
+        const bool in_grid = GridTab() && m_touch_y0 >= kGridTop - 10 && m_touch_y0 < kGridTop + g_view_h;
         if (!m_dragging && std::fabs(y - m_touch_y0) > kDragSlop && in_grid) {
             m_dragging = true;
         }
@@ -741,6 +741,17 @@ void App::Tap(float x, float y, u64& down) {
                     m_installed_view = it->index;
                     m_installed_focus = 0;
                     m_console_app = 0;
+                }
+                break;
+            case HitKind::ShopChip:
+                if (it->index == int(m_shops.size())) {
+                    // a shop more: the list, where it is added
+                    LeaveShop();
+                    m_shop_cache.clear();
+                    m_shop_cached = -1;
+                    m_shop_focus = int(m_shops.size());
+                } else if (it->index != m_shop_opening) {
+                    OpenShopAt(it->index);
                 }
                 break;
             case HitKind::ConsoleSize:
@@ -924,7 +935,7 @@ void App::Update(u64 down, u64 held) {
         UpdateWizard(down, held);
         return;
     }
-    if (m_detail && m_tab == Tab::Library) {
+    if (m_detail && GridTab()) {
         if (m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
             m_detail = false;
         } else {
@@ -933,7 +944,7 @@ void App::Update(u64 down, u64 held) {
         }
     }
     if (m_menu) {
-        if (m_tab == Tab::Library) {
+        if (GridTab()) {
             UpdateMenu(down, held);
             return;
         }
@@ -962,6 +973,11 @@ void App::Update(u64 down, u64 held) {
             UpdateLibrary(down, held);
             break;
         }
+        case Tab::Shops:
+            // the list of shops, or the games of the one open (as the library)
+            if (m_shop_active) UpdateLibrary(down, held);
+            else UpdateShops(down, held);
+            break;
         case Tab::Queue:
             UpdateQueue(down, held);
             break;
@@ -1024,6 +1040,8 @@ bool App::Frame() {
     Update(down, held);
     if (m_tab != m_tab_seen) {
         // the Library again: what the console has now, also what DBI or the HOME menu changed
+        if (m_tab_seen == Tab::Shops) LeaveShopsTab();
+        if (m_tab == Tab::Shops) EnterShopsTab();
         if (m_tab == Tab::Library && m_queue && !m_queue->Busy()) m_queue->ReadInstalledAgain();
         m_tab_seen = m_tab;
     }
@@ -1182,6 +1200,12 @@ void App::Draw(NVGcontext* vg) {
             }
             break;
         }
+        case Tab::Shops:
+            FollowShop();
+            if (!m_shop_active) DrawShops(vg);
+            else if (m_detail) DrawDetail(vg);
+            else DrawLibrary(vg);
+            break;
         case Tab::Queue: DrawQueue(vg); break;
         case Tab::Installed: DrawInstalled(vg); break;
         case Tab::More: DrawMore(vg); break;
@@ -1191,7 +1215,7 @@ void App::Draw(NVGcontext* vg) {
     DrawTransitions(vg);
     DrawJumpLetter(vg);
     AddHints(m_hint_rects);
-    if (m_menu && m_tab == Tab::Library && !m_detail) {
+    if (m_menu && GridTab() && !m_detail) {
         DrawMenu(vg);
     }
     if (m_dialog.kind != DialogKind::None) {
@@ -1239,7 +1263,7 @@ void App::DrawTransitions(NVGcontext* vg) {
         veil(0.9f * (1 - tab_e));
     }
     const double age = m_time - m_detail_at;
-    if (m_tab != Tab::Library || age >= 0.3 || m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
+    if (!GridTab() || age >= 0.3 || m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
         return;
     }
     // the page of a game grows out of its cover, and goes back into it
@@ -1541,8 +1565,17 @@ void App::UpdateLibrary(u64 down, u64 held) {
     const int count = int(m_view.size());
     const int before = m_focus;
     if (m_shop_active && (down & HidNpadButton_B)) {
-        // B leaves the shop: the library app again
+        // B leaves the shop: the list of shops again
         LeaveShop();
+        m_shop_cache.clear();
+        m_shop_cached = -1;
+        return;
+    }
+    if (m_shop_active && (down & (HidNpadButton_ZL | HidNpadButton_ZR)) && !m_shops.empty()) {
+        // ZL and ZR: the shop before or after
+        const int n = int(m_shops.size());
+        const int at = std::clamp(m_shop_opening, 0, n - 1);
+        if (n > 1) OpenShopAt((at + ((down & HidNpadButton_ZR) ? 1 : n - 1)) % n);
         return;
     }
     if (Repeat(down, held, left) && m_focus % g_columns > 0) m_focus--;
@@ -1644,7 +1677,7 @@ void App::UpdateMenu(u64 down, u64 held) {
 }
 
 bool App::AzBarShown() const {
-    return m_tab == Tab::Library && !m_detail && m_ui.sort == 0 && !m_view.empty() && MaxScroll() > 0;
+    return GridTab() && !m_detail && m_ui.sort == 0 && !m_view.empty() && MaxScroll() > 0;
 }
 
 void App::JumpToLetter(int slot, int dir) {
@@ -1693,7 +1726,7 @@ void App::DrawAzBar(NVGcontext* vg) {
     const Theme& t = m_theme;
     if (!AzBarShown()) {
         // the plain scroll indicator, when there is no letter to jump to
-        if (MaxScroll() > 0 && m_tab == Tab::Library && !m_view.empty()) {
+        if (MaxScroll() > 0 && GridTab() && !m_view.empty()) {
             const float track_h = g_view_h;
             const float thumb_h = track_h * g_view_h / (g_view_h + MaxScroll());
             const float thumb_y = kGridTop + (track_h - thumb_h) * (m_scroll / MaxScroll());
@@ -1726,7 +1759,7 @@ void App::DrawAzBar(NVGcontext* vg) {
 void App::DrawJumpLetter(NVGcontext* vg) {
     const double age = m_time - m_jump_at;
     const double hold = m_az_touch ? 1e9 : 0.6; // stays while the finger is on the bar
-    if (m_jump_letter < 0 || age > hold + 0.25 || m_tab != Tab::Library || m_detail) {
+    if (m_jump_letter < 0 || age > hold + 0.25 || !GridTab() || m_detail) {
         return;
     }
     const Theme& t = m_theme;
@@ -1913,8 +1946,12 @@ void App::DrawLibrary(NVGcontext* vg) {
         return;
     }
 
-    // Filters, with what each shows.
-    int counts[4] = {int(m_games.size()), 0, 0, 0};
+    // Filters, with what each shows; in a shop, a pill for each shop
+    float x = kGridX;
+    if (m_shop_active) {
+        DrawShopChips(vg);
+    } else {
+    int counts[kFilters] = {int(m_games.size()), 0, 0, 0, 0};
     for (const auto& g : m_games) {
         counts[1] += !g.installed.base;
         counts[2] += g.installed.base;
@@ -1922,13 +1959,13 @@ void App::DrawLibrary(NVGcontext* vg) {
         counts[4] += !g.Dlc().empty();
     }
     const char* names[] = {s.all, s.not_installed, TrM().lb_installed, s.with_update, s.dlc};
-    float x = kGridX;
     for (int i = 0; i < kFilters; i++) {
         char chip[64];
         std::snprintf(chip, sizeof(chip), "%s · %d", names[i], counts[i]);
         const float w = ui::Chip(vg, t, x, 92, chip, i == m_filter);
         AddHit(x - 4, 82, w + 8, 54, HitKind::Chip, i); // taller than drawn: easy to hit
         x += w + 10;
+    }
     }
     if (!m_search.empty()) {
         const std::string label = "“" + m_search + "”";
