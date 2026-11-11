@@ -7,6 +7,10 @@
 #include <algorithm>
 #include <functional>
 #include "http.hpp"
+#include <switch.h>
+#include <cstdlib>
+#include <memory>
+#include <iterator>
 
 // stb_image (public domain / MIT, by Sean Barrett), only for the JPEG and PNG covers the app gives.
 #define STB_IMAGE_IMPLEMENTATION
@@ -86,6 +90,10 @@ void Covers::Stop() {
     m_threads.clear();
     std::lock_guard lock(m_mutex);
     m_wanted.clear();
+    // what was asked and not ready is asked again by the next workers
+    for (auto it = m_asked.begin(); it != m_asked.end();) {
+        it = m_images.count(*it) ? std::next(it) : m_asked.erase(it);
+    }
 }
 
 int Covers::Get(const std::string& path) {
@@ -96,6 +104,11 @@ int Covers::Get(const std::string& path) {
     const auto it = m_images.find(path);
     if (it != m_images.end()) {
         return it->second;
+    }
+    if (m_threads.empty() && path.rfind("ns:", 0) == 0) {
+        // the icons of the console need no library: the workers start for them too
+        m_stop = false;
+        for (int i = 0; i < kWorkers; i++) m_threads.emplace_back(&Covers::Work, this);
     }
     if (!m_asked.count(path) && !m_threads.empty()) {
         m_asked.insert(path);
@@ -131,6 +144,24 @@ void Covers::Free(NVGcontext* vg) {
 }
 
 bool Covers::Fetch(const std::string& path, std::vector<unsigned char>& bytes) {
+    // the icon a game has on the console (In the console, of the Installed tab)
+    if (path.rfind("ns:", 0) == 0) {
+        const u64 app = std::strtoull(path.c_str() + 3, nullptr, 16);
+        if (!app || R_FAILED(nsInitialize())) return false;
+        auto control = std::make_unique<NsApplicationControlData>();
+        bool ok = false;
+        for (const auto source : {NsApplicationControlSource_CacheOnly, NsApplicationControlSource_Storage}) {
+            u64 size = 0;
+            if (R_SUCCEEDED(nsGetApplicationControlData(source, app, control.get(), sizeof(*control), &size)) && size > sizeof(control->nacp)) {
+                const size_t n = size_t(std::min<u64>(size - sizeof(control->nacp), sizeof(control->icon)));
+                bytes.assign(control->icon, control->icon + n);
+                ok = true;
+                break;
+            }
+        }
+        nsExit();
+        return ok;
+    }
     const std::string cached = CachePath(path);
     if (ReadFile(cached, bytes)) {
         return true;

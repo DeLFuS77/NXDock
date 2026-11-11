@@ -26,6 +26,7 @@ struct InstalledApp {
         unsigned char type = 0; // NcmContentMetaType
         bool nand = false;
         unsigned long long bytes = 0;
+        unsigned required = 0; // a DLC: the version of its game it needs (0: any)
     };
     std::vector<Content> contents;
     unsigned long long Bytes() const { return sd_bytes + nand_bytes; }
@@ -53,7 +54,7 @@ std::vector<int> PlanArchive(const std::vector<InstalledApp>& apps, unsigned lon
 
 class Space {
 public:
-    enum class Task { None, Scan, Clean, Archive, Move, Dump };
+    enum class Task { None, Scan, Clean, Archive, Move, Dump, Remove };
     struct View {
         Task task = Task::None;
         bool scanned = false;
@@ -79,6 +80,9 @@ public:
     bool StartClean();
     bool StartArchive(std::vector<unsigned long long> apps);
     bool StartMove(unsigned long long app, bool to_nand);
+    // Takes contents of a game off the console (In the console, of the Installed tab): its updates
+    // and DLC first, the game last; the saves stay. The game too means all of it goes.
+    bool StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items);
     // A dump to the library app (PUT /install/upload/{name}): an installed content, or the game
     // card (its secure partition), as an NSP.
     bool StartDump(const std::string& url, const std::string& key, unsigned long long content_id, unsigned version, unsigned char type,

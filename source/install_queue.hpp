@@ -131,6 +131,8 @@ public:
     // Changes when a job ends: the interface reads what is installed again then.
     unsigned Version() const { return m_version.load(); }
     std::map<u64, InstalledState> Installed();
+    // Reads what is installed again (after something was taken off the console elsewhere).
+    void ReadInstalledAgain();
 
     // What was installed in this session, the latest first.
     std::vector<SessionItem> Session();

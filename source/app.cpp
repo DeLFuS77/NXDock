@@ -697,9 +697,20 @@ void App::Tap(float x, float y, u64& down) {
                 if (m_installed_view != it->index) {
                     m_installed_view = it->index;
                     m_installed_focus = 0;
+                    m_console_app = 0;
                 }
                 break;
             case HitKind::InstalledRow:
+                if (m_installed_view == 0) {
+                    // In the console: a game of the list, or a line of its page
+                    int& focus = m_console_app ? m_console_item : m_console_focus;
+                    if (focus == it->index) {
+                        down |= HidNpadButton_A;
+                    } else {
+                        focus = it->index;
+                    }
+                    break;
+                }
                 if (m_installed_focus == it->index) {
                     down |= HidNpadButton_A;
                 } else {
@@ -881,7 +892,8 @@ void App::Update(u64 down, u64 held) {
     }
     // L and R change the tab from anywhere, as on the HOME menu; a tool of More stays open, and is
     // there again when coming back
-    const bool in_tool = m_tab == Tab::More && m_more != MoreScreen::Tiles; // B leaves the tool first
+    const bool in_tool = (m_tab == Tab::More && m_more != MoreScreen::Tiles) || // B leaves the tool first
+                         (m_tab == Tab::Installed && m_installed_view == 0 && m_console_app != 0); // or the page of a game
     if (down & HidNpadButton_L) {
         m_tab = Tab((int(m_tab) + kTabs - 1) % kTabs);
     }
@@ -1007,6 +1019,10 @@ u64 App::FocusSignature() const {
     mix(m_queue_focus);
     mix(m_installed_view);
     mix(m_installed_focus);
+    mix(int(m_console_app & 0xFFFFFFF));
+    mix(m_console_focus);
+    mix(m_console_item);
+    mix(int(std::count(m_console_marks.begin(), m_console_marks.end(), 1)));
     mix(int(m_dialog.kind));
     mix(m_dialog.focus);
     mix(m_menu);
@@ -3469,10 +3485,12 @@ void App::DrawInstalled(NVGcontext* vg) {
         m_history_version = m_queue->Version();
     }
     const int session = int(m_queue->Session().size());
-    const char* names[] = {s.this_session, s.history};
-    const int counts[] = {session, int(m_history.size())};
+    ReadConsole();
+    const auto console = m_space ? m_space->Snapshot() : Space::View{};
+    const char* names[] = {TrM().ic_console, s.this_session, s.history};
+    const int counts[] = {int(console.apps.size()), session, int(m_history.size())};
     float x = 48;
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         char chip[64];
         std::snprintf(chip, sizeof(chip), "%s · %d", names[i], counts[i]);
         const float w = ui::Chip(vg, t, x, 92, chip, i == m_installed_view);
@@ -3480,6 +3498,8 @@ void App::DrawInstalled(NVGcontext* vg) {
         x += w + 10;
     }
     if (m_installed_view == 0) {
+        DrawConsole(vg, console);
+    } else if (m_installed_view == 1) {
         DrawSession(vg);
     } else {
         DrawHistory(vg);
@@ -3694,13 +3714,18 @@ void App::AskUndo(std::vector<int> jobs) {
 
 void App::UpdateInstalled(u64 down, u64 held) {
     if (down & (HidNpadButton_ZL | HidNpadButton_ZR)) {
-        m_installed_view ^= 1;
+        m_installed_view = (m_installed_view + ((down & HidNpadButton_ZR) ? 1 : 2)) % 3;
         m_installed_focus = 0;
+        m_console_app = 0;
+        return;
+    }
+    if (m_installed_view == 0) {
+        UpdateConsole(down, held);
         return;
     }
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_installed_focus > 0) m_installed_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown)) m_installed_focus++; // clamped when drawn
-    if (m_installed_view == 0) {
+    if (m_installed_view == 1) {
         const auto items = m_queue->Session();
         if (items.empty()) {
             return;
@@ -3901,6 +3926,20 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::SpaceDump:
             SpaceDialogText(title, body, primary);
             break;
+        case DialogKind::ConsoleRemove: {
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.ic_rm_title_fmt, m_dialog.text.c_str());
+            title = text;
+            for (const auto& c : m_console_remove) {
+                size += c.bytes;
+                lines.push_back({ContentLabel(c, m_console_app), c.nand ? s.internal_short : "SD", SizeText(c.bytes), t.text});
+            }
+            std::snprintf(text, sizeof(text), m.ic_rm_body_fmt, SizeText(size).c_str());
+            body = text;
+            primary = m.ic_rm_go;
+            break;
+        }
         case DialogKind::ShopRemove: {
             const More& m = TrM();
             char text[200];
@@ -4449,6 +4488,16 @@ void App::ConfirmDialog() {
         case DialogKind::SpaceCard:
         case DialogKind::SpaceDump:
             ConfirmSpaceDialog();
+            break;
+        case DialogKind::ConsoleRemove:
+            // taking contents off while the queue installs could take those of the install going on
+            if (m_queue && (m_queue->Busy() || m_queue->Undoing())) {
+                Notice(TrM().cz_busy);
+            } else if (m_space && m_space->StartRemove(m_console_app, m_console_remove)) {
+                m_console_marks.clear();
+            } else {
+                Notice(TrM().cz_busy);
+            }
             break;
         case DialogKind::ShopRemove:
             if (m_dialog.entry >= 0 && m_dialog.entry < int(m_shops.size())) {

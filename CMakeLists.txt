@@ -119,6 +119,7 @@ add_executable(nxdock
     source/more.cpp
     source/more_vault.cpp
     source/more_space.cpp
+    source/more_console.cpp
     source/more_shop.cpp
     source/more_mods.cpp
     source/screen_off.cpp

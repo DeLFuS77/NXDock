@@ -290,6 +290,12 @@ private:
     void DrawInstalled(NVGcontext* vg);
     void UpdateInstalled(u64 down, u64 held);
     void DrawSession(NVGcontext* vg);
+    void DrawConsole(NVGcontext* vg, const Space::View& v);
+    void DrawConsolePage(NVGcontext* vg, const Space::View& v);
+    void UpdateConsole(u64 down, u64 held);
+    void ReadConsole();
+    const Game* LibraryGame(unsigned long long app) const;
+    std::string ContentLabel(const InstalledApp::Content& c, unsigned long long app) const;
     void DrawHistory(NVGcontext* vg);
     void AskUndo(std::vector<int> jobs);
     // A question over everything, with Cancel in focus first.
@@ -389,12 +395,18 @@ private:
     int m_queue_focus = 0;          // row in focus on the queue screen
     double m_quit_asked = -100;     // + while installing asks first
     // the Installed tab
-    int m_installed_view = 0;       // 0: this session, 1: the history
+    int m_installed_view = 0;       // 0: in the console, 1: this session, 2: the history
+    // In the console: every game installed, and the page of one with what it has
+    unsigned long long m_console_app = 0; // the game whose page is open (0: the list)
+    int m_console_focus = 0, m_console_item = 0;
+    std::vector<char> m_console_marks;
+    std::vector<InstalledApp::Content> m_console_remove; // what the question takes off
+    unsigned m_console_scanned_for = ~0u;                 // the version of the queue last read for
     int m_installed_focus = 0;
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action

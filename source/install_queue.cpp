@@ -383,6 +383,15 @@ int InstallQueue::Waiting() {
     return int(std::count_if(m_jobs.begin(), m_jobs.end(), [](const InstallJob& j) { return j.state == InstallJob::State::Waiting; }));
 }
 
+void InstallQueue::ReadInstalledAgain() {
+    auto installed = ReadInstalled();
+    {
+        std::lock_guard lock(m_mutex);
+        m_installed = std::move(installed);
+    }
+    m_version++;
+}
+
 std::map<u64, InstalledState> InstallQueue::Installed() {
     std::lock_guard lock(m_mutex);
     return m_installed;

@@ -191,6 +191,7 @@ void App::FollowSpace() {
     if (v.last == Space::Task::Scan) return;
     const More& m = TrM();
     if (!v.error.empty()) {
+        if (v.last == Space::Task::Remove && m_queue) m_queue->ReadInstalledAgain(); // part of it may be gone
         m_dialog = Dialog{};
         m_dialog.kind = DialogKind::VaultError;
         m_dialog.single = true;
@@ -203,6 +204,10 @@ void App::FollowSpace() {
         case Space::Task::Archive: Notice(m.done_archive); break;
         case Space::Task::Move: Notice(m.done_move); break;
         case Space::Task::Dump: Notice(m.done_dump); break;
+        case Space::Task::Remove:
+            Notice(m.ic_done_remove);
+            if (m_queue) m_queue->ReadInstalledAgain(); // the Library knows it is not there any more
+            break;
         default: break;
     }
     m_space_mode = 0;

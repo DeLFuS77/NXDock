@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "space.hpp"
+#include "compress_nx.hpp"
 
 #include "defines.hpp"
 #include "errors.hpp"
@@ -419,7 +420,18 @@ void Space::ScanNow() {
                     apps.back().app_id = app;
                 }
                 auto& a = apps[by_app[app]];
-                InstalledApp::Content c{key.id, key.version, key.type, nand, 0};
+                InstalledApp::Content c{key.id, key.version, key.type, nand, 0, 0};
+                if (key.type == NcmContentMetaType_AddOnContent) {
+                    // the version of the game it needs: in its extended header, after the header of
+                    // 8 bytes and the ID of its game
+                    u8 meta[0x40] = {};
+                    u64 size = 0;
+                    if (R_SUCCEEDED(ncmContentMetaDatabaseGet(&s.db, &key, &size, meta, sizeof(meta))) && size >= 20) {
+                        u32 v = 0;
+                        std::memcpy(&v, meta + 16, sizeof(v));
+                        c.required = v;
+                    }
+                }
                 for (const auto& info : s.Contents(key)) {
                     c.bytes += InfoSize(info);
                     referenced.insert(IdHex(&info.content_id, sizeof(info.content_id)));
@@ -680,6 +692,40 @@ bool Space::StartArchive(std::vector<unsigned long long> apps) {
         }
         nsExit();
         return R_FAILED(rc) ? Packed(m.s_archive_failed, m.s_archive_failed_d, rc) : std::string{};
+    });
+    return true;
+}
+
+bool Space::StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items) {
+    if (Busy() || items.empty()) return false;
+    // the updates and the DLC before the game: the record of the game goes with the last of it
+    std::stable_sort(items.begin(), items.end(), [](const InstalledApp::Content& a, const InstalledApp::Content& b) {
+        return (a.type == NcmContentMetaType_Application) < (b.type == NcmContentMetaType_Application);
+    });
+    Run(Task::Remove, [this, app, items]() -> std::string {
+        const More& m = TrM();
+        std::lock_guard titles(TitlesLock());
+        Result rc = 0;
+        bool base = false;
+        u64 i = 0;
+        for (const auto& c : items) {
+            Progress(i++, items.size());
+            NcmContentMetaKey key{};
+            key.id = c.id;
+            key.version = c.version;
+            key.type = c.type;
+            key.install_type = NcmContentInstallType_Full;
+            rc = RemoveInstalled(key, c.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard);
+            if (R_FAILED(rc)) break;
+            if (c.type == NcmContentMetaType_Application) base = true;
+        }
+        // the marks of a game NXDock merged or compressed go with it
+        if (base) ForgetMerged(app);
+        if (R_FAILED(rc)) {
+            if (rc == Result_GameRunning) return Packed(m.ic_rm_running_t, m.ic_rm_running_d, rc);
+            return Packed(m.ic_rm_failed_t, m.ic_rm_failed_d, rc);
+        }
+        return {};
     });
     return true;
 }
