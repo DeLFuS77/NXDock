@@ -291,11 +291,13 @@ void App::DrawSpace(NVGcontext* vg) {
     sub[7] = m.cz_action_sub;
     right[7] = m.cz_tag;
     const char* titles[8] = {m.a_clean, m.a_archive, m.a_move, m.a_plan, m.a_card, m.a_dump, m.sd_action, m.cz_action};
-    m_space_focus = std::clamp(m_space_focus, 0, 7);
-    for (int i = 0; i < 8; i++) {
-        // three and "Compress games" on the left, four on the right
-        const bool left = i < 3 || i == 7;
-        const float x = left ? lx : rx, y = left ? 222 + (i == 7 ? 3 : i) * 78 : 100 + (i - 3) * 78;
+    // Space: six actions, three on each side; the dumps (their own tile): two, on the left
+    const std::vector<int> shown = m_space_dumps ? std::vector<int>{4, 5} : std::vector<int>{0, 1, 2, 3, 6, 7};
+    if (std::find(shown.begin(), shown.end(), m_space_focus) == shown.end()) m_space_focus = shown.front();
+    for (int k = 0; k < int(shown.size()); k++) {
+        const int i = shown[size_t(k)];
+        const bool left = m_space_dumps || k < 3;
+        const float x = left ? lx : rx, y = left ? 222 + (k % 3) * 78 : 100 + (k - 3) * 78;
         draw::Panel(vg, t, x, y, cw, 66, 12);
         if (i == m_space_focus) ui::Focus(vg, t, x, y, cw, 66, 12, m_time);
         AddHit(x, y, cw, 66, HitKind::SpaceAction, i);
@@ -310,7 +312,7 @@ void App::DrawSpace(NVGcontext* vg) {
         ui::Text(vg, x + cw - 18, y + 33, 15, t.muted, right[i].c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         nvgGlobalAlpha(vg, 1.f);
     }
-    draw::Box(vg, rx, 412, cw, 14, t.muted, m.dumps_note);
+    if (m_space_dumps) draw::Box(vg, rx, 108, cw, 15, t.muted, m.dumps_note);
 
     // the console being read: how far (a long while with many games)
     if ((v.task == Space::Task::Scan && v.total) || v.names_total) {
@@ -491,19 +493,22 @@ void App::UpdateSpace(u64 down, u64 held) {
         UpdateCompress(down, held);
         return;
     }
-    // the actions: four on the left (0, 1, 2, 7), four on the right (3 to 6)
+    // the actions: Space has three on the left (0, 1, 2) and three on the right (3, 6, 7); the
+    // dumps two, one under the other (4, 5)
     {
-        static constexpr int kLeft[] = {0, 1, 2, 7}, kRight[] = {3, 4, 5, 6};
-        const bool right_col = m_space_focus >= 3 && m_space_focus <= 6;
-        const int* col = right_col ? kRight : kLeft;
+        static constexpr int kLeft[] = {0, 1, 2}, kRight[] = {3, 6, 7}, kDumps[] = {4, 5};
+        const bool right_col = !m_space_dumps && std::find(std::begin(kRight), std::end(kRight), m_space_focus) != std::end(kRight);
+        const int* col = m_space_dumps ? kDumps : right_col ? kRight : kLeft;
+        const int rows = m_space_dumps ? 2 : 3;
+        if (std::find(col, col + rows, m_space_focus) == col + rows) m_space_focus = col[0]; // one this screen does not show
         int row = 0;
-        for (int k = 0; k < 4; k++) {
+        for (int k = 0; k < rows; k++) {
             if (col[k] == m_space_focus) row = k;
         }
         if (Repeat(down, held, HidNpadButton_AnyUp) && row > 0) m_space_focus = col[row - 1];
-        if (Repeat(down, held, HidNpadButton_AnyDown) && row < 3) m_space_focus = col[row + 1];
-        if (Repeat(down, held, HidNpadButton_AnyLeft) && right_col) m_space_focus = kLeft[row];
-        if (Repeat(down, held, HidNpadButton_AnyRight) && !right_col) m_space_focus = kRight[row];
+        if (Repeat(down, held, HidNpadButton_AnyDown) && row < rows - 1) m_space_focus = col[row + 1];
+        if (!m_space_dumps && Repeat(down, held, HidNpadButton_AnyLeft) && right_col) m_space_focus = kLeft[row];
+        if (!m_space_dumps && Repeat(down, held, HidNpadButton_AnyRight) && !right_col) m_space_focus = kRight[row];
     }
     if (down & HidNpadButton_B) {
         m_more = MoreScreen::Tiles;

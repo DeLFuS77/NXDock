@@ -2,6 +2,7 @@
 // Copyright (C) 2026 DeLFuS77
 #include "app.hpp"
 
+#include "draw.hpp"
 #include "errors.hpp"
 #include "mtp.hpp"
 #include "usb_disks.hpp"
@@ -207,8 +208,20 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
     return true;
 }
 
-// Settings: theme, library, forget it, address and key by hand (advanced), speed test.
-enum SettingRow { kRowTheme, kRowSounds, kRowLibrary, kRowForget, kRowShare, kRowWizard, kRowScreenOff, kRowAnim, kRowSaveCopy, kRowNotifyDone, kRowCompress, kRowAddress, kRowKey, kRowSpeed, kSettingRows };
+// Settings, in groups: the library, installing, notices, the look, the wizard, connecting by hand.
+enum SettingRow {
+    kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowSpeed,
+    kRowDest, kRowPick, kRowSaveCopy, kRowScreen, kRowCompress,
+    kRowFinish, kRowBattery, kRowNotifyDone,
+    kRowLanguage, kRowTheme, kRowSounds, kRowAnim,
+    kRowWizard,
+    kRowAddress, kRowKey,
+    kSettingRows
+};
+// the first row of each group
+constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowAddress};
+// the levels of the notice of little battery; 0 is off
+constexpr int kBatterySteps[] = {0, 10, 15, 20, 30};
 
 // When something happened, in the console's time zone: "Today 21:52", "Yesterday 19:05",
 // "08/11 22:14".
@@ -303,6 +316,32 @@ float ErrorCard(NVGcontext* vg, const Theme& t, float x, float y, float w, const
     }
     return h;
 }
+
+} // namespace
+
+float CompactError(NVGcontext* vg, const Theme& t, float x, float y, float w, const std::string& packed, NVGcolor color, const char* todo) {
+    const ErrorText e = UnpackError(packed);
+    const std::string head = e.title.empty() ? e.what : e.title;
+    const std::string next = e.todo.empty() ? std::string(todo ? todo : "") : e.todo;
+    float h = 0;
+    if (!head.empty()) {
+        TextBox(vg, x, y, w, 15, color, head.c_str());
+        h += TextBoxHeight(vg, w, 15, head.c_str()) + 2;
+    }
+    if (!next.empty()) {
+        TextBox(vg, x, y + h, w, 14, t.muted, next.c_str());
+        h += TextBoxHeight(vg, w, 14, next.c_str()) + 2;
+    }
+    if (!e.code.empty()) {
+        char line[96];
+        std::snprintf(line, sizeof(line), TrM().code_line, e.code.c_str());
+        ui::Text(vg, x, y + h + 7, 12, t.muted, line);
+        h += 16;
+    }
+    return h;
+}
+
+namespace {
 
 std::string Clip(std::string text, size_t max) {
     if (text.size() > max) {
@@ -564,8 +603,14 @@ void App::ActivateSetting(int row) {
     const Config current = m_link.CurrentConfig();
     switch (row) {
         case kRowTheme:
-            m_theme = m_theme.dark ? LightTheme() : DarkTheme();
-            m_link.SaveTheme(!m_theme.dark);
+            // light, dark, as the console
+            ApplyTheme(((m_ui.theme_auto ? 2 : m_theme.dark ? 1 : 0) + 1) % 3);
+            break;
+        case kRowLanguage:
+            // the console's, then each language NXDock speaks
+            m_ui.language = (m_ui.language + 2) % (LanguageCount() + 1) - 1;
+            UseLanguage(m_ui.language);
+            m_ui.Save();
             break;
         case kRowSounds:
             m_ui.sounds = !m_ui.sounds;
@@ -574,8 +619,40 @@ void App::ActivateSetting(int row) {
         case kRowWizard:
             OpenWizard();
             break;
-        case kRowScreenOff:
-            m_ui.screen_off_auto = !m_ui.screen_off_auto;
+        case kRowScreen: {
+            // normal, dimmed after a minute, off for a long queue (and dimmed for a short one)
+            const int next = ((m_ui.screen_off_auto ? 2 : m_ui.saver ? 1 : 0) + 1) % 3;
+            m_ui.saver = next >= 1;
+            m_ui.screen_off_auto = next == 2;
+            m_ui.Save();
+            break;
+        }
+        case kRowDest:
+            // the SD card, or asking each time; the internal memory is only ever chosen for one install
+            m_ui.dest = m_ui.dest == 2 ? 0 : 2;
+            m_ui.Save();
+            break;
+        case kRowPick:
+            m_ui.pick = (m_ui.pick + 1) % 3;
+            m_ui.Save();
+            break;
+        case kRowFinish:
+            m_ui.finish_effect = !m_ui.finish_effect;
+            m_ui.Save();
+            break;
+        case kRowBattery: {
+            int at = 0;
+            for (int k = 1; k < 5; k++) {
+                if (m_ui.battery_notice && m_ui.battery_level == kBatterySteps[k]) at = k;
+            }
+            const int next = (at + 1) % 5;
+            m_ui.battery_notice = next != 0;
+            if (next) m_ui.battery_level = kBatterySteps[next];
+            m_ui.Save();
+            break;
+        }
+        case kRowUpdates:
+            m_ui.check_updates = !m_ui.check_updates;
             m_ui.Save();
             break;
         case kRowSaveCopy:
@@ -2219,7 +2296,10 @@ void App::DrawLibrary(NVGcontext* vg) {
             return;
         }
         if (state == Catalog::State::Failed) {
-            TextBox(vg, kWidth / 2 - 300, 300, 600, 18, t.warn, m_catalog.Error().c_str());
+            // the card of an error, as in the queue: what happened, what to do, the code small
+            const std::string error = m_catalog.Error();
+            const float cw = 700, ch = ErrorCard(vg, t, 0, 0, cw, error, false);
+            ErrorCard(vg, t, (kWidth - cw) / 2, std::max(96.f, 360 - ch / 2), cw, error, true);
             ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.retry, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
                         m_hint_rects);
         } else {
@@ -2244,23 +2324,22 @@ void App::DrawLibrary(NVGcontext* vg) {
         }
         return;
     }
+    // the list kept on the SD card is on screen: whether a new one is coming or did not come is
+    // said on the left of the hint bar, in place of the address (option A of the visual test)
+    std::string status = where;
     {
-        // the list kept on the SD card is on screen: say whether a new one is coming or did not come
         int done = 0, total = 0;
         const bool refreshing = state == Catalog::State::Loading;
-        if (refreshing || m_catalog.Stale()) {
+        if ((refreshing || m_catalog.Stale()) && !m_shop_active) {
             char line[200];
             if (refreshing && m_catalog.Preparing(done, total) && total > 0) {
                 std::snprintf(line, sizeof(line), TrM().cat_preparing_fmt, done, total);
             } else if (refreshing) {
                 std::snprintf(line, sizeof(line), "%s", s.loading_library);
             } else {
-                std::snprintf(line, sizeof(line), "%s", TrM().cat_stale);
+                std::snprintf(line, sizeof(line), "%s", TrM().cat_stale_short);
             }
-            const float w = ui::TextWidth(vg, 14, line);
-            const float x0 = kWidth - 48 - w;
-            if (refreshing) ui::Spinner(vg, x0 - 16, 111, 7, t.work, m_time);
-            ui::Text(vg, kWidth - 48, 111, 14, refreshing ? t.muted : t.warn, line, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            status = line;
         }
     }
 
@@ -2386,7 +2465,7 @@ void App::DrawLibrary(NVGcontext* vg) {
     hints.push_back({ui::glyph::Minus, m_update_hint.c_str(), HidNpadButton_Minus});
     if (m_shop_active) hints.push_back({ui::glyph::B, TrM().sh_shops_hint, HidNpadButton_B});
     else hints.push_back({ui::glyph::Plus, s.exit, HidNpadButton_Plus});
-    ui::HintBar(vg, t, where.c_str(), hints, m_hint_rects);
+    ui::HintBar(vg, t, status.c_str(), hints, m_hint_rects);
 }
 
 void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float s) {
@@ -3673,51 +3752,81 @@ void App::DrawQueue(NVGcontext* vg) {
 void App::DrawSettings(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
+    const More& m = TrM();
     const bool running = m_speed.Running();
     const Link::View link = m_link.Snapshot();
     const Config current = m_link.CurrentConfig();
     const bool linked = current.Linked();
 
-    // Rows on the left: the usual ones first, the ones by hand last.
+    // the rows in their groups (the recommended option A of the visual test of 11/11)
     std::string library = s.not_linked;
     if (linked) {
         const std::string host = current.url.substr(current.url.find("://") == std::string::npos ? 0 : current.url.find("://") + 3);
         library = Clip((current.name.empty() ? link.app_name : current.name) + " · " + host, 36);
     }
     const std::string address = !m_manual_url.empty() ? Clip(m_manual_url, 32) : s.not_set;
+    const char* picks[] = {s.wiz_pick_missing, s.wiz_pick_base, s.wiz_pick_base_update};
+    const char* screens[] = {m.st_scr_normal, m.st_scr_dim, m.st_scr_off};
+    char battery[64];
+    if (m_ui.battery_notice) std::snprintf(battery, sizeof(battery), m.st_battery_fmt, m_ui.battery_level);
+    else std::snprintf(battery, sizeof(battery), "%s", s.no_word);
+    const std::string language = m_ui.language < 0 ? std::string(s.wiz_console_lang) + " · " + LanguageName(ConsoleLanguage())
+                                                   : std::string(LanguageName(m_ui.language));
+    const int theme = m_ui.theme_auto ? 2 : t.dark ? 1 : 0;
+    const char* themes[] = {s.light, s.dark, s.wiz_theme_auto};
     struct Row { const char* label; std::string value; bool accent; };
+    const auto yes = [&](bool on) { return std::string(on ? s.yes_word : s.no_word); };
     const Row rows[kSettingRows] = {
-        {s.theme, t.dark ? s.dark : s.light, true},
-        {s.sounds_row, m_ui.sounds ? s.yes_word : s.no_word, m_ui.sounds},
         {s.library, library, linked},
         {s.forget, "", false},
-        {s.share_row, m_prefs.share_installed == 1 ? s.yes_word : s.no_word, m_prefs.share_installed == 1},
+        {s.share_row, yes(m_prefs.share_installed == 1), m_prefs.share_installed == 1},
+        {m.st_updates, yes(m_ui.check_updates), m_ui.check_updates},
+        {s.speed_test, running ? s.cancel : s.start, linked},
+        {m.st_dest, m_ui.dest == 2 ? s.wiz_ask_each : s.sd_card, true},
+        {m.st_pick, picks[std::clamp(m_ui.pick, 0, 2)], true},
+        {m.sc_row, yes(m_ui.save_copy), m_ui.save_copy},
+        {m.st_screen, screens[m_ui.screen_off_auto ? 2 : m_ui.saver ? 1 : 0], m_ui.saver || m_ui.screen_off_auto},
+        {m.cz_row, yes(m_ui.compress_on), m_ui.compress_on},
+        {m.st_finish, yes(m_ui.finish_effect), m_ui.finish_effect},
+        {m.st_battery, battery, m_ui.battery_notice},
+        {m.qw_notify_row, yes(m_ui.notify_done), m_ui.notify_done},
+        {s.wiz_language, language, true},
+        {s.theme, themes[theme], true},
+        {s.sounds_row, yes(m_ui.sounds), m_ui.sounds},
+        {m.anim_row, m_ui.anim == 2 ? m.anim_none : m_ui.anim == 1 ? m.anim_soft : m.anim_full, m_ui.anim != 2},
         {s.wiz_row, s.wiz_repeat, true},
-        {TrM().so_auto_row, m_ui.screen_off_auto ? s.yes_word : s.no_word, m_ui.screen_off_auto},
-        {TrM().anim_row, m_ui.anim == 2 ? TrM().anim_none : m_ui.anim == 1 ? TrM().anim_soft : TrM().anim_full, m_ui.anim != 2},
-        {TrM().sc_row, m_ui.save_copy ? s.yes_word : s.no_word, m_ui.save_copy},
-        {TrM().qw_notify_row, m_ui.notify_done ? s.yes_word : s.no_word, m_ui.notify_done},
-        {TrM().cz_row, m_ui.compress_on ? s.yes_word : s.no_word, m_ui.compress_on},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
-        {s.speed_test, running ? s.cancel : s.start, linked},
     };
-    const float x = 48, w = 540, h = 56, gap = 8;
-    // the rows scroll when they do not fit, keeping the one in focus in sight
+    const char* groups[] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, m.st_g_manual};
+    const float x = 48, w = 540, h = 56, gap = 8, head = 34;
+    // where each row goes: a title before the first of each group
+    float top_of[kSettingRows];
+    float at = 0;
+    for (int i = 0; i < kSettingRows; i++) {
+        if (std::find(std::begin(kGroupStarts), std::end(kGroupStarts), i) != std::end(kGroupStarts)) at += head;
+        top_of[i] = at;
+        at += h + gap;
+    }
+    // the rows scroll when they do not fit, keeping the one in focus (and its title) in sight
     const float view_top = 88, view_bottom = 652;
-    const float list_h = float(int(kSettingRows)) * (h + gap) + 8 + 70;
-    const float focus_top = m_setting * (h + gap) + (m_setting >= kRowAddress ? 8 : 0);
+    const float list_h = at + 8 + 70;
+    const bool first_of_group = std::find(std::begin(kGroupStarts), std::end(kGroupStarts), m_setting) != std::end(kGroupStarts);
+    const float focus_top = top_of[m_setting] - (first_of_group ? head : 0);
     float target = m_settings_scroll;
     if (focus_top - target < 0) target = focus_top;
-    if (focus_top + h + 12 - target > view_bottom - view_top) target = focus_top + h + 12 - (view_bottom - view_top);
+    if (top_of[m_setting] + h + 12 - target > view_bottom - view_top) target = top_of[m_setting] + h + 12 - (view_bottom - view_top);
     if (m_setting == kSettingRows - 1) target = std::max(target, list_h - (view_bottom - view_top));
     m_settings_scroll = std::clamp(target, 0.f, std::max(0.f, list_h - (view_bottom - view_top)));
     nvgSave(vg);
     nvgScissor(vg, 0, view_top - 8, 600, view_bottom - view_top + 8);
-    float y = view_top + 8 - m_settings_scroll;
+    const float y0 = view_top + 8 - m_settings_scroll;
+    int group = 0;
     for (int i = 0; i < kSettingRows; i++) {
-        if (i == kRowAddress) {
-            y += 8; // the ones by hand apart
+        const float y = y0 + top_of[i];
+        if (group < 6 && kGroupStarts[group] == i) {
+            draw::Section(vg, t, x + 6, y - 13, groups[group]);
+            group++;
         }
         const bool dim = (i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked;
         nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
@@ -3730,23 +3839,35 @@ void App::DrawSettings(NVGcontext* vg) {
         if (hit_bottom > hit_top) {
             AddHit(x, hit_top, w, hit_bottom - hit_top, HitKind::SettingsRow, i);
         }
+        const float vw = std::min(260.f, ui::TextWidth(vg, 16, rows[i].value.c_str()));
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x + 16, y, w - 32 - vw - 14, h);
         ui::Text(vg, x + 22, y + h / 2, 18, i == kRowForget ? t.warn : t.text, rows[i].label);
-        ui::Text(vg, x + w - 22, y + h / 2, 16, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(),
-                 NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x + w - 22 - vw, y, vw, h);
+        ui::Text(vg, x + w - 22, y + h / 2, 16, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
         nvgGlobalAlpha(vg, 1.f);
-        y += h + gap;
     }
+    const float end_y = y0 + at;
     if (linked && !link.enabled) {
-        TextBox(vg, x, y + 4, w, 15, t.warn, s.link_off_warning);
+        TextBox(vg, x, end_y + 4, w, 15, t.warn, s.link_off_warning);
     } else if (!linked) {
-        TextBox(vg, x, y + 4, w, 15, t.muted, s.need_config);
+        TextBox(vg, x, end_y + 4, w, 15, t.muted, s.need_config);
     }
     nvgRestore(vg);
 
     DrawSpeedPanel(vg, 620, 96, kWidth - 620 - 48, 548);
 
+    // A changes a choice; the rows that open something say what they do
+    const char* act = m.st_change;
+    if (m_setting == kRowAddress || m_setting == kRowKey) act = s.edit;
+    else if (m_setting == kRowLibrary || m_setting == kRowWizard) act = m.open;
+    else if (m_setting == kRowForget) act = m.fg_go;
+    else if (m_setting == kRowSpeed) act = running ? s.cancel : s.start;
     ui::HintBar(vg, t, nullptr,
-                {{ui::glyph::A, s.edit, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},
+                {{ui::glyph::A, act, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},
                  {ui::glyph::B, s.back, HidNpadButton_B}},
                 m_hint_rects);
 }
@@ -3845,8 +3966,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     } else if (v.state == State::Choose && v.found.empty()) {
         TextBox(vg, lx + 26, y + 6, lw - 52, 15, t.warn, s.none_found);
     } else if (v.state == State::Offline) {
-        const std::string text = v.error + "\n" + TrM().pr_todo_search;
-        TextBox(vg, lx + 26, y + 6, lw - 52, 15, t.warn, text.c_str());
+        CompactError(vg, t, lx + 26, y + 6, lw - 52, v.error, t.warn, TrM().pr_todo_search);
     }
 
     // Right: the code and what to do with it.
@@ -3916,8 +4036,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
         ui::Spinner(vg, rx + 36, sy, 8, t.work, m_time);
     } else if (!v.error.empty() && v.state != State::Offline) {
         // what happened, and what to do now: another code
-        const std::string text = v.error + "\n" + TrM().pr_todo_code;
-        TextBox(vg, rx + 26, sy - 10, rw - 52, 15, v.state == State::Failed ? t.err : t.warn, text.c_str());
+        CompactError(vg, t, rx + 26, sy - 12, rw - 52, v.error, v.state == State::Failed ? t.err : t.warn, TrM().pr_todo_code);
     }
 
     // Remember: on by default; off, the link lasts until NXDock closes.
@@ -3991,7 +4110,7 @@ void App::DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h) {
     // Progress of the stage running, or the error, or what the test does.
     const float by = y + h - 70;
     if (v.stage == SpeedTest::Stage::Failed) {
-        TextBox(vg, px, by, pw, 15, t.err, v.error.c_str());
+        CompactError(vg, t, px, by - 8, pw, v.error, t.err, TrM().sp_todo);
     } else if (m_speed.Running()) {
         ui::Progress(vg, t, px, by + 8, pw, 6, v.progress, t.muted, m_time, true);
     } else {
@@ -4735,7 +4854,7 @@ void App::DrawDialog(NVGcontext* vg) {
             }
             note = m.rs_note;
             primary = m.rs_go;
-            cancel_label = m.rs_discard;
+            cancel_label = m.rs_later;
             break;
         }
         case DialogKind::QueueCancel: {
@@ -4759,8 +4878,18 @@ void App::DrawDialog(NVGcontext* vg) {
             body = TrM().fg_body;
             primary = TrM().fg_go;
             break;
-        case DialogKind::ResumeDiscard:
+        case DialogKind::ResumeDiscard: {
+            const More& m = TrM();
+            title = m.rd_title;
+            long long bytes = 0;
+            const int parts = m_resume ? ResumeChecked(*m_resume, &bytes) : 0;
+            char text[300];
+            std::snprintf(text, sizeof(text), m.rd_body_fmt, parts, SizeText(u64(bytes)).c_str());
+            body = text;
+            primary = m.rd_go;
+            cancel_label = s.back;
             break;
+        }
         case DialogKind::WebCancel: {
             const More& m = TrM();
             char text[300];
@@ -5045,8 +5174,12 @@ void App::DrawDialog(NVGcontext* vg) {
         buttons.push_back({extra_mask == HidNpadButton_Y ? ui::glyph::Y : ui::glyph::X, label, false, extra, extra_mask});
     }
     if (!info) buttons.push_back({ui::glyph::A, primary, true, 1, HidNpadButton_A});
+    // three long labels that do not fit get a smaller size
+    float all = 14 * float(buttons.size() - 1);
+    for (const auto& b : buttons) all += ui::TextWidth(vg, 18, b.label.c_str()) + 78;
+    const bool small = all > iw;
     for (auto it = buttons.rbegin(); it != buttons.rend(); ++it) {
-        const float bw = ui::TextWidth(vg, 18, it->label.c_str()) + 78;
+        const float bw = small ? ui::TextWidth(vg, 15, it->label.c_str()) + 62 : ui::TextWidth(vg, 18, it->label.c_str()) + 78;
         bx -= bw;
         const bool enabled = !it->primary || can;
         nvgGlobalAlpha(vg, (enabled ? 1.f : 0.4f) * std::min(1.f, pop * 1.4f));
@@ -5060,8 +5193,8 @@ void App::DrawDialog(NVGcontext* vg) {
             ui::StrokeRound(vg, bx + 1, by + 1, bw - 2, bh - 2, 12, t.line, 2);
         }
         const NVGcolor fg = it->primary ? t.on_work : t.text;
-        ui::Symbol(vg, t, bx + 34, by + bh / 2, 24, it->glyph, fg, it->mask);
-        ui::Text(vg, bx + 56, by + bh / 2, 18, fg, it->label.c_str());
+        ui::Symbol(vg, t, bx + (small ? 27 : 34), by + bh / 2, small ? 21 : 24, it->glyph, fg, it->mask);
+        ui::Text(vg, bx + (small ? 45 : 56), by + bh / 2, small ? 15 : 18, fg, it->label.c_str());
         nvgGlobalAlpha(vg, 1.f);
         if (enabled) {
             AddHit(bx, by, bw, bh, HitKind::DialogButton, it->index);
@@ -5157,12 +5290,19 @@ int App::DialogExtra(u64& mask) const {
         case DialogKind::Where: mask = HidNpadButton_X; return 2;
         case DialogKind::Nand: mask = HidNpadButton_Y; return 3;
         case DialogKind::DlcNeeds:
-        case DialogKind::Reinstall: mask = HidNpadButton_X; return 2;
+        case DialogKind::Reinstall:
+        case DialogKind::Resume: mask = HidNpadButton_X; return 2;
         default: mask = 0; return -1;
     }
 }
 
 void App::DialogExtraChosen() {
+    if (m_dialog.kind == DialogKind::Resume) {
+        // discarding is asked once more, Back in focus
+        m_dialog.kind = DialogKind::ResumeDiscard;
+        m_dialog.focus = 0;
+        return;
+    }
     if (m_dialog.kind == DialogKind::Where) {
         auto jobs = std::move(m_dialog.jobs);
         for (auto& j : jobs) j.nand = true;
@@ -5284,6 +5424,12 @@ void App::ConfirmDialog() {
         case DialogKind::Resume:
             if (m_resume) AddJobs(ResumeJobs(*m_resume, m_link.CurrentConfig().key));
             m_resume.reset();
+            break;
+        case DialogKind::ResumeDiscard:
+            // every placeholder of the journal goes, and the journal
+            if (m_resume) DiscardResume(*m_resume);
+            m_resume.reset();
+            NoticeOk(TrM().rs_discarded);
             break;
         case DialogKind::ModsAsk:
             // the update goes on; when it ends, Cheats and mods opens for the new version

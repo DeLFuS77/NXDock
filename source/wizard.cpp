@@ -630,7 +630,7 @@ void App::DrawWizard(NVGcontext* vg) {
                           s.conn4, v.net[2], s.sd_write, v.sd);
             TextBox(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.text, text);
         } else if (v.stage == SpeedTest::Stage::Failed) {
-            TextBox(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.err, v.error.c_str());
+            CompactError(vg, t, kBodyX + 4, y + 4, kBodyW - 8, v.error, t.err, TrM().sp_todo);
         }
     }
     nvgGlobalAlpha(vg, 1.f);

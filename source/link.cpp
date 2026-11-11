@@ -2,6 +2,9 @@
 // Copyright (C) 2026 DeLFuS77
 #include "link.hpp"
 #include "tls_pin.hpp"
+#include "errors.hpp"
+#include "i18n_more.hpp"
+#include "log.hpp"
 
 #include <switch.h>
 #include <chrono>
@@ -240,9 +243,13 @@ bool Link::CheckKey(const std::string& url, const std::string& key, bool& enable
         case 403:
             error = Tr().err_forbidden;
             return false;
-        default:
-            error = r.error.empty() ? "HTTP " + std::to_string(r.status) : r.error;
+        default: {
+            // what happened and what to do; the code only in its small line
+            ErrorText e{Tr().err_connect, "", TrM().pr_todo_search, r.error.empty() ? "HTTP " + std::to_string(r.status) : r.error};
+            log_write("[NXDock] link: %s\n", e.code.c_str());
+            error = PackError(e);
             return false;
+        }
     }
 }
 
@@ -363,8 +370,13 @@ void Link::JobPair() {
     }
     if (asked.status != 201) {
         const auto& s = Tr();
-        Fail(State::Failed, asked.status == 429 ? s.link_busy : asked.status == 403 ? s.err_forbidden
-                            : asked.error.empty() ? "HTTP " + std::to_string(asked.status) : asked.error);
+        if (asked.status == 429 || asked.status == 403) {
+            Fail(State::Failed, asked.status == 429 ? s.link_busy : s.err_forbidden);
+        } else {
+            ErrorText e{TrM().pr_code_failed, "", TrM().pr_todo_code, asked.error.empty() ? "HTTP " + std::to_string(asked.status) : asked.error};
+            log_write("[NXDock] pairing: %s\n", e.code.c_str());
+            Fail(State::Failed, PackError(e));
+        }
         return;
     }
     const std::string id = http::JsonString(asked.body, "id");

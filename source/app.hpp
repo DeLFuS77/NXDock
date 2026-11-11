@@ -39,6 +39,9 @@ unsigned PlaceholderColor(const std::string& key);
 std::string Initial(const std::string& name);
 // A version as people say it: "Update 3" (the number of the update), "No updates" for 0.
 std::string VersionText(u32 version);
+// An error where there is little room (the pairing, the speed test): its title in `color`, what to
+// do (or `todo` when it says nothing) and the code, small. Returns the height used.
+float CompactError(NVGcontext* vg, const Theme& t, float x, float y, float w, const std::string& packed, NVGcolor color, const char* todo);
 
 enum class Tab { Library, Shops, Queue, Installed, More, Settings };
 
@@ -146,6 +149,7 @@ private:
     // space and dumps (8A, more_space.cpp)
     unsigned long long QueueNeedsOnSd();
     void OpenSpace();
+    bool m_space_dumps = false; // Space shows the dumps only (their own tile of More)
     void OpenPicker(int kind); // 0 archive (several), 1 move, 2 dump
     void OpenPlanner();
     void FollowSpace();

@@ -23,8 +23,11 @@
 namespace nxdock {
 namespace {
 
-constexpr int kTiles = 8;
-constexpr float kTileGap = 18, kTileW = (kWidth - 96 - 3 * kTileGap) / 4, kTileH = 170;
+// Nine tiles: four without the library app, five on the console (the dumps apart from Space, as
+// the recommended option A of the visual test of 11/11). kOrder gives the tool of each place.
+constexpr int kTiles = 9, kCols = 5, kFirstRow = 4;
+constexpr int kOrder[kTiles] = {0, 1, 2, 3, 4, 5, 8, 6, 7};
+constexpr float kTileGap = 18, kTileW = (kWidth - 96 - (kCols - 1) * kTileGap) / kCols, kTileH = 170;
 constexpr float kSideW = 250;
 constexpr float kRowTop = 134, kRowPitch = 50, kRowsBottom = 576;
 constexpr int kVisibleRows = int((kRowsBottom - kRowTop) / kRowPitch);
@@ -38,17 +41,26 @@ std::string BaseName(const std::string& path) {
 
 // ---- the tiles ----
 
-void App::OpenMoreTile(int tile) {
+void App::OpenMoreTile(int place) {
     const auto& s = Tr();
-    m_tile = tile;
-    switch (tile) {
+    m_tile = place;
+    switch (kOrder[std::clamp(place, 0, kTiles - 1)]) {
         case 0: OpenMoreScreen(MoreScreen::Files); break;
         case 1: OpenMoreScreen(MoreScreen::Mtp); break;
         case 2: OpenMoreScreen(MoreScreen::Usb); break;
         case 3: m_tab = Tab::Shops; break; // the Shops tab
         case 6: OpenMods(); break;
         case 7: AskScreenOff(); break;
-        case 5: OpenSpace(); break;
+        case 5:
+            OpenSpace();
+            m_space_dumps = false;
+            break;
+        case 8:
+            // the dumps: the game card, or a game installed, to the library
+            OpenSpace();
+            m_space_dumps = true;
+            m_space_focus = 4;
+            break;
         case 4:
             OpenVault();
             m_more = MoreScreen::Saves;
@@ -149,12 +161,13 @@ void App::UpdateMore(u64 down, u64 held) {
 void App::DrawTiles(NVGcontext* vg) {
     const Theme& t = m_theme;
     const More& m = TrM();
-    const char* titles[kTiles] = {m.t_files, m.t_mtp, m.t_usb, m.t_shops, m.t_saves, m.t_space, m.t_mods, m.t_screen};
-    const char* subs[kTiles] = {m.t_files_sub, m.t_mtp_sub, m.t_usb_sub, m.t_shops_sub, m.t_saves_sub, m.t_space_sub, m.t_mods_sub, m.t_screen_sub};
+    const char* titles[kTiles] = {m.t_files, m.t_mtp, m.t_usb, m.t_shops, m.t_saves, m.t_space, m.t_mods, m.t_screen, m.t_dumps};
+    const char* subs[kTiles] = {m.t_files_sub, m.t_mtp_sub, m.t_usb_sub, m.t_shops_sub, m.t_saves_sub, m.t_space_sub, m.t_mods_sub, m.t_screen_sub, m.t_dumps_sub};
     m_tile = std::clamp(m_tile, 0, kTiles - 1);
     m_tile_lift.resize(kTiles, 0.f);
     for (int i = 0; i < kTiles; i++) {
-        const int row = i / 4, col = i % 4;
+        const int row = i < kFirstRow ? 0 : 1, col = i < kFirstRow ? i : i - kFirstRow;
+        const int tool = kOrder[i];
         const float y0 = 100 + row * (kTileH + 64);
         if (col == 0) draw::Section(vg, t, 50, y0, row == 0 ? m.sect_noserver : m.sect_console);
         const float x = 48 + col * (kTileW + kTileGap), y = y0 + 20;
@@ -196,9 +209,12 @@ void App::DrawTiles(NVGcontext* vg) {
                 nvgRestore(vg);
             }
         }
-        DrawTileIcon(vg, i, x + 22, y + 40);
-        ui::Text(vg, x + 20, y + 84, 19, t.text, titles[i]);
-        draw::Box(vg, x + 20, y + 104, kTileW - 40, 14, t.muted, subs[i]);
+        DrawTileIcon(vg, tool, x + 22, y + 40);
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x + 12, y, kTileW - 24, kTileH);
+        ui::Text(vg, x + 20, y + 84, 19, t.text, titles[tool]);
+        nvgRestore(vg);
+        draw::Box(vg, x + 20, y + 104, kTileW - 40, 14, t.muted, subs[tool]);
         nvgRestore(vg);
     }
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}, {ui::glyph::Plus, Tr().exit, HidNpadButton_Plus}};
@@ -310,6 +326,16 @@ void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy) {
             nvgClosePath(vg);
             nvgFill(vg);
             break;
+        case 8: // a tray with an arrow into it
+            ui::StrokeRound(vg, x, cy + 2, 32, 14, 3, c, 2.6f);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x + 16, cy - 16);
+            nvgLineTo(vg, x + 16, cy + 6);
+            nvgMoveTo(vg, x + 9, cy - 1);
+            nvgLineTo(vg, x + 16, cy + 6);
+            nvgLineTo(vg, x + 23, cy - 1);
+            nvgStroke(vg);
+            break;
         case 6: // a wand with a sparkle
             nvgBeginPath(vg);
             nvgMoveTo(vg, x + 2, cy + 14);
@@ -337,10 +363,13 @@ void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy) {
 }
 
 void App::UpdateTiles(u64 down, u64 held) {
-    if (Repeat(down, held, HidNpadButton_AnyLeft) && m_tile % 4 > 0) m_tile--;
-    if (Repeat(down, held, HidNpadButton_AnyRight) && m_tile % 4 < 3) m_tile++;
-    if (Repeat(down, held, HidNpadButton_AnyUp) && m_tile >= 4) m_tile -= 4;
-    if (Repeat(down, held, HidNpadButton_AnyDown) && m_tile < 4) m_tile += 4;
+    // four in the first row, five in the second
+    const bool second = m_tile >= kFirstRow;
+    const int col = second ? m_tile - kFirstRow : m_tile;
+    if (Repeat(down, held, HidNpadButton_AnyLeft) && col > 0) m_tile--;
+    if (Repeat(down, held, HidNpadButton_AnyRight) && col < (second ? kTiles - kFirstRow : kFirstRow) - 1) m_tile++;
+    if (Repeat(down, held, HidNpadButton_AnyUp) && second) m_tile = std::min(col, kFirstRow - 1);
+    if (Repeat(down, held, HidNpadButton_AnyDown) && !second) m_tile = kFirstRow + col;
     if (down & HidNpadButton_A) OpenMoreTile(m_tile);
 }
 

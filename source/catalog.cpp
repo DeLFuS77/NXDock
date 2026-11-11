@@ -4,6 +4,9 @@
 
 #ifdef __SWITCH__
 #include <switch.h>
+#include "errors.hpp"
+#include "i18n_more.hpp"
+#include "log.hpp"
 #endif
 
 #include <yyjson.h>
@@ -327,6 +330,25 @@ void WriteCatalogCache(const std::string& url, const std::string& body) {
     }
 }
 
+// An error of the library as the card shows it (1A): what happened, what to do, the code small.
+std::string LibraryError(long status, const std::string& detail) {
+    const More& m = TrM();
+    ErrorText e;
+    if (status == 401) {
+        e = {m.le_key_t, m.le_key_w, m.le_key_d, "HTTP 401"};
+    } else if (status == 404) {
+        e = {m.le_off_t, m.le_off_w, m.le_off_d, "HTTP 404"};
+    } else if (status == -2) {
+        e = {m.le_stop_t, m.le_stop_w, m.le_stop_d, ""};
+    } else if (status <= 0) {
+        e = {m.le_reach_t, m.le_reach_w, m.le_reach_d, detail};
+    } else {
+        e = {m.le_server_t, m.le_server_w, m.le_server_d, "HTTP " + std::to_string(status)};
+    }
+    if (!e.code.empty()) log_write("[NXDock] library: %s\n", e.code.c_str());
+    return PackError(e);
+}
+
 } // namespace
 
 Catalog::~Catalog() {
@@ -407,7 +429,7 @@ void Catalog::Run(std::string url, std::string key) {
             m_total = int(http::JsonNumber(r.body, "total", 0));
             m_preparing = true;
             if (std::chrono::steady_clock::now() > deadline) {
-                fail(Tr().err_connect);
+                fail(LibraryError(-1, "503"));
                 return;
             }
             const long wait_ms = std::clamp(r.retry_after > 0 ? r.retry_after : 5L, 2L, 15L) * 1000;
@@ -429,11 +451,10 @@ void Catalog::Run(std::string url, std::string key) {
             m_state = State::Ready;
             return;
         }
-        fail(r.status == 401 ? Tr().err_key : r.status == 404 ? Tr().err_off
-             : r.status == 0 ? std::string(Tr().err_connect) + " (" + r.error + ")" : "HTTP " + std::to_string(r.status));
+        fail(LibraryError(r.status, r.error));
         return;
     }
-    fail(Tr().cancelled);
+    fail(LibraryError(-2, ""));
 }
 
 #endif

@@ -11,6 +11,9 @@
 #include <cstring>
 #include <vector>
 #include "i18n.hpp"
+#include "errors.hpp"
+#include "i18n_more.hpp"
+#include "log.hpp"
 #include "net.hpp"
 
 namespace nxdock {
@@ -229,12 +232,14 @@ double SpeedTest::NetStage(const std::string& url, const std::string& key, int c
         if (code == 401) Fail(s.err_key);
         else if (code == 404) Fail(s.err_off);
         else if (code == 403) Fail(s.err_forbidden);
-        else Fail(std::string("HTTP ") + std::to_string(code));
+        else Fail(PackError({s.err_connect, "", TrM().sp_todo, "HTTP " + std::to_string(code)}));
         return -1;
     }
     for (auto& w : workers) {
         if (!w.error.empty()) {
-            Fail(std::string(s.err_connect) + " (" + w.error + ")");
+            // the code of curl only in the small line, and in install.log
+            log_write("[NXDock] speed test: %s\n", w.error.c_str());
+            Fail(PackError({s.err_connect, "", TrM().sp_todo, w.error}));
             return -1;
         }
     }
