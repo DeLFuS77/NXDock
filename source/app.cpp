@@ -213,7 +213,7 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 // connecting by hand.
 enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
-    kRowDest, kRowPick, kRowSaveCopy, kRowScreen, kRowCompress,
+    kRowDest, kRowPick, kRowSaveCopy, kRowSaveAuto, kRowScreen, kRowCompress,
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowSounds, kRowAnim,
     kRowWizard,
@@ -750,6 +750,17 @@ void App::ActivateSetting(int row) {
             m_ui.save_copy = !m_ui.save_copy;
             m_ui.Save();
             break;
+        case kRowSaveAuto: {
+            // no, every 1, 3, 7, 14 or 30 days
+            static constexpr int steps[] = {0, 1, 3, 7, 14, 30};
+            int at = 0;
+            for (int k = 0; k < 6; k++) {
+                if (m_ui.save_auto_days == steps[k]) at = k;
+            }
+            m_ui.save_auto_days = steps[(at + 1) % 6];
+            m_ui.Save();
+            break;
+        }
         case kRowNotifyDone:
             m_ui.notify_done = !m_ui.notify_done;
             m_ui.Save();
@@ -1217,7 +1228,20 @@ void App::Tap(float x, float y, u64& down) {
                 m_files_menu_focus = it->index;
                 FilesDo(it->index);
                 break;
-            case HitKind::FilesMenuBack: m_files_menu = false; break;
+            case HitKind::FilesMenuBack:
+                m_files_menu = false;
+                m_vault_menu = false;
+                break;
+            case HitKind::VaultKind:
+                if (m_vault_kind != it->index) {
+                    m_vault_kind = it->index;
+                    OpenVault();
+                }
+                break;
+            case HitKind::VaultMenuRow:
+                m_vault_menu_focus = it->index;
+                VaultMenuDo(it->index);
+                break;
             case HitKind::MtpUnit:
                 m_mtp_unit = it->index;
                 ToggleMtpUnit(it->index);
@@ -1493,6 +1517,7 @@ bool App::Frame() {
     FollowQueue();
     FollowFilesWork();
     FollowSelfUpdate();
+    FollowSaveAuto();
     FollowFinish();
     FollowUsb();
     FollowPush();
@@ -3904,6 +3929,10 @@ void App::DrawSettings(NVGcontext* vg) {
     const char* themes[] = {s.light, s.dark, s.wiz_theme_auto};
     struct Row { const char* label; std::string value; bool accent; };
     const auto yes = [&](bool on) { return std::string(on ? s.yes_word : s.no_word); };
+    // how often the saves are copied by themselves (9A)
+    char save_auto[64];
+    if (m_ui.save_auto_days > 0) std::snprintf(save_auto, sizeof(save_auto), TrT().sv_auto_fmt, m_ui.save_auto_days);
+    else std::snprintf(save_auto, sizeof(save_auto), "%s", s.no_word);
     // the version, and the newer one when it was found (5A)
     const Updater::View up = m_updater ? m_updater->Snapshot() : Updater::View{};
     const bool self_newer = up.stage == Updater::Stage::Newer;
@@ -3920,6 +3949,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {m.st_dest, m_ui.dest == 2 ? s.wiz_ask_each : s.sd_card, true},
         {m.st_pick, picks[std::clamp(m_ui.pick, 0, 2)], true},
         {m.sc_row, yes(m_ui.save_copy), m_ui.save_copy},
+        {TrT().sv_auto_row, save_auto, m_ui.save_auto_days > 0},
         {m.st_screen, screens[m_ui.screen_off_auto ? 2 : m_ui.saver ? 1 : 0], m_ui.saver || m_ui.screen_off_auto},
         {m.cz_row, yes(m_ui.compress_on), m_ui.compress_on},
         {m.st_finish, yes(m_ui.finish_effect), m_ui.finish_effect},
@@ -5740,9 +5770,13 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::VaultRestore: {
             const Config c = m_link.CurrentConfig();
-            if (m_vault && c.Linked() && m_dialog.game >= 0 && m_dialog.game < int(m_vault_saves.size()) && !m_vault_users.empty()) {
-                m_vault->StartRestore(c.url, c.key, m_vault_users[m_vault_user], m_vault_saves[m_dialog.game].app_id, m_dialog.save,
-                                      TrM().before_restore);
+            if (!m_vault || m_dialog.game < 0 || m_dialog.game >= int(m_vault_saves.size())) break;
+            const Vault::User user = m_vault_users.empty() ? Vault::User{} : m_vault_users[m_vault_user];
+            if (!m_dialog.text.empty()) {
+                // a copy of the SD card (9A)
+                m_vault->StartRestoreSd(user, m_vault_kind, m_vault_saves[m_dialog.game].app_id, m_dialog.text, TrM().before_restore);
+            } else if (c.Linked()) {
+                m_vault->StartRestore(c.url, c.key, user, m_vault_saves[m_dialog.game].app_id, m_dialog.save, TrM().before_restore, m_vault_kind);
             }
             break;
         }

@@ -60,22 +60,52 @@ public:
         int finished = 0;    // counts the ends: the screen notices a new one
         bool last_restore = false;
         bool listed = false; // the copies of the library were read
+        int copied = 0;      // saves copied by the last Copy all
+        bool last_delete = false;
         std::vector<LibrarySave> library;
         unsigned list_version = 0;
     };
+
+    // A copy kept on the SD card when there is no library (9A): sdmc:/switch/NXDock/saves/<title ID>/.
+    struct SdCopy {
+        std::string path, note, who;
+        long long when = 0;
+        unsigned version = 0;
+        int kind = 0; // 0 a user's, 1 the console's, 2 BCAT
+        bool automatic = false;
+        unsigned long long size = 0;
+    };
+    static std::vector<SdCopy> SdCopies(unsigned long long app_id, int kind);
+    // What a copy of the library is for (its account): a user's, the console's or BCAT.
+    static int KindOf(const LibrarySave& copy);
 
     Vault();
     ~Vault();
 
     std::vector<User> Users();
-    std::vector<Save> Saves(const User& user);
+    // The saves of a kind: 0 of `user`, 1 of the console (device), 2 BCAT.
+    std::vector<Save> Saves(const User& user, int kind = 0);
 
     // On a thread; false while something else runs.
     bool StartList(const std::string& url, const std::string& key);
+    // An empty `url` copies to the SD card (9A).
     bool StartBackup(const std::string& url, const std::string& key, const User& user, unsigned long long app_id, unsigned version,
-                     const std::string& note);
+                     const std::string& note, int kind = 0);
     bool StartRestore(const std::string& url, const std::string& key, const User& user, unsigned long long app_id,
-                      const LibrarySave& copy, const std::string& before_note);
+                      const LibrarySave& copy, const std::string& before_note, int kind = 0);
+    // A copy of the SD card over the save; the one it replaces goes to the SD card first.
+    bool StartRestoreSd(const User& user, int kind, unsigned long long app_id, const std::string& zip, const std::string& before_note);
+    // Every save given, one after the other; `automatic` copies on the SD card keep the newest three.
+    struct Item {
+        User user;
+        int kind = 0;
+        unsigned long long app_id = 0;
+        unsigned version = 0;
+    };
+    bool StartBackupAll(const std::string& url, const std::string& key, std::vector<Item> items, const std::string& note, bool automatic);
+    // A copy first (the library, or the SD card), then the save is deleted; a failed copy deletes nothing.
+    bool StartDelete(const std::string& url, const std::string& key, const User& user, int kind, unsigned long long app_id, unsigned version,
+                     const std::string& note);
     View Snapshot();
     bool Busy();
 

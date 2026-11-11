@@ -33,6 +33,8 @@ struct Tools {
     const char *cd_title_fmt, *cd_id, *cd_version, *cd_where, *cd_ticket, *cd_t_common, *cd_t_personal, *cd_t_missing, *cd_t_none, *cd_keys, *cd_keys_fmt, *cd_keys_one_fmt, *cd_firmware, *cd_firmware_fmt, *cd_needs_app, *cd_asks, *cd_asks_fmt, *cd_ticket_go, *cd_version_go, *cd_no_lib, *cd_version_done, *cd_version_fail, *cd_ticket_label, *cd_hint, *cd_missing_note;
     // more folders for the computer over MTP (8A)
     const char *mu_title, *mu_installed, *mu_installed_sub, *mu_saves, *mu_saves_sub, *mu_album, *mu_album_sub, *mu_usb, *mu_usb_sub, *mu_usb_none, *mu_device, *mu_note;
+    // more of the saves (9A)
+    const char *sv_user, *sv_device, *sv_bcat, *sv_kind, *sv_more, *sv_copy_all, *sv_games_fmt, *sv_delete, *sv_lib, *sv_sd, *sv_copies, *sv_sd_note, *sv_del_title_fmt, *sv_del_body, *sv_del_go, *sv_del_note, *sv_deleted, *sv_all_done_fmt, *sv_all_note, *sv_auto_row, *sv_auto_fmt, *sv_auto_note, *sv_auto_done_fmt, *sv_none_kind;
 };
 
 const Tools& TrT();

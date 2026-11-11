@@ -68,7 +68,7 @@ private:
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
-                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit };
+                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -243,6 +243,22 @@ private:
     std::vector<Vault::User> m_vault_users;
     std::vector<Vault::Save> m_vault_saves;
     int m_vault_user = 0, m_vault_focus = 0, m_vault_copy = 0, m_vault_side = 0, m_vault_finished = 0;
+    // more of the saves (9A): the kind, the copies of the SD card, the menu of −, the automatic copies
+    struct VaultRow {
+        bool sd = false;
+        LibrarySave lib;
+        Vault::SdCopy copy;
+        long long When() const { return sd ? copy.when : lib.when; }
+    };
+    std::vector<VaultRow> VaultRows();
+    void DrawVaultMenu(NVGcontext* vg);
+    void VaultMenuDo(int row);
+    void ConfirmSaveDelete();
+    void FollowSaveAuto();
+    int m_vault_kind = 0;
+    bool m_vault_menu = false;
+    int m_vault_menu_focus = 0;
+    bool m_save_auto_started = false, m_vault_auto_running = false;
     // space and dumps (8A, more_space.cpp)
     unsigned long long QueueNeedsOnSd();
     void OpenSpace();
@@ -582,7 +598,7 @@ private:
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
-                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails };
+                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
