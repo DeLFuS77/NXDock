@@ -68,8 +68,8 @@ target_include_directories(monocypher PUBLIC ${monocypher_SOURCE_DIR}/src ${mono
 target_compile_options(monocypher PRIVATE -O2)
 
 # The public keys of the releases (release.pub, minisign): each line of 56 base64 letters, built
-# into NXDock so it trusts only a new version signed with one of them. None yet: NXDock never
-# updates itself.
+# into NXDock so it trusts only a new version signed with one of them. With none, NXDock only
+# tells of a new version.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/release.pub)
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/release.pub _release_lines)
 set(NXDOCK_RELEASE_KEYS "")

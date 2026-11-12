@@ -1,2 +1,7 @@
 # The public keys the releases of NXDock are signed with (minisign), written by
-# tools/releasekey. Check a download with: minisign -Vm SHA256SUMS.txt -p release.pub
+# tools/releasekey. With none, NXDock only tells of a new version.
+untrusted comment: minisign public key 54162652828672F1
+RWTxcoaCUiYWVPPApfxw/WTbOYXKe7ngryOOlQwwMpDGDL2qDOR+WhnX
+# a spare key, kept apart from the first: it signs the releases if the first is lost
+untrusted comment: minisign public key ADE123041A110933
+RWQzCREaBCPhrTqQmBMFU59v2419OAvxCrPaw9CRfz2tJlTwuLWL0JrN
