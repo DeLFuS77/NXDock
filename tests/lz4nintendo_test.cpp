@@ -60,7 +60,7 @@ std::vector<uint8_t> Input(int kind, int variant, int size) {
         break;
     }
     case 3: {
-        static const char* const words[] = {"switch ", "game ", "update ", "zelda ", "nintendo ", "\0\0\0\0", "level_", "texture "};
+        static const char* const words[] = {"switch ", "game ", "update ", "forest", "nintendo ", "\0\0\0\0", "level_", "texture "};
         static const size_t lengths[] = {7, 5, 7, 6, 9, 4, 6, 8};
         while (int(out.size()) < size) {
             switch (r.Intn(4)) {
