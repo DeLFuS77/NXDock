@@ -65,6 +65,12 @@ std::vector<const CatalogFile*> Game::Dlc() const {
     return out;
 }
 
+size_t Game::DlcCount() const {
+    size_t n = 0;
+    for (const auto& f : files) n += f.kind == CatalogFile::Kind::Dlc;
+    return n;
+}
+
 bool Game::UpdateAvailable() const {
     const CatalogFile* update = NewestUpdate();
     return installed.base && update && update->version > installed.patch;
@@ -72,8 +78,8 @@ bool Game::UpdateAvailable() const {
 
 bool Game::MissingDlc() const {
     if (!installed.base) return false;
-    for (const auto* d : Dlc()) {
-        if (!installed.dlc.count(d->title_id)) return true;
+    for (const auto& f : files) {
+        if (f.kind == CatalogFile::Kind::Dlc && !installed.dlc.count(f.title_id)) return true;
     }
     return false;
 }
@@ -82,7 +88,9 @@ u64 Game::SizeOfAll() const {
     u64 total = 0;
     if (const auto* b = Base()) total += b->size;
     if (const auto* u = NewestUpdate()) total += u->size;
-    for (const auto* d : Dlc()) total += d->size;
+    for (const auto& f : files) {
+        if (f.kind == CatalogFile::Kind::Dlc) total += f.size;
+    }
     return total;
 }
 
@@ -382,6 +390,13 @@ std::vector<Game> Catalog::Games() {
     return m_games;
 }
 
+std::vector<Game> Catalog::TakeGames() {
+    std::lock_guard lock(m_mutex);
+    if (!m_out_ready) return m_games;
+    m_out_ready = false;
+    return std::move(m_games_out);
+}
+
 void Catalog::Publish(std::vector<Game> games) {
     const auto installed = ReadInstalled();
     for (auto& game : games) {
@@ -390,9 +405,13 @@ void Catalog::Publish(std::vector<Game> games) {
             game.installed = it->second;
         }
     }
+    // copied here, on the load's thread: the drawing thread only takes it (TakeGames)
+    std::vector<Game> out = games;
     {
         std::lock_guard lock(m_mutex);
         m_games = std::move(games);
+        m_games_out = std::move(out);
+        m_out_ready = true;
     }
     m_version++;
 }

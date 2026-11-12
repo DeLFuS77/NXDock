@@ -46,6 +46,8 @@ struct Game {
     const CatalogFile* Base() const;
     const CatalogFile* NewestUpdate() const;
     std::vector<const CatalogFile*> Dlc() const;
+    // how many DLC files, without making the list (called for every game when counting)
+    size_t DlcCount() const;
     bool UpdateAvailable() const;
     bool MissingDlc() const;
     u64 SizeOfAll() const;
@@ -64,6 +66,9 @@ public:
     // says when to take a new copy.
     unsigned Version() const { return m_version.load(); }
     std::vector<Game> Games();
+    // The same, without copying on the caller's thread: the copy of the newest load, made on the
+    // load's thread, handed over once; later calls copy as Games().
+    std::vector<Game> TakeGames();
     // Stops a load that waits on the library; what was shown stays.
     void Cancel() { m_cancel = true; }
     // The library is still preparing its catalog (a large one, the first time): how far it is.
@@ -86,6 +91,8 @@ private:
     std::atomic<unsigned> m_version{0};
     std::mutex m_mutex;
     std::vector<Game> m_games;
+    std::vector<Game> m_games_out; // a copy of m_games for TakeGames
+    bool m_out_ready = false;
     std::string m_error;
 };
 

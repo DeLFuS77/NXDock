@@ -106,6 +106,7 @@ void App::FollowShop() {
     m_shop_key = ShopKey(shop);
     m_shop_url = shop.url;
     m_games = ShopGames(files);
+    m_games_epoch++;
     if (m_queue) {
         const auto installed = m_queue->Installed();
         for (auto& g : m_games) {
@@ -126,6 +127,7 @@ void App::LeaveShop() {
     m_shop_active = false;
     m_shop_key.clear();
     m_games = m_catalog.Games();
+    m_games_epoch++;
     m_games_version = m_catalog.Version();
     if (m_queue) {
         const auto installed = m_queue->Installed();
@@ -197,6 +199,7 @@ void App::EnterShopsTab() {
         m_shop_key = ShopKey(shop);
         m_shop_url = shop.url;
         m_games = m_shop_cache;
+        m_games_epoch++;
         if (m_queue) {
             const auto installed = m_queue->Installed();
             for (auto& g : m_games) {
