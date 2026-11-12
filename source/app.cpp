@@ -1100,7 +1100,10 @@ void App::ReadTouch(u64& down) {
         if (!m_long_fired && !m_dragging && m_tab == Tab::More && m_more == MoreScreen::Files && m_time - m_touch_at > 0.55 && std::fabs(x - m_touch_x0) <= kDragSlop &&
             std::fabs(y - m_touch_y0) <= kDragSlop && m_dialog.kind == DialogKind::None) {
             m_long_fired = true;
+            m_press_live = false; // the menu opens: the wave under the finger goes
+            m_release_at = m_time;
             LongPress(x, y);
+            if (m_files_menu) TouchTick();
         }
         if (m_az_touch) {
             const int slot = std::clamp(int((y - kAzTop) / (g_az_height / 27)), 0, 26);
@@ -2262,9 +2265,14 @@ void App::DrawTouchFeedback(NVGcontext* vg) {
         }
         nvgRestore(vg);
     }
-    // 18A: held still on a cover, a ring fills around the finger until its quick menu opens
-    if (m_touching && m_press_live && m_press_kind == HitKind::Cover && !m_long_fired && GridTab() && !m_detail && m_quick < 0) {
-        const float p = float((m_time - m_press_at - 0.12) / (0.45 - 0.12));
+    // 18A: held still on a cover, a ring fills around the finger until its quick menu opens; on a
+    // file of More › Files, until its menu opens
+    const bool cover_hold = m_press_kind == HitKind::Cover && GridTab() && !m_detail && m_quick < 0;
+    const bool file_hold = (m_press_kind == HitKind::MoreRow || m_press_kind == HitKind::MoreMark) && m_tab == Tab::More &&
+                           m_more == MoreScreen::Files && !m_files_menu && !m_fwork;
+    if (m_touching && m_press_live && !m_long_fired && (cover_hold || file_hold)) {
+        const double hold = cover_hold ? 0.45 : 0.55;
+        const float p = float((m_time - m_press_at - 0.12) / (hold - 0.12));
         if (p > 0) {
             NVGcolor track = t.work;
             track.a = 0.25f;
@@ -2679,7 +2687,7 @@ void App::DrawMenu(NVGcontext* vg) {
     nvgRect(vg, x - 30, y - 20, w + 60, h + 60);
     nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 10, w, h, 16, 36, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
-    Panel(vg, t, x, y, w, h, 16);
+    draw::Popup(vg, t, x, y, w, h, 16);
     AddHit(x, y, w, h, HitKind::Button); // a tap on the panel itself does nothing
     ui::Text(vg, x + 22, y + pad + 17, 14, t.muted, s.options);
     const char* sorts[] = {s.sort_az, s.sort_size, s.sort_missing, s.sort_recent};
@@ -3585,10 +3593,7 @@ void App::DrawQuick(NVGcontext* vg) {
     nvgScale(vg, 0.85f + 0.15f * pop, 0.85f + 0.15f * pop);
     nvgTranslate(vg, -ox, -(y + 30));
     nvgGlobalAlpha(vg, std::min(1.f, pop * 1.5f));
-    ui::Glass(vg, t, x, y, w, h, 18);
-    NVGcolor solid = t.panel;
-    solid.a = 0.85f; // over the covers it is read clearly
-    ui::FillRound(vg, x, y, w, h, 18, solid);
+    draw::Popup(vg, t, x, y, w, h, 18); // over the covers it is read clearly
     AddHit(x, y, w, h, HitKind::Button); // the panel itself does nothing
     const char* labels[] = {TrM().qm_install_sd, TrM().qm_page, s.verify, TrM().t_mods};
     for (size_t i = 0; i < rows.size(); i++) {
@@ -6289,7 +6294,7 @@ void App::DrawDialog(NVGcontext* vg) {
     nvgRoundedRect(vg, x - 10, y + 6, w + 20, h + 20, 22);
     nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 10, w, h, 18, 40, nvgRGBAf(0, 0, 0, 0.5f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
-    Panel(vg, t, x, y, w, h, 18);
+    draw::Popup(vg, t, x, y, w, h, 18); // nearly solid: what is behind does not show through
     // a tap on the panel itself does nothing
     AddHit(x, y, w, h, HitKind::Button);
 

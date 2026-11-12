@@ -18,6 +18,15 @@ inline void Panel(NVGcontext* vg, const Theme& t, float x, float y, float w, flo
     ui::Glass(vg, t, x, y, w, h, r); // glass, with a soft shadow (12A)
 }
 
+// A menu that opens over the screen: glass too, but nearly solid, so what is behind does not
+// get in the way of its rows.
+inline void Popup(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
+    ui::Glass(vg, t, x, y, w, h, r);
+    NVGcolor solid = t.panel;
+    solid.a = 0.92f;
+    ui::FillRound(vg, x, y, w, h, r, solid);
+}
+
 inline float BoxHeight(NVGcontext* vg, float w, float size, const char* str) {
     nvgFontFace(vg, "ui");
     nvgFontSize(vg, size);

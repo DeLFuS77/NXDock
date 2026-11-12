@@ -283,7 +283,7 @@ void App::DrawFilesMenu(NVGcontext* vg) {
     nvgRoundedRect(vg, x - 8, y + 6, kMenuW + 16, h + 16, 20);
     nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 10, kMenuW, h, 16, 36, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
-    draw::Panel(vg, t, x, y, kMenuW, h, 16);
+    draw::Popup(vg, t, x, y, kMenuW, h, 16);
     AddHit(x, y, kMenuW, h, HitKind::Button); // the panel itself does nothing
     const auto chosen = FilesChosen();
     char head[160];

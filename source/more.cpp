@@ -264,7 +264,9 @@ void App::DrawTiles(NVGcontext* vg) {
         nvgRestore(vg);
         nvgSave(vg);
         nvgIntersectScissor(vg, x + 12, y, kTileW - 24, kTileH);
-        ui::Title(vg, x + 20, y + 94, 19, t.text, titles[tool]);
+        // a long name (as «Desde el ordenador (MTP)») gets a little smaller instead of being cut
+        const float tw = ui::TextWidth(vg, 19, titles[tool]);
+        ui::Title(vg, x + 20, y + 94, tw > kTileW - 40 ? std::max(15.f, 19 * (kTileW - 40) / tw) : 19.f, t.text, titles[tool]);
         nvgRestore(vg);
         draw::Box(vg, x + 20, y + 112, kTileW - 40, 14, t.muted, subs[tool]);
         nvgRestore(vg);
@@ -689,12 +691,12 @@ void App::DrawFiles(NVGcontext* vg) {
     const float sy = 586, sh = 64;
     char text[200];
     std::snprintf(text, sizeof(text), m.marked_short_fmt, count, draw::Size(bytes).c_str());
-    const float mw = std::max({190.f, ui::TextWidth(vg, 16, text) + 40, ui::TextWidth(vg, 13, tt.fa_switch) + 72});
+    const float mw = std::max({190.f, ui::TextWidth(vg, 16, text) + 40, ui::TextWidth(vg, 13, tt.fa_switch) + 98});
     draw::Panel(vg, t, lx, sy, mw, sh, 12);
     ui::CheckMark(vg, lx + 22, sy + 21, 12, t.work, 2.4f);
     ui::Text(vg, lx + 40, sy + 21, 16, t.text, text);
     draw::Toggle(vg, t, lx + 16, sy + 45, m_files_after, "files-after");
-    ui::Text(vg, lx + 66, sy + 45, 13, m_files_after ? t.text : t.muted, tt.fa_switch);
+    ui::Text(vg, lx + 80, sy + 45, 13, m_files_after ? t.text : t.muted, tt.fa_switch); // clear of the switch
     AddHit(lx, sy, mw, sh, HitKind::FilesAfter);
     DestCards(vg, lx + mw + 12, sy, lw - mw - 12, sh, m_files_nand, bytes, HitKind::FilesDest);
 
@@ -866,8 +868,8 @@ void App::DrawArrival(NVGcontext* vg) {
         // where what arrives goes, in large: the SD card unless chosen
         DestCards(vg, px + 20, py + ph - 84, pw - 40, 64, m_files_nand, 0, HitKind::FilesDest);
     }
-    if (!m_more_error.empty()) {
-        draw::Box(vg, px + 26, py + ph - (mtp ? 70 : 150), pw - 52, 15, t.err, m_more_error.c_str());
+    if (!m_more_error.empty() && !mtp) {
+        draw::Box(vg, px + 26, py + ph - 150, pw - 52, 15, t.err, m_more_error.c_str());
     }
 
     // what is arriving
@@ -915,6 +917,11 @@ void App::DrawArrival(NVGcontext* vg) {
         char line[96];
         std::snprintf(line, sizeof(line), m.count_fmt, done, failed);
         ui::Text(vg, rx + 26, cy + 10, 15, t.muted, line);
+        cy += 34;
+    }
+    if (!m_more_error.empty() && mtp) {
+        // on the side of what arrives: the left panel is full with the folders and their switches
+        draw::Box(vg, rx + 26, cy + 4, pw - 52, 15, t.err, m_more_error.c_str());
     }
     {
         // the console, with what arrives flying into its screen (its Joy-Con in their own colours)

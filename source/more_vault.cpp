@@ -313,7 +313,7 @@ void App::DrawVaultMenu(NVGcontext* vg) {
     const float pop = ui::EaseOutBack(ui::Appear(m_list_at, 0.28f));
     nvgSave(vg);
     nvgGlobalAlpha(vg, std::min(1.f, pop * 1.4f));
-    draw::Panel(vg, t, x, y, w, h, 16);
+    draw::Popup(vg, t, x, y, w, h, 16);
     AddHit(x, y, w, h, HitKind::Button);
     const std::string game = m_vault_focus < int(m_vault_saves.size()) ? m_vault_saves[size_t(m_vault_focus)].name : "";
     nvgSave(vg);
