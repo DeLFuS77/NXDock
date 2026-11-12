@@ -18,6 +18,9 @@ jobs:
   c-cpp:
     name: Analyze (c-cpp)
     runs-on: ubuntu-24.04
+    # code scanning needs the repository to be public (or GitHub Advanced Security): while it is
+    # private, the results cannot be uploaded and the job would only fail
+    if: ${{ !github.event.repository.private }}
     # the compiler of the console, so CodeQL sees the code as it is built for it
     container: devkitpro/devkita64:latest
     permissions:
@@ -51,6 +54,9 @@ jobs:
   go:
     name: Analyze (go)
     runs-on: ubuntu-24.04
+    # code scanning needs the repository to be public (or GitHub Advanced Security): while it is
+    # private, the results cannot be uploaded and the job would only fail
+    if: ${{ !github.event.repository.private }}
     permissions:
       contents: read
       security-events: write
