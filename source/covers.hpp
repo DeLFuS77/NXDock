@@ -31,8 +31,8 @@ public:
     // (1A); false while the cover has not been read.
     static constexpr int kThumb = 24;
     bool Thumb(const std::string& path, unsigned char* out);
-    // Makes the decoded covers into images; call once per frame on the drawing thread.
-    void Upload(NVGcontext* vg);
+    // Makes the decoded covers into images; call once per frame on the drawing thread. How many.
+    int Upload(NVGcontext* vg);
     void Free(NVGcontext* vg);
 
 private:

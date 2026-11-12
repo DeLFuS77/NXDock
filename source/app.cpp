@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "app.hpp"
+#include "perf.hpp"
 
 #include "draw.hpp"
 #include "errors.hpp"
@@ -378,16 +379,19 @@ std::string Clip(std::string text, size_t max) {
 } // namespace
 
 bool App::Init() {
+    perf::Mark("main");
     InitStrings();
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&m_pad);
     hidInitializeTouchScreen();
     net::Init();
+    perf::Mark("net ready");
     const Config config = Config::Load();
     m_theme = config.light ? LightTheme() : DarkTheme();
     if (!m_gfx.Init()) {
         return false;
     }
+    perf::Mark("graphics and fonts ready");
     // remembered: connects by itself; else looks for the app on the network
     m_link.Start(config);
     m_prefs = InstallPrefs::Load();
@@ -407,8 +411,11 @@ bool App::Init() {
     }
     m_psm = R_SUCCEEDED(psmInitialize());
     m_nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
+    perf::Mark("settings and services");
     m_sound.Start();
+    perf::Mark("sound");
     InitRumble();
+    perf::Mark("rumble");
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_report = std::make_unique<QueueReport>();
@@ -463,12 +470,15 @@ bool App::Init() {
         }
         return CopySavesBefore(c.url, c.key, app, current, note, progress);
     });
+    perf::Mark("install queue");
     m_push = std::make_unique<Push>();
     m_safety = std::make_unique<Safety>();
     m_sysinfo = ReadSystemInfo();
+    perf::Mark("push, safety, system info");
     m_time = Now();
     m_last_input = m_time;
     m_home = forwarder::Query();
+    perf::Mark("HOME shortcut looked at");
     if (!m_ui.wizard_done) {
         OpenWizard(); // only the first time; repeated from Settings
     } else if (net::IsAppletMode() && !m_home.installed && m_home.nro_found) {
@@ -1039,7 +1049,7 @@ void App::KeepFocusVisible() {
 
 void App::ReadTouch(u64& down) {
     HidTouchScreenState state{};
-    hidGetTouchScreenStates(&state, 1);
+    perf::ReadTouch(state);
     if (m_wake_touch) {
         // the finger that woke the screen: nothing until it is lifted
         if (state.count == 0) m_wake_touch = false;
@@ -1645,13 +1655,23 @@ bool App::Frame() {
     if (!appletMainLoop() || m_quit) {
         return false;
     }
+    perf::FrameBegin();
     const double now = Now();
     const float dt = float(std::min(0.1, now - m_time));
     m_time = now;
 
     padUpdate(&m_pad);
     u64 down = padGetButtonsDown(&m_pad);
-    const u64 held = padGetButtons(&m_pad);
+    u64 held = padGetButtons(&m_pad);
+#ifdef NXDOCK_PERF
+    {
+        u64 scripted = 0;
+        perf::Script(scripted, m_quit);
+        down |= scripted & ~m_perf_held;
+        held |= scripted;
+        m_perf_held = scripted;
+    }
+#endif
     // the clock of the animations, and the buttons whose symbols pulse
     ui::Tick(m_time);
     ui::NotePress(down);
@@ -1660,7 +1680,7 @@ bool App::Frame() {
         m_dialog_at = m_time;
     }
     HidTouchScreenState touch{};
-    hidGetTouchScreenStates(&touch, 1);
+    perf::ReadTouch(touch);
     const bool new_touch = touch.count > 0 && !m_touching && !m_wake_touch;
     if (down || held || touch.count > 0) {
         m_last_input = m_time;
@@ -1681,7 +1701,7 @@ bool App::Frame() {
         down = 0;
     }
     const u64 focus_before = FocusSignature();
-    ReadTouch(down);
+    { perf::Timer t_("frame: ReadTouch"); ReadTouch(down); }
     // a list being dragged: one row a frame, as a press of the pad
     if (m_drag_pending > 0 && !(down & HidNpadButton_AnyDown)) {
         down |= HidNpadButton_Down;
@@ -1695,8 +1715,8 @@ bool App::Frame() {
         m_list_fling = 0;
     }
     GridSize(m_ui.library_size, m_ui.focus_view == 1);
-    Update(down, held);
-    FollowPreflight();
+    { perf::Timer t_("frame: Update"); Update(down, held); }
+    { perf::Timer t_("frame: FollowPreflight"); FollowPreflight(); }
     if (m_tab != m_tab_seen) {
         // the Library again: what the console has now, also what DBI or the HOME menu changed
         if (m_tab_seen == Tab::Shops) LeaveShopsTab();
@@ -1708,15 +1728,15 @@ bool App::Frame() {
         }
         m_tab_seen = m_tab;
     }
-    PlaySounds(down, focus_before);
-    FollowTour();
+    { perf::Timer t_("frame: PlaySounds"); PlaySounds(down, focus_before); }
+    { perf::Timer t_("frame: FollowTour"); FollowTour(); }
     // saver mode: dark after a minute without input while something installs
     if (m_queue && !m_queue->Busy()) {
         m_saver_on = false;
     } else if (m_ui.saver && !m_wizard && m_time - m_last_input > 60) {
         m_saver_on = true;
     }
-    FollowLink();
+    { perf::Timer t_("frame: FollowLink"); FollowLink(); }
     if (m_refreshing && m_catalog.GetState() != Catalog::State::Loading && m_time - m_refresh_at > 0.4) {
         // the library read again by pulling it down (21A): said in green, and the grid goes back up
         m_refreshing = false;
@@ -1732,18 +1752,18 @@ bool App::Frame() {
         m_tick_off_at = -1;
         if (m_rumble_step < 0) SendRumble(false);
     }
-    FollowQueue();
-    FollowFilesWork();
-    FollowSelfUpdate();
-    FollowSaveAuto();
-    FollowFinish();
-    FollowUsb();
-    FollowPush();
-    FollowQueueAsk();
-    FollowQueueWeb();
-    CheckSdSpace();
-    CheckBattery();
-    CheckWifi();
+    { perf::Timer t_("frame: FollowQueue"); FollowQueue(); }
+    { perf::Timer t_("frame: FollowFilesWork"); FollowFilesWork(); }
+    { perf::Timer t_("frame: FollowSelfUpdate"); FollowSelfUpdate(); }
+    { perf::Timer t_("frame: FollowSaveAuto"); FollowSaveAuto(); }
+    { perf::Timer t_("frame: FollowFinish"); FollowFinish(); }
+    { perf::Timer t_("frame: FollowUsb"); FollowUsb(); }
+    { perf::Timer t_("frame: FollowPush"); FollowPush(); }
+    { perf::Timer t_("frame: FollowQueueAsk"); FollowQueueAsk(); }
+    { perf::Timer t_("frame: FollowQueueWeb"); FollowQueueWeb(); }
+    { perf::Timer t_("frame: CheckSdSpace"); CheckSdSpace(); }
+    { perf::Timer t_("frame: CheckBattery"); CheckBattery(); }
+    { perf::Timer t_("frame: CheckWifi"); CheckWifi(); }
 
     // The grid goes on after the finger with its speed, slowing down; past an end it stops quickly
     // and comes back (16A)
@@ -1782,10 +1802,15 @@ bool App::Frame() {
     }
 
     m_gfx.CheckResize();
+    perf::Lap(perf::kUpdate);
     NVGcontext* vg = m_gfx.BeginFrame();
-    m_covers.Upload(vg);
+    perf::Lap(perf::kAcquire);
+    perf::Count(m_covers.Upload(vg));
+    perf::Lap(perf::kUpload);
     Draw(vg);
+    perf::Lap(perf::kDraw);
     m_gfx.EndFrame();
+    perf::Lap(perf::kPresent);
     return !m_quit;
 }
 
@@ -1844,17 +1869,22 @@ void App::Draw(NVGcontext* vg) {
     m_hits.clear();
     m_hint_rects.clear();
     m_list_pitch = 0; // set again by the list drawn, if any
-    Background(vg, m_theme);
-    // the slow lights behind, paused while installing on little battery
     const bool low = m_queue && m_queue->Busy() && m_battery >= 0 && m_battery < 20 && !m_charging;
-    if (!low) ui::Aurora(vg, m_theme);
+    {
+        perf::Timer t_("draw: background and aurora");
+        Background(vg, m_theme);
+        // the slow lights behind, paused while installing on little battery
+        if (!low) ui::Aurora(vg, m_theme);
+    }
     // the light of the game in focus (1A), behind the library and the page of a game; paused, as
     // the aurora, while installing on little battery
     if (!m_wizard && GridTab() && !low) {
         const bool shown = m_tab == Tab::Shops ? m_shop_active : m_link.Snapshot().state == Link::State::Connected;
         if (shown && m_detail && m_detail_game >= 0 && m_detail_game < int(m_games.size())) {
+            perf::Timer t_("draw: backdrop");
             DrawBackdrop(vg, m_games[m_detail_game], true);
         } else if (shown && !m_detail && !m_view.empty()) {
+            perf::Timer t_("draw: backdrop");
             DrawBackdrop(vg, m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]], false);
         }
     }
@@ -1875,6 +1905,7 @@ void App::Draw(NVGcontext* vg) {
         queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
     }
     const float sd_used = m_sd_total_bytes > 0 && m_sd_free_bytes >= 0 ? 1.f - float(double(m_sd_free_bytes) / double(m_sd_total_bytes)) : -1.f;
+    perf::Timer t_top("draw: top bar");
     const float capsule = ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect, sd_used);
     if (m_wifi > -2) m_hits.push_back({m_wifi_rect, HitKind::Wifi, 0});
     if (m_shop_active && m_tab == Tab::Library) {
@@ -1927,6 +1958,8 @@ void App::Draw(NVGcontext* vg) {
         if (back <= 0) m_swipe_back = 0;
     }
     if (shift != 0) nvgTranslate(vg, shift, 0);
+    t_top.Stop();
+    perf::Timer t_tab("draw: the tab");
     switch (m_tab) {
         case Tab::Library: {
             const Link::View link = m_link.Snapshot();
@@ -1953,6 +1986,8 @@ void App::Draw(NVGcontext* vg) {
         case Tab::Settings: DrawSettings(vg); break;
     }
     nvgRestore(vg);
+    t_tab.Stop();
+    perf::Timer t_over("draw: over the tab");
     DrawTransitions(vg);
     DrawJumpLetter(vg);
     AddHints(m_hint_rects);
@@ -2340,8 +2375,12 @@ void App::FollowLink() {
         m_games_version = m_catalog.Version();
         // the same game stays in focus; the first time, the one in focus when NXDock was closed
         m_keep_key = m_focus_restored ? FocusedKey() : m_ui.focus;
-        m_games = m_catalog.Games();
+        {
+            perf::Timer timer("app: take the catalog");
+            m_games = m_catalog.Games();
+        }
         if (!m_games.empty()) {
+            if (!m_focus_restored) perf::Mark("first list of games taken");
             m_focus_restored = true;
         }
         RebuildView();
@@ -2368,6 +2407,7 @@ std::string App::FocusedKey() const {
 }
 
 void App::RebuildView() {
+    perf::Timer timer("app: rebuild the view");
     const std::string keep = !m_keep_key.empty() ? m_keep_key : FocusedKey();
     m_keep_key.clear();
     m_view.clear();

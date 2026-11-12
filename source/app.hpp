@@ -655,6 +655,9 @@ private:
     double m_held_since = 0;
     u64 m_held_dir = 0;
     bool m_quit = false;
+#ifdef NXDOCK_PERF
+    u64 m_perf_held = 0; // the buttons the timing script held last frame
+#endif
 
     // Library grid scroll, in pixels: drawn value eases toward the target.
     float m_scroll = 0, m_scroll_target = 0;

@@ -5,6 +5,7 @@
 #ifdef __SWITCH__
 #include <switch.h>
 #include "errors.hpp"
+#include "perf.hpp"
 #include "i18n_more.hpp"
 #include "log.hpp"
 #endif
@@ -402,7 +403,13 @@ void Catalog::Run(std::string url, std::string key) {
     {
         std::string cached;
         std::vector<Game> games;
-        if (ReadCatalogCache(url, cached) && ParseCatalog(cached, games) && !games.empty()) {
+        bool ok;
+        {
+            perf::Timer timer("catalog: read+parse the SD copy");
+            ok = ReadCatalogCache(url, cached) && ParseCatalog(cached, games) && !games.empty();
+        }
+        if (ok) {
+            perf::Timer timer("catalog: publish (with installed)");
             Publish(std::move(games));
             shown = true;
             m_stale = true;
@@ -422,7 +429,9 @@ void Catalog::Run(std::string url, std::string key) {
     // 503 and Retry-After, and is asked again until it is ready
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(15);
     while (!m_cancel) {
+        const u64 asked_at = armGetSystemTick();
         const auto r = http::GetLarge(url + "/install/catalog?ncz=native", key, 180000, kCatalogMax, &m_cancel);
+        perf::Took("catalog: download", perf::Ms(armGetSystemTick() - asked_at));
         if (m_cancel) break;
         if (r.status == 503 && http::JsonBool(r.body, "preparing")) {
             m_done = int(http::JsonNumber(r.body, "done", 0));
@@ -440,8 +449,17 @@ void Catalog::Run(std::string url, std::string key) {
         }
         m_preparing = false;
         std::vector<Game> games;
-        if (r.status == 200 && ParseCatalog(r.body, games)) {
-            WriteCatalogCache(url, r.body);
+        bool parsed;
+        {
+            perf::Timer timer("catalog: parse");
+            parsed = r.status == 200 && ParseCatalog(r.body, games);
+        }
+        if (parsed) {
+            {
+                perf::Timer timer("catalog: write SD copy");
+                WriteCatalogCache(url, r.body);
+            }
+            perf::Timer timer("catalog: publish (with installed)");
             Publish(std::move(games));
             {
                 std::lock_guard lock(m_mutex);
