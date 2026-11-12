@@ -206,6 +206,7 @@ add_executable(nxdock
     source/more_update.cpp
     source/versions_list.cpp
     source/mtp_more.cpp
+    source/perf.cpp
 )
 
 target_compile_definitions(nxdock PRIVATE
@@ -214,6 +215,12 @@ target_compile_definitions(nxdock PRIVATE
 )
 
 target_compile_options(nxdock PRIVATE -Wall -Wextra -O2)
+
+# Timing for development (source/perf.hpp): the boot, every frame, and a script of inputs.
+option(NXDOCK_PERF "Time the boot and every frame into sdmc:/switch/NXDock/perf.log" OFF)
+if(NXDOCK_PERF)
+    target_compile_definitions(nxdock PRIVATE NXDOCK_PERF=1)
+endif()
 
 # The loader of the HOME menu shortcut (hbl/, nx-hbloader as Sphaira changed it, ISC): built as an
 # ExeFS (main and main.npdm) that forwarder.cpp carries with #embed.

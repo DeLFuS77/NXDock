@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <functional>
 #include "http.hpp"
+#include "perf.hpp"
 #include <switch.h>
 #include <cstdlib>
 #include <memory>
@@ -20,6 +21,8 @@
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
 #define STBI_NO_STDIO
+// the NEON paths of stb_image (IDCT and colour conversion) are left out on ARM unless asked for
+#define STBI_NEON
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include <stb_image.h>
@@ -189,7 +192,7 @@ int Covers::Get(const std::string& path) {
     return 0;
 }
 
-void Covers::Upload(NVGcontext* vg) {
+int Covers::Upload(NVGcontext* vg) {
     {
         std::lock_guard lock(m_mutex);
         m_frame++;
@@ -199,12 +202,13 @@ void Covers::Upload(NVGcontext* vg) {
             if (!busy.empty() && m_seen[busy] + kStaleFrames < m_frame) m_net_cancel[i] = true;
         }
     }
+    int done = 0;
     for (int i = 0; i < kUploadsPerFrame; i++) {
         Decoded d;
         int slot = 0;
         {
             std::lock_guard lock(m_mutex);
-            if (m_decoded.empty()) return;
+            if (m_decoded.empty()) return done;
             if (!m_free.empty()) {
                 slot = m_free.back();
                 m_free.pop_back();
@@ -216,7 +220,7 @@ void Covers::Upload(NVGcontext* vg) {
                 for (auto it = m_used.begin(); it != m_used.end(); ++it) {
                     if (oldest == m_used.end() || it->second < oldest->second) oldest = it;
                 }
-                if (oldest == m_used.end() || oldest->second + kReuseFrames > m_frame) return;
+                if (oldest == m_used.end() || oldest->second + kReuseFrames > m_frame) return done;
                 slot = m_images[oldest->first];
                 m_images.erase(oldest->first);
                 m_asked.erase(oldest->first);
@@ -227,7 +231,7 @@ void Covers::Upload(NVGcontext* vg) {
         }
         if (slot < 0) {
             slot = nvgCreateImageRGBA(vg, kMaxSide, kMaxSide, 0, d.rgba.data());
-            if (!slot) return;
+            if (!slot) return done;
             m_slots.push_back(slot);
         } else {
             nvgUpdateImage(vg, slot, d.rgba.data());
@@ -240,7 +244,9 @@ void Covers::Upload(NVGcontext* vg) {
         }
         m_images[d.path] = slot;
         m_used[d.path] = m_frame;
+        done++;
     }
+    return done;
 }
 
 bool Covers::Loading(const std::string& path) {
@@ -348,6 +354,10 @@ void Covers::Work(int net) {
             dropped = m_net_cancel[size_t(net)];
             m_net_path[size_t(net)].clear();
         }
+#ifdef NXDOCK_PERF
+        static const char* kOnCore[] = {"cover decode on core 0", "cover decode on core 1", "cover decode on core 2", "cover decode on core 3"};
+        perf::Timer timer(kOnCore[svcGetCurrentProcessorNumber() & 3]);
+#endif
         if (found && stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &comp) && w > 0 && h > 0 && w <= 4096 &&
             h <= 4096) {
             int channels = 0;

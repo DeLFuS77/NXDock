@@ -4,6 +4,8 @@
 #include <future>
 #include <set>
 #include <thread>
+#include <atomic>
+#include <mutex>
 
 #include <switch.h>
 #include <memory>
@@ -428,6 +430,8 @@ private:
     InstallJob JobFor(const Game& g, const CatalogFile& f);
     // The newest update of every installed game that has a newer one in the library.
     std::vector<InstallJob> PendingUpdates();
+    // whether a game's newest update can be installed now (as PendingUpdates chooses them)
+    bool UpdatePending(const Game& g) const;
     // The repairs a finished check asks for; false when the library lacks a version.
     bool RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>& out);
     std::string ContentLabel(const Game& g, const NcmContentMetaKey& key) const;
@@ -503,6 +507,16 @@ private:
     Covers m_covers;
     std::vector<Game> m_games;
     std::vector<int> m_view;        // games shown: the filter and the search applied
+    // counted again only when the games or what is installed change (RebuildView), not every frame
+    int m_filter_counts[5] = {};
+    size_t m_pending_updates = 0;
+    bool m_letter_present[27] = {}; // the letters the view has, for the A-Z bar
+    // the names in small letters and their letter, made once for each list of games (m_games_epoch
+    // goes up when m_games is replaced), not at every filter, search or order
+    unsigned m_games_epoch = 0, m_keys_epoch = ~0u;
+    std::vector<std::string> m_lower_names;
+    std::vector<unsigned char> m_letter_slots;
+    std::vector<int> m_name_rank; // where each game is in A-Z: the orders compare numbers, not names
     unsigned m_games_version = 0;
     std::string m_loaded_url;       // the library the catalog and covers come from
     std::string m_search;
@@ -517,6 +531,15 @@ private:
     s64 m_sd_free_bytes = -1;
     s64 m_nand_free_bytes = -1, m_nand_total_bytes = -1;
     double m_sd_checked = -100;
+    // the free space is read on a thread of its own: on a large FAT32 card it takes tens of ms,
+    // which held the frame; what it found is taken by the next frame
+    struct SpaceRead {
+        s64 sd_free = -1, sd_total = -1, nand_free = -1, nand_total = -1;
+    };
+    std::thread m_space_thread;
+    std::atomic<bool> m_space_ready{false};
+    bool m_space_running = false;
+    SpaceRead m_space_read;
     std::string m_notice;
     double m_notice_until = 0;
     bool m_notice_ok = false;
@@ -655,6 +678,9 @@ private:
     double m_held_since = 0;
     u64 m_held_dir = 0;
     bool m_quit = false;
+#ifdef NXDOCK_PERF
+    u64 m_perf_held = 0; // the buttons the timing script held last frame
+#endif
 
     // Library grid scroll, in pixels: drawn value eases toward the target.
     float m_scroll = 0, m_scroll_target = 0;

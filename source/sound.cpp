@@ -27,13 +27,7 @@ void Sound::Start() {
     if (m_started) {
         return;
     }
-    if (R_FAILED(audoutInitialize())) {
-        return;
-    }
-    if (R_FAILED(audoutStartAudioOut())) {
-        audoutExit();
-        return;
-    }
+    // what is played before audout is open waits for it (at most a few effects)
     m_started = true;
     m_quit = false;
     m_thread = std::thread(&Sound::Run, this);
@@ -47,7 +41,8 @@ void Sound::Stop() {
     if (m_thread.joinable()) {
         m_thread.join();
     }
-    audoutExit();
+    if (m_audio_ok) audoutExit();
+    m_audio_ok = false;
     m_started = false;
 }
 
@@ -70,6 +65,14 @@ void Sound::Music(bool on) {
 }
 
 void Sound::Run() {
+    if (R_FAILED(audoutInitialize())) {
+        return;
+    }
+    if (R_FAILED(audoutStartAudioOut())) {
+        audoutExit();
+        return;
+    }
+    m_audio_ok = true;
     AudioOutBuffer buffers[kBuffers]{};
     void* memory[kBuffers]{};
     for (int i = 0; i < kBuffers; i++) {

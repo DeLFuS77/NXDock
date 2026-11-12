@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Faster: a large library takes half the time to draw, the short pauses every
+  few seconds are gone, NXDock opens sooner and covers come quicker.
 - A new look: the screen takes the colours of the game in focus, shown in large
   under the covers or in a panel on the right (Settings), covers with round
   marks only, the queue as a floating pill, a short opening, tabs with icons

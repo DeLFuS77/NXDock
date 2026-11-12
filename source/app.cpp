@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "app.hpp"
+#include "perf.hpp"
 
 #include "draw.hpp"
 #include "errors.hpp"
@@ -378,16 +379,19 @@ std::string Clip(std::string text, size_t max) {
 } // namespace
 
 bool App::Init() {
+    perf::Mark("main");
     InitStrings();
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&m_pad);
     hidInitializeTouchScreen();
     net::Init();
+    perf::Mark("net ready");
     const Config config = Config::Load();
     m_theme = config.light ? LightTheme() : DarkTheme();
     if (!m_gfx.Init()) {
         return false;
     }
+    perf::Mark("graphics and fonts ready");
     // remembered: connects by itself; else looks for the app on the network
     m_link.Start(config);
     m_prefs = InstallPrefs::Load();
@@ -407,8 +411,11 @@ bool App::Init() {
     }
     m_psm = R_SUCCEEDED(psmInitialize());
     m_nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
+    perf::Mark("settings and services");
     m_sound.Start();
+    perf::Mark("sound");
     InitRumble();
+    perf::Mark("rumble");
     m_queue = std::make_unique<InstallQueue>();
     m_queue->SetOptions(m_prefs.connections, m_prefs.download_test);
     m_report = std::make_unique<QueueReport>();
@@ -463,12 +470,15 @@ bool App::Init() {
         }
         return CopySavesBefore(c.url, c.key, app, current, note, progress);
     });
+    perf::Mark("install queue");
     m_push = std::make_unique<Push>();
     m_safety = std::make_unique<Safety>();
     m_sysinfo = ReadSystemInfo();
+    perf::Mark("push, safety, system info");
     m_time = Now();
     m_last_input = m_time;
     m_home = forwarder::Query();
+    perf::Mark("HOME shortcut looked at");
     if (!m_ui.wizard_done) {
         OpenWizard(); // only the first time; repeated from Settings
     } else if (net::IsAppletMode() && !m_home.installed && m_home.nro_found) {
@@ -530,6 +540,7 @@ void App::Exit() {
     }
     // the backlight on again before leaving
     ScreenOn();
+    if (m_space_thread.joinable()) m_space_thread.join();
     if (m_lbl) lblExit();
     // a check or a download of a new version is let go
     m_updater.reset();
@@ -1039,7 +1050,7 @@ void App::KeepFocusVisible() {
 
 void App::ReadTouch(u64& down) {
     HidTouchScreenState state{};
-    hidGetTouchScreenStates(&state, 1);
+    perf::ReadTouch(state);
     if (m_wake_touch) {
         // the finger that woke the screen: nothing until it is lifted
         if (state.count == 0) m_wake_touch = false;
@@ -1645,13 +1656,23 @@ bool App::Frame() {
     if (!appletMainLoop() || m_quit) {
         return false;
     }
+    perf::FrameBegin();
     const double now = Now();
     const float dt = float(std::min(0.1, now - m_time));
     m_time = now;
 
     padUpdate(&m_pad);
     u64 down = padGetButtonsDown(&m_pad);
-    const u64 held = padGetButtons(&m_pad);
+    u64 held = padGetButtons(&m_pad);
+#ifdef NXDOCK_PERF
+    {
+        u64 scripted = 0;
+        perf::Script(scripted, m_quit);
+        down |= scripted & ~m_perf_held;
+        held |= scripted;
+        m_perf_held = scripted;
+    }
+#endif
     // the clock of the animations, and the buttons whose symbols pulse
     ui::Tick(m_time);
     ui::NotePress(down);
@@ -1660,7 +1681,7 @@ bool App::Frame() {
         m_dialog_at = m_time;
     }
     HidTouchScreenState touch{};
-    hidGetTouchScreenStates(&touch, 1);
+    perf::ReadTouch(touch);
     const bool new_touch = touch.count > 0 && !m_touching && !m_wake_touch;
     if (down || held || touch.count > 0) {
         m_last_input = m_time;
@@ -1681,7 +1702,7 @@ bool App::Frame() {
         down = 0;
     }
     const u64 focus_before = FocusSignature();
-    ReadTouch(down);
+    { perf::Timer t_("frame: ReadTouch"); ReadTouch(down); }
     // a list being dragged: one row a frame, as a press of the pad
     if (m_drag_pending > 0 && !(down & HidNpadButton_AnyDown)) {
         down |= HidNpadButton_Down;
@@ -1695,8 +1716,8 @@ bool App::Frame() {
         m_list_fling = 0;
     }
     GridSize(m_ui.library_size, m_ui.focus_view == 1);
-    Update(down, held);
-    FollowPreflight();
+    { perf::Timer t_("frame: Update"); Update(down, held); }
+    { perf::Timer t_("frame: FollowPreflight"); FollowPreflight(); }
     if (m_tab != m_tab_seen) {
         // the Library again: what the console has now, also what DBI or the HOME menu changed
         if (m_tab_seen == Tab::Shops) LeaveShopsTab();
@@ -1708,15 +1729,15 @@ bool App::Frame() {
         }
         m_tab_seen = m_tab;
     }
-    PlaySounds(down, focus_before);
-    FollowTour();
+    { perf::Timer t_("frame: PlaySounds"); PlaySounds(down, focus_before); }
+    { perf::Timer t_("frame: FollowTour"); FollowTour(); }
     // saver mode: dark after a minute without input while something installs
     if (m_queue && !m_queue->Busy()) {
         m_saver_on = false;
     } else if (m_ui.saver && !m_wizard && m_time - m_last_input > 60) {
         m_saver_on = true;
     }
-    FollowLink();
+    { perf::Timer t_("frame: FollowLink"); FollowLink(); }
     if (m_refreshing && m_catalog.GetState() != Catalog::State::Loading && m_time - m_refresh_at > 0.4) {
         // the library read again by pulling it down (21A): said in green, and the grid goes back up
         m_refreshing = false;
@@ -1732,18 +1753,18 @@ bool App::Frame() {
         m_tick_off_at = -1;
         if (m_rumble_step < 0) SendRumble(false);
     }
-    FollowQueue();
-    FollowFilesWork();
-    FollowSelfUpdate();
-    FollowSaveAuto();
-    FollowFinish();
-    FollowUsb();
-    FollowPush();
-    FollowQueueAsk();
-    FollowQueueWeb();
-    CheckSdSpace();
-    CheckBattery();
-    CheckWifi();
+    { perf::Timer t_("frame: FollowQueue"); FollowQueue(); }
+    { perf::Timer t_("frame: FollowFilesWork"); FollowFilesWork(); }
+    { perf::Timer t_("frame: FollowSelfUpdate"); FollowSelfUpdate(); }
+    { perf::Timer t_("frame: FollowSaveAuto"); FollowSaveAuto(); }
+    { perf::Timer t_("frame: FollowFinish"); FollowFinish(); }
+    { perf::Timer t_("frame: FollowUsb"); FollowUsb(); }
+    { perf::Timer t_("frame: FollowPush"); FollowPush(); }
+    { perf::Timer t_("frame: FollowQueueAsk"); FollowQueueAsk(); }
+    { perf::Timer t_("frame: FollowQueueWeb"); FollowQueueWeb(); }
+    { perf::Timer t_("frame: CheckSdSpace"); CheckSdSpace(); }
+    { perf::Timer t_("frame: CheckBattery"); CheckBattery(); }
+    { perf::Timer t_("frame: CheckWifi"); CheckWifi(); }
 
     // The grid goes on after the finger with its speed, slowing down; past an end it stops quickly
     // and comes back (16A)
@@ -1782,10 +1803,15 @@ bool App::Frame() {
     }
 
     m_gfx.CheckResize();
+    perf::Lap(perf::kUpdate);
     NVGcontext* vg = m_gfx.BeginFrame();
-    m_covers.Upload(vg);
+    perf::Lap(perf::kAcquire);
+    perf::Count(m_covers.Upload(vg));
+    perf::Lap(perf::kUpload);
     Draw(vg);
+    perf::Lap(perf::kDraw);
     m_gfx.EndFrame();
+    perf::Lap(perf::kPresent);
     return !m_quit;
 }
 
@@ -1844,17 +1870,22 @@ void App::Draw(NVGcontext* vg) {
     m_hits.clear();
     m_hint_rects.clear();
     m_list_pitch = 0; // set again by the list drawn, if any
-    Background(vg, m_theme);
-    // the slow lights behind, paused while installing on little battery
     const bool low = m_queue && m_queue->Busy() && m_battery >= 0 && m_battery < 20 && !m_charging;
-    if (!low) ui::Aurora(vg, m_theme);
+    {
+        perf::Timer t_("draw: background and aurora");
+        Background(vg, m_theme);
+        // the slow lights behind, paused while installing on little battery
+        if (!low) ui::Aurora(vg, m_theme);
+    }
     // the light of the game in focus (1A), behind the library and the page of a game; paused, as
     // the aurora, while installing on little battery
     if (!m_wizard && GridTab() && !low) {
         const bool shown = m_tab == Tab::Shops ? m_shop_active : m_link.Snapshot().state == Link::State::Connected;
         if (shown && m_detail && m_detail_game >= 0 && m_detail_game < int(m_games.size())) {
+            perf::Timer t_("draw: backdrop");
             DrawBackdrop(vg, m_games[m_detail_game], true);
         } else if (shown && !m_detail && !m_view.empty()) {
+            perf::Timer t_("draw: backdrop");
             DrawBackdrop(vg, m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]], false);
         }
     }
@@ -1875,6 +1906,7 @@ void App::Draw(NVGcontext* vg) {
         queued = m_queue->Waiting() + (m_queue->GetLive().running ? 1 : 0);
     }
     const float sd_used = m_sd_total_bytes > 0 && m_sd_free_bytes >= 0 ? 1.f - float(double(m_sd_free_bytes) / double(m_sd_total_bytes)) : -1.f;
+    perf::Timer t_top("draw: top bar");
     const float capsule = ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect, sd_used);
     if (m_wifi > -2) m_hits.push_back({m_wifi_rect, HitKind::Wifi, 0});
     if (m_shop_active && m_tab == Tab::Library) {
@@ -1927,6 +1959,8 @@ void App::Draw(NVGcontext* vg) {
         if (back <= 0) m_swipe_back = 0;
     }
     if (shift != 0) nvgTranslate(vg, shift, 0);
+    t_top.Stop();
+    perf::Timer t_tab("draw: the tab");
     switch (m_tab) {
         case Tab::Library: {
             const Link::View link = m_link.Snapshot();
@@ -1953,6 +1987,8 @@ void App::Draw(NVGcontext* vg) {
         case Tab::Settings: DrawSettings(vg); break;
     }
     nvgRestore(vg);
+    t_tab.Stop();
+    perf::Timer t_over("draw: over the tab");
     DrawTransitions(vg);
     DrawJumpLetter(vg);
     AddHints(m_hint_rects);
@@ -2304,23 +2340,40 @@ void App::NoticeOk(const std::string& text) {
 }
 
 void App::CheckSdSpace() {
-    if (m_time - m_sd_checked < 10) {
+    if (m_space_running && m_space_ready) {
+        // what the thread read: the same as was read here before
+        m_space_thread.join();
+        m_space_running = false;
+        m_space_ready = false;
+        const SpaceRead& r = m_space_read;
+        if (r.sd_free >= 0) {
+            m_sd_free_bytes = r.sd_free;
+            m_sd_free = SizeText(u64(r.sd_free));
+        }
+        if (r.sd_total > 0) m_sd_total_bytes = r.sd_total;
+        m_nand_free_bytes = r.nand_free;
+        m_nand_total_bytes = r.nand_total;
+    }
+    if (m_space_running || m_time - m_sd_checked < 10) {
         return;
     }
     m_sd_checked = m_time;
-    FsFileSystem fs;
-    if (R_SUCCEEDED(fsOpenSdCardFileSystem(&fs))) {
-        s64 free_bytes = 0;
-        char root[FS_MAX_PATH] = "/";
-        if (R_SUCCEEDED(fsFsGetFreeSpace(&fs, root, &free_bytes))) {
-            m_sd_free_bytes = free_bytes;
-            m_sd_free = SizeText(u64(free_bytes));
+    m_space_running = true;
+    // the values it starts from are kept when a read fails, as before
+    m_space_read = SpaceRead{-1, -1, m_nand_free_bytes, m_nand_total_bytes};
+    m_space_thread = std::thread([this] {
+        SpaceRead& r = m_space_read;
+        FsFileSystem fs;
+        if (R_SUCCEEDED(fsOpenSdCardFileSystem(&fs))) {
+            char root[FS_MAX_PATH] = "/";
+            s64 free_bytes = 0, total_bytes = 0;
+            if (R_SUCCEEDED(fsFsGetFreeSpace(&fs, root, &free_bytes))) r.sd_free = free_bytes;
+            if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &total_bytes)) && total_bytes > 0) r.sd_total = total_bytes;
+            fsFsClose(&fs);
         }
-        s64 total_bytes = 0;
-        if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &total_bytes)) && total_bytes > 0) m_sd_total_bytes = total_bytes;
-        fsFsClose(&fs);
-    }
-    StorageSpace(NcmStorageId_BuiltInUser, m_nand_free_bytes, m_nand_total_bytes);
+        StorageSpace(NcmStorageId_BuiltInUser, r.nand_free, r.nand_total);
+        m_space_ready = true;
+    });
 }
 
 // Starts the catalog and the covers of the library linked, and takes a new catalog when it comes.
@@ -2340,8 +2393,13 @@ void App::FollowLink() {
         m_games_version = m_catalog.Version();
         // the same game stays in focus; the first time, the one in focus when NXDock was closed
         m_keep_key = m_focus_restored ? FocusedKey() : m_ui.focus;
-        m_games = m_catalog.Games();
+        {
+            perf::Timer timer("app: take the catalog");
+            m_games = m_catalog.TakeGames();
+            m_games_epoch++;
+        }
         if (!m_games.empty()) {
+            if (!m_focus_restored) perf::Mark("first list of games taken");
             m_focus_restored = true;
         }
         RebuildView();
@@ -2368,6 +2426,37 @@ std::string App::FocusedKey() const {
 }
 
 void App::RebuildView() {
+    perf::Timer timer("app: rebuild the view");
+    // what the filters show and how many updates there are: counted here, the grid only reads them
+    static_assert(kFilters == 5);
+    m_filter_counts[0] = int(m_games.size());
+    m_filter_counts[1] = m_filter_counts[2] = m_filter_counts[3] = m_filter_counts[4] = 0;
+    m_pending_updates = 0;
+    for (const auto& g : m_games) {
+        m_filter_counts[1] += !g.installed.base;
+        m_filter_counts[2] += g.installed.base;
+        m_filter_counts[3] += g.UpdateAvailable() || g.MissingDlc();
+        m_filter_counts[4] += g.DlcCount() > 0;
+        m_pending_updates += UpdatePending(g);
+    }
+    if (m_keys_epoch != m_games_epoch || m_lower_names.size() != m_games.size()) {
+        m_keys_epoch = m_games_epoch;
+        m_lower_names.resize(m_games.size());
+        m_letter_slots.resize(m_games.size());
+        for (size_t i = 0; i < m_games.size(); i++) {
+            m_lower_names[i] = Lower(m_games[i].name);
+            m_letter_slots[i] = static_cast<unsigned char>(LetterSlot(m_games[i].name));
+        }
+        // A-Z once for this list (equal names keep their order, as the stable sorts below did)
+        std::vector<int> order(m_games.size());
+        for (size_t i = 0; i < order.size(); i++) order[i] = int(i);
+        std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+            const auto sa = m_letter_slots[size_t(a)], sb = m_letter_slots[size_t(b)];
+            return sa != sb ? sa < sb : m_lower_names[size_t(a)] < m_lower_names[size_t(b)];
+        });
+        m_name_rank.resize(m_games.size());
+        for (size_t r = 0; r < order.size(); r++) m_name_rank[size_t(order[r])] = int(r);
+    }
     const std::string keep = !m_keep_key.empty() ? m_keep_key : FocusedKey();
     m_keep_key.clear();
     m_view.clear();
@@ -2379,24 +2468,22 @@ void App::RebuildView() {
             case 1: keep = !g.installed.base; break;
             case 2: keep = g.installed.base; break;
             case 3: keep = g.UpdateAvailable() || g.MissingDlc(); break;
-            case 4: keep = !g.Dlc().empty(); break;
+            case 4: keep = g.DlcCount() > 0; break;
             default: break;
         }
         if (keep && !search.empty()) {
-            keep = Lower(g.name).find(search) != std::string::npos;
+            keep = m_lower_names[size_t(i)].find(search) != std::string::npos;
         }
         if (keep) {
             m_view.push_back(i);
         }
     }
     // the order: A-Z (with what starts with no letter first), size, or not installed first
-    std::vector<std::string> names(m_games.size());
-    std::vector<int> slots(m_games.size());
-    for (int i : m_view) {
-        names[i] = Lower(m_games[i].name);
-        slots[i] = LetterSlot(m_games[i].name);
-    }
-    const auto by_name = [&](int a, int b) { return slots[a] != slots[b] ? slots[a] < slots[b] : names[a] < names[b]; };
+    const auto& slots = m_letter_slots;
+    const auto& rank = m_name_rank;
+    std::fill(std::begin(m_letter_present), std::end(m_letter_present), false);
+    for (int i : m_view) m_letter_present[slots[size_t(i)]] = true;
+    const auto by_name = [&](int a, int b) { return rank[size_t(a)] < rank[size_t(b)]; };
     switch (m_ui.sort) {
         case 1:
             std::stable_sort(m_view.begin(), m_view.end(), [&](int a, int b) {
@@ -2491,7 +2578,7 @@ void App::UpdateLibrary(u64 down, u64 held) {
     if (down & HidNpadButton_Minus) {
         // Options (5A): the order and Update all; with updates to install, the focus is on it
         m_menu = true;
-        m_menu_focus = PendingUpdates().empty() ? m_ui.sort : kSorts + 1;
+        m_menu_focus = m_pending_updates == 0 ? m_ui.sort : kSorts + 1;
     }
     if (down & HidNpadButton_Y) {
         std::string text;
@@ -2552,7 +2639,7 @@ void App::ActivateMenu(int row) {
 }
 
 void App::UpdateMenu(u64 down, u64 held) {
-    const int rows = PendingUpdates().empty() ? kSorts + 1 : kSorts + 2;
+    const int rows = m_pending_updates == 0 ? kSorts + 1 : kSorts + 2;
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_menu_focus > 0) m_menu_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_menu_focus < rows - 1) m_menu_focus++;
     m_menu_focus = std::clamp(m_menu_focus, 0, rows - 1);
@@ -2626,8 +2713,7 @@ void App::DrawAzBar(NVGcontext* vg) {
         }
         return;
     }
-    bool present[27] = {};
-    for (int v : m_view) present[LetterSlot(m_games[v].name)] = true;
+    const bool* present = m_letter_present;
     const int here = LetterSlot(m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]].name);
     NVGcolor back = t.panel2;
     back.a = m_az_touch ? 0.95f : 0.7f;
@@ -2678,7 +2764,7 @@ void App::DrawMenu(NVGcontext* vg) {
     nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.35f));
     nvgFill(vg);
     AddHit(0, 0, kWidth, kHeight, HitKind::MenuBack);
-    const size_t updates = PendingUpdates().size();
+    const size_t updates = m_pending_updates;
     const int rows = updates ? kSorts + 2 : kSorts + 1;
     const float w = 440, rh = 56, pad = 10;
     const float h = pad * 2 + 34 + kSorts * rh + rh + 13 + (updates ? rh : 0);
@@ -2903,13 +2989,7 @@ void App::DrawLibrary(NVGcontext* vg) {
     if (m_shop_active) {
         DrawShopChips(vg);
     } else {
-    int counts[kFilters] = {int(m_games.size()), 0, 0, 0, 0};
-    for (const auto& g : m_games) {
-        counts[1] += !g.installed.base;
-        counts[2] += g.installed.base;
-        counts[3] += g.UpdateAvailable() || g.MissingDlc();
-        counts[4] += !g.Dlc().empty();
-    }
+    const int* counts = m_filter_counts;
     const char* names[] = {s.all, s.not_installed, TrM().lb_installed, s.with_update, s.dlc};
     char chips[kFilters][64];
     float chip_x[kFilters], chip_w[kFilters];
@@ -2957,7 +3037,12 @@ void App::DrawLibrary(NVGcontext* vg) {
         m_lift_focus = m_focus;
         m_lift_at = m_time;
     }
-    for (int i = 0; i < int(m_view.size()); i++) {
+    // only the rows that can be on screen are looked at: a library of thousands costs as one of a few
+    const int row_lo = std::max(0, int(std::floor((m_scroll - kGridMargin - g_cover) / g_row_pitch)));
+    const int row_hi = std::max(0, int(std::floor((m_scroll + g_view_h + kGridMargin) / g_row_pitch)) + 1);
+    const int i_lo = std::min(int(m_view.size()), row_lo * g_columns);
+    const int i_hi = std::min(int(m_view.size()), (row_hi + 1) * g_columns);
+    for (int i = i_lo; i < i_hi; i++) {
         const float cx = kGridX + (i % g_columns) * (g_cover + kGridGap);
         const float cy = kGridTop + (i / g_columns) * g_row_pitch - m_scroll;
         if (cy + g_cover < kGridTop - kGridMargin || cy > kGridTop + g_view_h + kGridMargin) {
@@ -3101,7 +3186,7 @@ void App::DrawLibrary(NVGcontext* vg) {
     hints.push_back({ui::glyph::Y, s.search, HidNpadButton_Y});
     hints.push_back({ui::glyph::X, s.queue, HidNpadButton_X});
     // Options: the order, and Update all when there is something to update
-    const size_t updates = PendingUpdates().size();
+    const size_t updates = m_pending_updates;
     m_update_hint = s.options;
     if (updates) {
         m_update_hint += std::string(" · ") + s.update_all + " " + std::to_string(updates);
@@ -4090,18 +4175,23 @@ InstallJob App::JobFor(const Game& g, const CatalogFile& f) {
     return job;
 }
 
-std::vector<InstallJob> App::PendingUpdates() {
-    std::vector<InstallJob> jobs;
+bool App::UpdatePending(const Game& g) const {
+    if (!g.UpdateAvailable()) {
+        return false;
+    }
     const u32 hos = hosversionGet();
     const u32 console = (HOSVER_MAJOR(hos) << 26) | (HOSVER_MINOR(hos) << 20) | (HOSVER_MICRO(hos) << 16);
+    const CatalogFile* f = g.NewestUpdate();
+    return !(f->required_system && (f->required_system & 0xFFFF0000) > console); // else the console cannot run it yet
+}
+
+std::vector<InstallJob> App::PendingUpdates() {
+    std::vector<InstallJob> jobs;
     for (const auto& g : m_games) {
-        if (!g.UpdateAvailable()) {
+        if (!UpdatePending(g)) {
             continue;
         }
         const CatalogFile* f = g.NewestUpdate();
-        if (f->required_system && (f->required_system & 0xFFFF0000) > console) {
-            continue; // the console cannot run it yet
-        }
         InstallJob job = JobFor(g, *f);
         job.label = VersionText(g.installed.patch) + " → " + VersionText(f->version);
         job.nand = g.installed.base_nand;

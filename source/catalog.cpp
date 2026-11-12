@@ -5,6 +5,7 @@
 #ifdef __SWITCH__
 #include <switch.h>
 #include "errors.hpp"
+#include "perf.hpp"
 #include "i18n_more.hpp"
 #include "log.hpp"
 #endif
@@ -64,6 +65,12 @@ std::vector<const CatalogFile*> Game::Dlc() const {
     return out;
 }
 
+size_t Game::DlcCount() const {
+    size_t n = 0;
+    for (const auto& f : files) n += f.kind == CatalogFile::Kind::Dlc;
+    return n;
+}
+
 bool Game::UpdateAvailable() const {
     const CatalogFile* update = NewestUpdate();
     return installed.base && update && update->version > installed.patch;
@@ -71,8 +78,8 @@ bool Game::UpdateAvailable() const {
 
 bool Game::MissingDlc() const {
     if (!installed.base) return false;
-    for (const auto* d : Dlc()) {
-        if (!installed.dlc.count(d->title_id)) return true;
+    for (const auto& f : files) {
+        if (f.kind == CatalogFile::Kind::Dlc && !installed.dlc.count(f.title_id)) return true;
     }
     return false;
 }
@@ -81,7 +88,9 @@ u64 Game::SizeOfAll() const {
     u64 total = 0;
     if (const auto* b = Base()) total += b->size;
     if (const auto* u = NewestUpdate()) total += u->size;
-    for (const auto* d : Dlc()) total += d->size;
+    for (const auto& f : files) {
+        if (f.kind == CatalogFile::Kind::Dlc) total += f.size;
+    }
     return total;
 }
 
@@ -381,6 +390,13 @@ std::vector<Game> Catalog::Games() {
     return m_games;
 }
 
+std::vector<Game> Catalog::TakeGames() {
+    std::lock_guard lock(m_mutex);
+    if (!m_out_ready) return m_games;
+    m_out_ready = false;
+    return std::move(m_games_out);
+}
+
 void Catalog::Publish(std::vector<Game> games) {
     const auto installed = ReadInstalled();
     for (auto& game : games) {
@@ -389,9 +405,13 @@ void Catalog::Publish(std::vector<Game> games) {
             game.installed = it->second;
         }
     }
+    // copied here, on the load's thread: the drawing thread only takes it (TakeGames)
+    std::vector<Game> out = games;
     {
         std::lock_guard lock(m_mutex);
         m_games = std::move(games);
+        m_games_out = std::move(out);
+        m_out_ready = true;
     }
     m_version++;
 }
@@ -402,7 +422,13 @@ void Catalog::Run(std::string url, std::string key) {
     {
         std::string cached;
         std::vector<Game> games;
-        if (ReadCatalogCache(url, cached) && ParseCatalog(cached, games) && !games.empty()) {
+        bool ok;
+        {
+            perf::Timer timer("catalog: read+parse the SD copy");
+            ok = ReadCatalogCache(url, cached) && ParseCatalog(cached, games) && !games.empty();
+        }
+        if (ok) {
+            perf::Timer timer("catalog: publish (with installed)");
             Publish(std::move(games));
             shown = true;
             m_stale = true;
@@ -422,7 +448,9 @@ void Catalog::Run(std::string url, std::string key) {
     // 503 and Retry-After, and is asked again until it is ready
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(15);
     while (!m_cancel) {
+        const u64 asked_at = armGetSystemTick();
         const auto r = http::GetLarge(url + "/install/catalog?ncz=native", key, 180000, kCatalogMax, &m_cancel);
+        perf::Took("catalog: download", perf::Ms(armGetSystemTick() - asked_at));
         if (m_cancel) break;
         if (r.status == 503 && http::JsonBool(r.body, "preparing")) {
             m_done = int(http::JsonNumber(r.body, "done", 0));
@@ -440,8 +468,17 @@ void Catalog::Run(std::string url, std::string key) {
         }
         m_preparing = false;
         std::vector<Game> games;
-        if (r.status == 200 && ParseCatalog(r.body, games)) {
-            WriteCatalogCache(url, r.body);
+        bool parsed;
+        {
+            perf::Timer timer("catalog: parse");
+            parsed = r.status == 200 && ParseCatalog(r.body, games);
+        }
+        if (parsed) {
+            {
+                perf::Timer timer("catalog: write SD copy");
+                WriteCatalogCache(url, r.body);
+            }
+            perf::Timer timer("catalog: publish (with installed)");
             Publish(std::move(games));
             {
                 std::lock_guard lock(m_mutex);
