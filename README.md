@@ -12,8 +12,8 @@
 
 A homebrew installer for the Nintendo Switch. It installs your own NSP, NSZ, XCI and XCZ copies from your
 [Switch Library Manager Web](https://github.com/DeLFuS77/switch-library-manager-web) library over the network, with
-no files copied to the SD card first. It can also install from the SD card, a USB disk, or a computer over MTP or
-NS-USBloader.
+no files copied to the SD card first. It also installs from the SD card, a USB disk, or a computer over MTP or
+NS-USBloader, and works with the buttons and with the touch screen alike.
 
 > [!IMPORTANT]
 > **NXDock is still being tested.** It needs more people to try it, so any problem you find helps a lot: please
@@ -31,123 +31,107 @@ NS-USBloader.
   <sub>❤️ Free and open source, and it will stay free. If it saves you time, a coffee helps keep it going.</sub>
 </p>
 
-It has an interface of its own, made for the console: your library as a grid of covers, a page for each game, and a
-queue that shows every stage of an install. It works with the buttons and with the touch screen alike.
+![Your library on the console: the games of your Switch Library Manager Web library, with covers, filters and an A–Z bar](docs/library.gif)
 
-![NXDock: moving through the library, opening the page of a game and going back](docs/demo.gif)
+## NXDock and other installers
+
+DBI, Sphaira, Tinfoil and others are mature and do a lot. NXDock is new, and does some things of its own:
+
+- **Your library, straight from the computer or NAS.** NXDock finds Switch Library Manager Web on your network and
+  pairs with a code: no addresses, no keys and no files to copy first. A game can also be sent to the console from
+  the web.
+- **The compressed files of NXPress.** NSZ and XCZ made with the extra compression of
+  [NXPress](https://github.com/DeLFuS77/NXPress) install as they are; other installers do not read them yet.
+- **Installs you can trust.** All or nothing: every part is checked against its SHA-256 before anything is
+  registered, a failed or cancelled install leaves nothing behind, an install cut by the console going off goes on
+  where it stopped, and only the parts the console does not already have are downloaded. **Check** and **Repair**
+  find and fix a damaged installed game.
+- **Your saves first.** Before an update, a repair or going back to another version, the save of the game is copied
+  to your library.
+- **Smaller games on the console (experimental).** Installed games can be compressed, and a game merged with its
+  update.
+- **An interface made for the console.** Covers, colours that follow the game in focus, a queue with every stage of
+  an install, touch everywhere and 11 languages.
+
+If you need something NXDock does not have yet, such as FTP or WebDAV sources, NTFS disks or editors for files, DBI and
+Sphaira are great choices, and they work side by side with NXDock.
 
 ## Features
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/library-dark.png">
-  <img src="docs/screenshots/library-light.png" alt="The library: a grid of covers with filters on top, an A–Z bar on the right and the queue below">
-</picture>
+![Installing a game: tick what to install and where to put it; the queue does the rest, all or nothing](docs/install.gif)
 
-- **Your library on the console.** The games of the library app with their covers, filters (all, not installed, with an
-  update, with DLC) and search with the console's keyboard. What the console already has is read from the system, so
-  each game tells what is missing. An A–Z bar, jumps by letter with the right stick and orders by name, size, newest
-  or not installed first help in a long library.
 - **A page for each game.** Its cover, version, format, size and the firmware it needs, with the game, its newest
-  update and every DLC to tick (what is missing comes ticked), the SD card or the internal memory, and the space left
-  after.
+  update and every DLC to tick (what is missing comes ticked), and the space left after. The SD card is always the
+  default; the internal memory is used only for the install where you choose it.
 - **Fast installs.** Each file comes over several connections at once, as many as the speed test found best; NSZ and
-  XCZ travel compressed and their blocks are decompressed on three threads while the next ones download. A dropped
-  connection goes on from where it stopped.
-- **Safe installs.** All or nothing: the free space and the firmware are checked first, every part is checked against
-  its SHA-256 before anything is registered, and a failed or cancelled install leaves nothing behind. Parts the
-  console already has are kept, so only what is missing comes. An install cut because the console went off goes on
-  where it stopped. The SD card is the default; the internal memory is used only after a question. Installing never
-  reads your `prod.keys`, and NXDock never installs firmware or sigpatches.
-- **Your saves first.** Before an update, a repair, a removal or going back to another version, the save of the game
-  is copied to your library. Before an update, NXDock also says which of your cheats and mods stop working with the
-  new build.
-- **The extra compression of NXPress.** NSZ and XCZ made with the extra compression of
-  [NXPress](https://github.com/DeLFuS77/NXPress) (NCZSECT2 and NCZSECT3) install as they are.
+  XCZ travel compressed and are decompressed on three threads while the next blocks download.
 - **A queue you can watch.** The game being installed, large, with its four stages: network, decompress, write and
-  check. The queue goes on while you browse the library. At the end, a notice, a soft sound and two gentle pulses of
-  rumble; while it works, the screen can dim or turn off.
-- **Keep it tidy.** "Update all" installs every newer update the library has for what is on the console. "Check"
-  reads an installed game and compares every part with its SHA-256, and "Repair" downloads only the damaged parts.
-  "Undo" removes what was installed in this session, and the history keeps every install with its time and speed.
-- **Send to the console from the web.** A game sent from the library app shows on the console with who sent it, and
-  nothing is installed until you accept. The queue can be followed live in the library app, paused or cancelled from
-  there (the console asks first), and a message can reach your phone when it ends.
-- **Another version.** The page of a game can put an older update in place of the installed one, all or nothing.
+  check. The queue goes on while you browse, and the library app can follow it, pause it or cancel it.
+- **Keep it tidy.** Update all, Check and Repair, another version of an update, undo what this session installed, a
+  history of every install, and **what is missing** for every game on the console, also those not in your library.
 - **Clear errors.** A failed install says what happened and what to do, with a code to look up.
+- **Updates itself** from its releases, after checking their signature, and keeps the version before to go back to.
 
-| The page of a game | More: the tools |
-|---|---|
-| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/game-dark.png"><img src="docs/screenshots/game-light.png" alt="The page of a game: its cover, the game, its update and its DLC to tick, the SD card or the internal memory, and the Install button"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/more-dark.png"><img src="docs/screenshots/more-light.png" alt="The More tab: a tile for each tool"></picture> |
-
-### More
-
-![The More tab: its tiles come in and the focus moves between them](docs/more.gif)
+![More: the tools; install without the library app, and look after saves, space and the files of the SD card](docs/more.gif)
 
 - **Install without the library app:** from the SD card or a USB disk (FAT32 or exFAT, split files included), from a
-  computer over MTP (a game installs as it arrives, nothing is kept on the card) or over the USB cable with
-  NS-USBloader. Everything goes to the same queue, all or nothing.
-- **Shops** of the kind of Tinfoil and Ownfoil open as another library.
-- **Saves:** copy the save of a game to your library and restore it later, always after a question; the save it
-  replaces is kept first.
-- **Space and dumps:** clean leftovers (also unfinished installs of other tools, and updates and DLC whose game is
-  gone), archive games (the icon stays on the HOME menu), move a game between the SD card and the internal memory,
-  and dump the game card or an installed game to your library.
-- **Check the SD card** (in Space and dumps): finds fake cards, parts of the card that fail, and its real speed,
-  with a quick or a full check.
-- **Compress games (experimental):** installed games take less room on the console. See below.
-- **Cheats and mods:** the cheats your library has for the version on the console, and `.zip` mod packages, each with
-  a switch. Removing a mod takes away only what it wrote.
+  computer over MTP or over the USB cable with NS-USBloader, or from shops of the kind of Tinfoil and Ownfoil.
+- **Files:** copy, move, rename, make folders and delete on the SD card and a USB disk, with many files at once. The
+  folders of the system are never touched.
+- **MTP** also shows the installed games as NSP, the saves, the Album and a USB disk, read only.
+- **Saves:** copy them to your library or to the SD card, by hand or every few days, and restore them later.
+- **Space and dumps:** clean leftovers, archive games, move a game between the SD card and the internal memory, dump
+  the game card or an installed game, and check the SD card for fakes and errors.
+- **Cheats and mods:** the cheats your library has for the version on the console, and `.zip` mod packages, each
+  with a switch.
+- **Compress games (experimental):** see [Compress games](https://github.com/DeLFuS77/NXDock/wiki/Compress-games).
 
-It follows the light or dark theme of the console, or the one chosen, and speaks 11 languages: English, Spanish,
-French, German, Italian, Portuguese, Dutch, Russian, Japanese, Korean and Chinese. A first-run wizard sets the
-language, the theme, where to install and the notices, and ends with a short walk through the tabs.
+![Made for touch too: everything works with the buttons and with the touch screen](docs/touch.gif)
 
-<p align="center"><img src="docs/screenshots/wizard-dark.png" alt="The first-run wizard: where to install by default and what a game's page ticks" width="80%"></p>
+![Settings and the HOME menu: a shortcut on the HOME menu opens NXDock with all the memory of a game](docs/home.gif)
 
-## Compress games (experimental)
+| The library | The page of a game |
+|---|---|
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/library-dark.png"><img src="docs/screenshots/library-light.png" alt="The library: a grid of covers with filters on top, an A–Z bar and the game in focus on the right"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/game-dark.png"><img src="docs/screenshots/game-light.png" alt="The page of a game: the game, its update and its DLC to tick, the SD card or the internal memory, and the Install button"></picture> |
 
-Off until you turn it on, in More › Space and dumps. NXDock measures each installed game from a sample of its data and
-offers the ones that save 10 % or more:
+It follows the light or dark theme of the console, or the one chosen, and speaks English, Spanish, French, German,
+Italian, Portuguese, Dutch, Russian, Japanese, Korean and Chinese. A first-run wizard sets the language, the theme,
+where to install and the notices.
 
-- **A game on its own** is compressed in place with the LZ4 layer that Nintendo uses in some of its games.
-- **A game with its update** is merged with it into one game and compressed: what the update no longer reads is left
-  out, and what it reads more than once is kept once. A game and its update can take far less room this way.
-- **Its DLC** are compressed in the same step.
-- **A newer update** installed with NXDock over a merged game is merged by itself when it ends.
-- **Undo** installs the original game, its update and its DLC again from your library.
-
-A compressed game is no longer signed by Nintendo: it starts only with sigpatches, and official updates must not be
-installed over a merged game. Read [Compress games](docs/compress-games.md) before turning it on.
-
-![An illustration of Compress games: the list, the question, the work, an update from the eShop and Undo](docs/compress-games.gif)
+The screenshots and animations were taken in an emulator, with made-up games and covers.
 
 ## Requirements
 
 - A Nintendo Switch that runs homebrew, with [Atmosphère](https://github.com/Atmosphere-NX/Atmosphere). An emuMMC is
-  recommended; NXDock warns before the first install when it is not on one, or when the console can reach
+  recommended: NXDock warns before the first install when it is not on one, or when the console can reach
   Nintendo's servers.
+- **Sigpatches:** NXDock installs without them, but most of your own copies need them to start, as with any
+  installer. Compressed games always need them. NXDock never installs sigpatches nor firmware.
+- **Firmware:** the one your Atmosphère supports. Each game says the firmware it needs, and NXDock warns before
+  installing a game the console is too old for.
 - To install from your library: [Switch Library Manager Web](https://github.com/DeLFuS77/switch-library-manager-web)
-  on a computer, a NAS or Docker in the same network, with **Install over the network** turned on in its Settings.
-- For Compress games: firmware 12 or newer, sigpatches, and your `prod.keys` at `sdmc:/switch/prod.keys` (read only
-  to compress, kept in memory, never shown or saved).
-- Open NXDock with the full memory of a game (hold R while opening a game, then choose NXDock), not from the album:
-  it gets larger network buffers and installs faster. It also works from the album, more slowly, and says so.
+  2.0.5 or newer on a computer, a NAS or Docker in the same network, with **Install over the network** turned on in
+  its Settings.
+- For Compress games: firmware 12 or newer, and your `prod.keys` at `sdmc:/switch/prod.keys` (read only to compress,
+  kept in memory, never shown or saved).
+- Open NXDock with the full memory of a game: from its shortcut on the HOME menu (Settings › HOME menu), or by
+  holding R while opening a game. From the Album it also works, more slowly, and says so.
 
 For your own games and your own consoles only. NXDock includes no keys, games or firmware.
+
+More: [Compatibility](https://github.com/DeLFuS77/NXDock/wiki/Compatibility).
 
 ## Installation
 
 1. Download `NXDock-<version>-sd.zip` from the [releases page](https://github.com/DeLFuS77/NXDock/releases/latest).
 2. Unpack it at the root of the SD card: it puts `switch/NXDock/NXDock.nro` in place. (Or copy `NXDock.nro` on its
    own to `sdmc:/switch/NXDock/`.)
-3. Open it from the Homebrew Menu.
+3. Open it from the Homebrew Menu. In Settings › HOME menu you can add a shortcut to open it from the HOME menu.
 
-To update, put the new `NXDock.nro` in place of the old one. Settings and the history stay in
+NXDock tells when a new version is out and updates itself from Settings. Settings and the history stay in
 `sdmc:/config/NXDock/` and `sdmc:/switch/NXDock/`.
 
 ## Pairing with the library app
-
-<img align="right" src="docs/screenshots/pair-panel-dark.png" alt="Pairing: an eight-letter code, a QR to open the library app and Remember this library" width="40%">
 
 NXDock finds the library app on your network by itself: no addresses and no keys to type.
 
@@ -158,11 +142,28 @@ NXDock finds the library app on your network by itself: no addresses and no keys
 4. With **Remember this library** ticked, the next times NXDock connects by itself, also when the address of the app
    changes.
 
-An app outside your home network or behind a proxy can be typed by hand ("Type the address", or Settings › Address by
-hand). With an `https` address, NXDock keeps the key of its certificate the first time and refuses a server with
-another key afterwards. Settings › Forget this library pairs again from the start.
+An app outside your home network or behind a proxy can be typed by hand (Settings › Address by hand). With an
+`https` address, NXDock keeps the key of its certificate the first time and refuses a server with another key
+afterwards.
 
-<br clear="right">
+## Documentation
+
+The [wiki](https://github.com/DeLFuS77/NXDock/wiki) explains each screen, Compress games, compatibility and the most
+common questions:
+
+- [Using NXDock](https://github.com/DeLFuS77/NXDock/wiki/Using-NXDock)
+- [Compress games](https://github.com/DeLFuS77/NXDock/wiki/Compress-games)
+- [Compatibility](https://github.com/DeLFuS77/NXDock/wiki/Compatibility)
+- [Questions and problems](https://github.com/DeLFuS77/NXDock/wiki/FAQ)
+- [Reporting a problem](https://github.com/DeLFuS77/NXDock/wiki/Reporting-a-problem): what to send and where the logs
+  are
+
+## Related projects
+
+- [Switch Library Manager Web](https://github.com/DeLFuS77/switch-library-manager-web): your library of games,
+  updates and DLC in the browser, on a computer, a NAS or Docker. NXDock installs from it.
+- [NXPress](https://github.com/DeLFuS77/NXPress): compresses NSP and XCI to NSZ and XCZ, with an extra compression
+  that NXDock installs as it is.
 
 ## Verifying the downloads
 
@@ -186,23 +187,19 @@ tools/build.sh   # builds build/NXDock.nro in the official devkitpro/devkita64 c
 tools/test.sh    # the tests that need no console
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is laid out. Tested with DBI as a reference.
-
-The screenshots show made-up games. The animation of Compress games is an illustration drawn for this page, also
-with made-up games.
-
-More: [the documentation](docs/README.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is laid out.
 
 ## Credits
 
 NXDock's installer is built on **yati**, the install core of [Sphaira](https://github.com/NaGaa95/sphaira), by
-ITotalJustice and the Sphaira contributors: thank you. It also uses [libnx](https://github.com/switchbrew/libnx),
-[deko3d](https://github.com/devkitPro/deko3d), [nanovg for deko3d](https://github.com/ITotalJustice/nanovg-deko3d),
-[yyjson](https://github.com/ibireme/yyjson), [libusbhsfs](https://github.com/DarkMatterCore/libusbhsfs),
-[Zstandard](https://github.com/facebook/zstd), [Mbed TLS](https://github.com/Mbed-TLS/mbedtls), [libcurl](https://curl.se),
-the [QR Code generator library](https://github.com/nayuki/QR-Code-generator) and parts of
-[nxdumptool](https://github.com/DarkMatterCore/nxdumptool). [NOTICE](NOTICE) lists each one with its licence and
-what was changed.
+ITotalJustice and the Sphaira contributors: thank you. The HOME menu shortcut also comes from Sphaira. NXDock also
+uses [libnx](https://github.com/switchbrew/libnx), [deko3d](https://github.com/devkitPro/deko3d),
+[nanovg for deko3d](https://github.com/ITotalJustice/nanovg-deko3d), [yyjson](https://github.com/ibireme/yyjson),
+[libusbhsfs](https://github.com/DarkMatterCore/libusbhsfs), [Zstandard](https://github.com/facebook/zstd),
+[Mbed TLS](https://github.com/Mbed-TLS/mbedtls), [libcurl](https://curl.se),
+[Monocypher](https://monocypher.org), the [QR Code generator library](https://github.com/nayuki/QR-Code-generator)
+and parts of [nxdumptool](https://github.com/DarkMatterCore/nxdumptool). [NOTICE](NOTICE) lists each one with its
+licence and what was changed.
 
 ## License
 

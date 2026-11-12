@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Questions and problems
+    url: https://github.com/DeLFuS77/NXDock/wiki/FAQ
+    about: Pairing, speed, failed installs and games that do not start, answered in the wiki.
   - name: Documentation
-    url: https://github.com/DeLFuS77/NXDock#readme
-    about: Requirements, installing NXDock and pairing it with the library app are explained in the README.
+    url: https://github.com/DeLFuS77/NXDock/wiki
+    about: Requirements, installing NXDock, each screen and compatibility.
   - name: Discord
     url: https://discord.gg/acQVZSEBR
     about: Questions, help and chat with other users, shared with Switch Library Manager Web and NXPress.

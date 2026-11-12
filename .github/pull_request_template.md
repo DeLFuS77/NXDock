@@ -6,6 +6,10 @@
 
 <!-- tools/build.sh and tools/test.sh, and how it was tried: with DBI as a reference, in an emulator for the interface... -->
 
+## Screenshots
+
+<!-- For a change on screen: a screenshot or a short video, with made-up or no game names. -->
+
 ## Checklist
 
 - [ ] `tools/build.sh` builds `NXDock.nro` without new warnings, and `tools/test.sh` passes

@@ -20,10 +20,14 @@ crediting you unless you prefer otherwise.
 - Pairing with the library app: the code, the key kept on the SD card, the pinned key of an HTTPS address.
 - What NXDock writes: installs that must stay all or nothing, the internal memory that is only used after a question,
   mods that never write over other files.
+- Updating itself: the signature of a new version and the checksum of `NXDock.nro` that are checked before it is
+  put in place.
+- What NXDock deletes: the file list, which must never touch the folders of the system, and files deleted after an
+  install, only once it is checked.
 - The release files and the workflows that build them.
 
-Keys (`prod.keys`, `title.keys`) are never read by NXDock nor part of its releases: a report that they leak through it
-is in scope.
+Keys are never part of NXDock's releases. Installing never reads `prod.keys`; only Compress games reads it, keeps it in
+memory and never shows or saves it. A report that keys leak through NXDock is in scope.
 
 ## Verifying what you download
 

@@ -9,11 +9,14 @@ body:
 
         **Never attach or paste `prod.keys`, `title.keys`, the key of a paired console or any console key**: they are
         not needed and must not be shared. Remove keys and passwords from logs and screenshots before posting.
+
+        [Reporting a problem](https://github.com/DeLFuS77/NXDock/wiki/Reporting-a-problem) in the wiki says where the
+        logs are. Security problems are reported privately: see SECURITY.md.
   - type: input
     id: version
     attributes:
       label: NXDock version
-      description: Shown in Settings, e.g. 0.9.0
+      description: Shown in Settings › Look for a new version, e.g. 0.9.0
     validations:
       required: true
   - type: dropdown
@@ -29,11 +32,19 @@ body:
         - Not about installing
     validations:
       required: true
+  - type: dropdown
+    id: opened
+    attributes:
+      label: NXDock was opened
+      options:
+        - From its shortcut on the HOME menu
+        - Holding R while opening a game
+        - From the Album
   - type: input
     id: system
     attributes:
       label: Console
-      description: Firmware, Atmosphère version, and SD card or internal memory, e.g. 20.1.0, Atmosphère 1.9.0, SD card
+      description: Firmware, Atmosphère version, emuMMC or not, and SD card or internal memory, e.g. 20.1.0, Atmosphère 1.9.0, emuMMC, SD card
   - type: input
     id: file
     attributes:
@@ -57,7 +68,7 @@ body:
       label: Log
       description: |
         The end of `sdmc:/switch/NXDock/install.log`, and the lines of the install in `sdmc:/switch/NXDock/history.tsv`.
-        Check that they contain no keys.
+        If NXDock closed by itself, the newest file of `sdmc:/atmosphere/crash_reports/`. Check that they contain no keys.
       render: text
   - type: checkboxes
     id: keys
