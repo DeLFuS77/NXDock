@@ -21,6 +21,8 @@
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
 #define STBI_NO_STDIO
+// the NEON paths of stb_image (IDCT and colour conversion) are left out on ARM unless asked for
+#define STBI_NEON
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include <stb_image.h>
