@@ -28,6 +28,8 @@ private:
     std::thread m_thread;
     std::atomic<bool> m_quit{false};
     bool m_started = false;
+    // audout is opened on the sound's thread: it took a good part of the boot on the drawing one
+    std::atomic<bool> m_audio_ok{false};
     std::mutex m_mutex;
     // asked from the interface, done on the sound's thread
     std::vector<synth::Effect> m_effects;
