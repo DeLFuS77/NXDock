@@ -165,10 +165,6 @@ void ReadScript() {
 
 } // namespace
 
-double Ms(u64 ticks) {
-    return double(armTicksToNs(ticks)) / 1e6;
-}
-
 void Mark(const char* what) {
     if (auto* f = Log()) {
         std::fprintf(f, "boot %-28s %8.1f ms\n", what, Ms(armGetSystemTick() - g_start));

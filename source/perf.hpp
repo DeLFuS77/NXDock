@@ -13,6 +13,10 @@ namespace nxdock::perf {
 
 enum Stage { kUpdate, kAcquire, kUpload, kDraw, kPresent, kStages };
 
+inline double Ms(u64 ticks) {
+    return double(armTicksToNs(ticks)) / 1e6;
+}
+
 #ifdef NXDOCK_PERF
 void Mark(const char* what);
 void FrameBegin();
@@ -25,7 +29,6 @@ void Script(u64& held, bool& quit);
 bool ScriptTouch(HidTouchScreenState& state);
 // the touch read from the console, or the one of the script
 void ReadTouch(HidTouchScreenState& state);
-double Ms(u64 ticks);
 #else
 inline void Mark(const char*) {}
 inline void FrameBegin() {}
