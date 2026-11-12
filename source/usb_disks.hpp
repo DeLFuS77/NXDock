@@ -13,6 +13,7 @@ struct UsbDisk {
     std::string mount; // "ums0:/"
     std::string label; // the maker and product, as the disk says
     unsigned long long capacity = 0;
+    bool fat32 = false; // FAT12/16/32: no file of 4 GB or more
 };
 
 void UsbDisksStart();

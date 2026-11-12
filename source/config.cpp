@@ -154,6 +154,12 @@ UiPrefs UiPrefs::Load() {
         else if (key == "focus_view") p.focus_view = n == 1 ? 1 : 0;
         else if (key == "touch_rumble") p.touch_rumble = n != 0;
         else if (key == "focus") p.focus = value;
+        else if (key == "self_update_notice") p.self_update_notice = n != 0;
+        else if (key == "self_update_checked") p.self_update_checked = std::atoll(value.c_str());
+        else if (key == "versions_list") p.versions_list = n != 0;
+        else if (key == "mtp_units") p.mtp_units = n & 15;
+        else if (key == "save_auto_days") p.save_auto_days = n >= 0 && n <= 90 ? n : 0;
+        else if (key == "save_auto_last") p.save_auto_last = std::atoll(value.c_str());
     }
     std::fclose(f);
     return p;
@@ -169,10 +175,12 @@ bool UiPrefs::Save() const {
     std::fprintf(f,
                  "wizard_done=%d\nwizard_music=%d\nsounds=%d\nfinish_effect=%d\nbattery_notice=%d\nbattery_level=%d\n"
                  "check_updates=%d\nsaver=%d\nlanguage=%d\ntheme_auto=%d\ndest=%d\npick=%d\nsort=%d\nfocus=%s\nscreen_off_auto=%d\nanim=%d\nsave_copy=%d\nnotify_done=%d\ncompress_on=%d\nconsole_size=%d\nlibrary_size=%d\n"
-                 "focus_view=%d\ntouch_rumble=%d\n",
+                 "focus_view=%d\ntouch_rumble=%d\n"
+                 "self_update_notice=%d\nself_update_checked=%lld\nversions_list=%d\nmtp_units=%d\nsave_auto_days=%d\nsave_auto_last=%lld\n",
                  wizard_done, wizard_music, sounds, finish_effect, battery_notice, battery_level, check_updates, saver,
                  language, theme_auto, dest, pick, sort, focus.c_str(), screen_off_auto, anim, save_copy, notify_done, compress_on, console_size, library_size,
-                 focus_view, touch_rumble);
+                 focus_view, touch_rumble,
+                 self_update_notice, self_update_checked, versions_list, mtp_units, save_auto_days, save_auto_last);
     const bool ok = std::fclose(f) == 0;
     if (!ok) {
         std::remove(kUiTemp);

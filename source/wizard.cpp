@@ -17,6 +17,7 @@
 #include <cstdio>
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 
 namespace nxdock {
 namespace {
@@ -263,7 +264,8 @@ std::vector<App::WizGroup> App::WizardGroups() {
             }
             level.small = true;
             groups.push_back(std::move(level));
-            groups.push_back({"", {toggle(s.wiz_updates_toggle, m_ui.check_updates)}, 1});
+            // the updates of the library, and a new NXDock (5A of the new tools)
+            groups.push_back({"", {toggle(s.wiz_updates_toggle, m_ui.check_updates), toggle(TrT().up_wiz, m_ui.self_update_notice)}, 2});
             break;
         }
         case 4:
@@ -341,8 +343,10 @@ void App::ActivateWizard(int group, int item) {
             } else if (group == 1) {
                 m_ui.battery_level = kBatteryLevels[std::clamp(item, 0, 3)];
                 m_ui.battery_notice = true;
-            } else {
+            } else if (item == 0) {
                 m_ui.check_updates = !m_ui.check_updates;
+            } else {
+                m_ui.self_update_notice = !m_ui.self_update_notice;
             }
             m_ui.Save();
             break;

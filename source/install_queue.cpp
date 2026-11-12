@@ -2,6 +2,8 @@
 // Copyright (C) 2026 DeLFuS77
 #include "install_queue.hpp"
 
+#include "fileops.hpp"
+
 #include "compress_nx.hpp"
 #include "config.hpp"
 
@@ -814,6 +816,8 @@ void InstallQueue::RunJob(InstallJob& job) {
                 config.allow_newer_firmware = job.firmware_ok;
                 // going back to an older version, asked for on the page of the game (20A)
                 if (job.downgrade) config.allow_downgrade = true;
+                // the ticket of what is installed, put back: its parts are there and are kept (7A)
+                if (job.ticket_only) config.ticket_only = true;
                 if (journaled) {
                     const bool sd = !job.nand;
                     config.resume.part = [&journal, &journal_mutex, sd](const NcmContentId& cid, const NcmPlaceHolderId& ph, s64 size, bool checked,
@@ -869,6 +873,15 @@ void InstallQueue::RunJob(InstallJob& job) {
     }
     if (job.state == InstallJob::State::Done && !test) {
         MergeAfter(job, box.Registered());
+    }
+    if (job.state == InstallJob::State::Done && !test && job.delete_after && job.origin == InstallJob::Origin::File && !job.parts.empty()) {
+        // its file goes, with every part; a split folder (game.nsp/00, 01…) goes whole
+        const std::string folder = fileops::Parent(job.parts.front());
+        const bool split_folder = job.parts.size() > 1 && !GameFormat(fileops::NameOf(folder)).empty() &&
+                                  fileops::NameOf(job.parts.front()) == "00";
+        fileops::Progress gone;
+        job.source_deleted = fileops::DeleteAll(split_folder ? std::vector<std::string>{folder} : job.parts, gone);
+        log_write("[NXDock] the file was %sdeleted after its install\n", job.source_deleted ? "" : "not ");
     }
     if (job.origin == InstallJob::Origin::Mtp) {
         MtpJobEnded(job.state == InstallJob::State::Done, job.error);

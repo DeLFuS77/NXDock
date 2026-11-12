@@ -1379,7 +1379,7 @@ Result Yati::Setup(const ConfigOverride& override) {
     config.sd_card_install = override.sd_card_install.value_or(true);
     config.allow_downgrade = override.allow_downgrade.value_or(false);
     config.skip_if_already_installed = false;
-    config.ticket_only = false;
+    config.ticket_only = override.ticket_only.value_or(false);
     config.skip_nca_hash_verify = false;
     config.skip_rsa_header_fixed_key_verify = override.skip_rsa_header_fixed_key_verify.value_or(false);
     config.skip_rsa_npdm_fixed_key_verify = override.skip_rsa_npdm_fixed_key_verify.value_or(false);

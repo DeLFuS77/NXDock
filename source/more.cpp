@@ -13,7 +13,9 @@
 #include "draw.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 #include "mtp.hpp"
+#include "mtp_more.hpp"
 #include "usb_disks.hpp"
 #include "usb_tinfoil.hpp"
 
@@ -31,6 +33,16 @@ constexpr float kTileGap = 18, kTileW = (kWidth - 96 - (kCols - 1) * kTileGap) /
 constexpr float kSideW = 250;
 constexpr float kRowTop = 134, kRowPitch = 50, kRowsBottom = 576;
 constexpr int kVisibleRows = int((kRowsBottom - kRowTop) / kRowPitch);
+
+// A small padlock: what NXDock never deletes, renames or moves.
+void Padlock(NVGcontext* vg, float x, float cy, NVGcolor c) {
+    nvgBeginPath(vg);
+    nvgArc(vg, x + 6, cy - 2, 4, 3.1416f, 0, NVG_CW);
+    nvgStrokeColor(vg, c);
+    nvgStrokeWidth(vg, 1.8f);
+    nvgStroke(vg);
+    ui::FillRound(vg, x + 1, cy - 2, 10, 8, 2, c);
+}
 
 std::string BaseName(const std::string& path) {
     const auto slash = path.find_last_of("/\\");
@@ -79,6 +91,8 @@ void App::OpenMoreScreen(MoreScreen screen) {
     }
     m_more = screen;
     m_files_nand = false; // the SD card, always, unless chosen for this install
+    m_files_after = false; // and the files are kept unless chosen for this install (4A)
+    m_files_menu = false;
     switch (screen) {
         case MoreScreen::Files:
             UsbDisksStart();
@@ -89,8 +103,14 @@ void App::OpenMoreScreen(MoreScreen screen) {
             break;
         case MoreScreen::Mtp: {
             MtpAllowNand(false);
+            // the games installed for their folder (8A): read now if they were not
+            if (!m_space) m_space = std::make_unique<Space>();
+            if (!m_space->Snapshot().scanned && !m_space->Busy()) m_space->StartScan();
+            Space* space = m_space.get();
+            MtpSetInstalled([space] { return space->Snapshot().apps; });
+            UsbDisksStart();
             const bool ok = MtpStart([this](InstallJob job) { return m_queue && m_queue->Add(std::move(job)); },
-                                     [this] { return m_queue && m_queue->Busy(); });
+                                     [this] { return m_queue && m_queue->Busy(); }, m_ui.mtp_units);
             m_more_error = ok ? std::string{} : std::string(TrM().mtp_failed);
             break;
         }
@@ -434,8 +454,9 @@ void App::FollowPlaces() {
 void App::OpenFolder(const std::string& folder, bool root) {
     m_folder = folder;
     m_folder_root = root;
-    m_entries = ListFolder(folder, root);
+    m_entries = ListFolder(folder, root, m_files_all);
     m_marked.assign(m_entries.size(), 0);
+    m_mark_anchor = -1;
     m_file_focus = 0;
     m_file_first = 0;
     m_list_at = m_time;
@@ -446,21 +467,35 @@ void App::InstallMarkedFiles() {
     const More& m = TrM();
     std::vector<InstallJob> jobs;
     bool any = std::any_of(m_marked.begin(), m_marked.end(), [](char c) { return c; });
+    std::vector<fileops::GameFile> files;
     for (size_t i = 0; i < m_entries.size(); i++) {
         const auto& e = m_entries[i];
         const bool chosen = any ? m_marked[i] : int(i) == m_file_focus;
-        if (!chosen || e.dir) continue;
+        if (!chosen || e.name == "..") continue;
+        if (e.dir) {
+            // a folder marked: the games it holds (1A)
+            if (any) {
+                const auto inside = fileops::GamesUnder({e.path});
+                files.insert(files.end(), inside.begin(), inside.end());
+            }
+            continue;
+        }
+        if (e.format.empty()) continue; // not a game
+        files.push_back({e.name, e.parts, e.size, e.format});
+    }
+    for (const auto& f : files) {
         InstallJob job;
-        job.game = e.name;
-        job.label = e.parts.size() > 1 ? std::string(m.t_files) + " · " + std::to_string(e.parts.size()) : m.t_files;
-        job.format = e.format;
+        job.game = f.name;
+        job.label = f.parts.size() > 1 ? std::string(m.t_files) + " · " + std::to_string(f.parts.size()) : m.t_files;
+        job.format = f.format;
         job.origin = InstallJob::Origin::File;
         job.resumable = true; // a journal while it installs (23A)
-        job.parts = e.parts;
-        job.file_id = "file:" + e.path;
-        job.size = e.size;
+        job.parts = f.parts;
+        job.file_id = "file:" + f.parts.front();
+        job.size = f.size;
         job.nand = m_files_nand;
-        job.color_key = e.name;
+        job.color_key = f.name;
+        job.delete_after = m_files_after; // 4A
         jobs.push_back(std::move(job));
     }
     if (jobs.empty()) {
@@ -532,8 +567,41 @@ void App::DrawFiles(NVGcontext* vg) {
 
     // where we are, and the list
     const float lx = kSideW + 24, lw = kWidth - kSideW - 48;
+    const Tools& tt = TrT();
+    // the view on the right: the games, or every file (1A)
+    float vx = lx + lw;
+    {
+        const char* names[2] = {tt.fv_games, tt.fv_all};
+        float widths[2], all = 0;
+        for (int k = 0; k < 2; k++) all += widths[k] = ui::TextWidth(vg, 14, names[k]) + 28;
+        vx -= all;
+        ui::StrokeRound(vg, vx, 89, all, 30, 15, t.line, 1);
+        float cx = vx;
+        for (int k = 0; k < 2; k++) {
+            const bool on = (k == 1) == m_files_all;
+            if (on) ui::FillRound(vg, cx, 89, widths[k], 30, 15, t.work);
+            ui::Text(vg, cx + widths[k] / 2, 104, 14, on ? t.on_work : t.muted, names[k], NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            AddHit(cx, 80, widths[k], 48, HitKind::FilesView, k);
+            cx += widths[k];
+        }
+    }
+    // what was copied or cut, to paste
+    if (!m_clip.empty()) {
+        char text[300];
+        std::snprintf(text, sizeof(text), m_clip_move ? tt.fc_move_fmt : tt.fc_copy_fmt, int(m_clip.size()), draw::Size(m_clip_bytes).c_str(),
+                      m_clip_from.c_str());
+        const float cw = std::min(ui::TextWidth(vg, 14, text) + 28, lw * 0.5f);
+        vx -= cw + 10;
+        NVGcolor bg = t.work;
+        bg.a = 0.16f;
+        ui::FillRound(vg, vx, 89, cw, 30, 15, bg);
+        nvgSave(vg);
+        nvgIntersectScissor(vg, vx + 12, 89, cw - 24, 30);
+        ui::Text(vg, vx + 14, 104, 14, t.text, text);
+        nvgRestore(vg);
+    }
     nvgSave(vg);
-    nvgScissor(vg, lx, 86, lw, 30);
+    nvgScissor(vg, lx, 86, vx - lx - 12, 30);
     ui::Text(vg, lx + 4, 104, 15, t.muted, m_folder.c_str());
     nvgRestore(vg);
     if (m_entries.empty()) {
@@ -559,7 +627,8 @@ void App::DrawFiles(NVGcontext* vg) {
         nvgTranslate(vg, -(1 - in) * 24, 0);
         nvgGlobalAlpha(vg, in);
         AddHit(lx + 50, y - 2, lw - 50, 48, HitKind::MoreRow, i);
-        if (!e.dir) {
+        if (e.name != "..") {
+            // files and folders can be marked (1A)
             draw::TickBox(vg, t, lx + 14, cy, m_marked[i], "file:" + e.path);
             AddHit(lx, y - 2, 50, 48, HitKind::MoreMark, i);
         }
@@ -576,8 +645,14 @@ void App::DrawFiles(NVGcontext* vg) {
         const bool titled = !e.dir && TitleFromName(e.name, tid, tver);
         nvgSave(vg);
         nvgScissor(vg, lx + 90, y, lw - 90 - (titled ? 340 : 220), 44);
-        ui::Text(vg, lx + 90, cy, 16, t.text, name.c_str());
+        const float nx = ui::Text(vg, lx + 90, cy, 16, e.dir || !e.format.empty() ? t.text : t.muted, name.c_str());
         nvgRestore(vg);
+        if (e.name != "..") {
+            const auto guard = fileops::GuardOf(e.path);
+            if (guard == fileops::Guard::System || guard == fileops::Guard::Self) {
+                Padlock(vg, std::min(nx + 10, lx + lw - (titled ? 340 : 220)), cy, t.muted);
+            }
+        }
         if (titled) {
             // what it is, as the numbers alone do not say it
             const int kind = TitleKind(tid);
@@ -589,6 +664,11 @@ void App::DrawFiles(NVGcontext* vg) {
         }
         if (!e.dir) {
             std::string fmt = e.format;
+            if (fmt.empty()) {
+                // a file that is not a game: its extension
+                const auto dot = e.name.find_last_of('.');
+                if (dot != std::string::npos && dot + 1 < e.name.size() && e.name.size() - dot <= 6) fmt = e.name.substr(dot + 1);
+            }
             for (auto& c : fmt) c = char(std::toupper((unsigned char)c));
             ui::Text(vg, lx + lw - 120, cy, 15, t.muted, fmt.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
             ui::Text(vg, lx + lw - 14, cy, 15, t.muted, draw::Size(e.size).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
@@ -609,21 +689,31 @@ void App::DrawFiles(NVGcontext* vg) {
     const float sy = 586, sh = 64;
     char text[200];
     std::snprintf(text, sizeof(text), m.marked_short_fmt, count, draw::Size(bytes).c_str());
-    const float mw = std::max(150.f, ui::TextWidth(vg, 16, text) + 40);
+    const float mw = std::max({190.f, ui::TextWidth(vg, 16, text) + 40, ui::TextWidth(vg, 13, tt.fa_switch) + 72});
     draw::Panel(vg, t, lx, sy, mw, sh, 12);
-    ui::CheckMark(vg, lx + 22, sy + sh / 2, 12, t.work, 2.4f);
-    ui::Text(vg, lx + 40, sy + sh / 2, 16, t.text, text);
+    ui::CheckMark(vg, lx + 22, sy + 21, 12, t.work, 2.4f);
+    ui::Text(vg, lx + 40, sy + 21, 16, t.text, text);
+    draw::Toggle(vg, t, lx + 16, sy + 45, m_files_after, "files-after");
+    ui::Text(vg, lx + 66, sy + 45, 13, m_files_after ? t.text : t.muted, tt.fa_switch);
+    AddHit(lx, sy, mw, sh, HitKind::FilesAfter);
     DestCards(vg, lx + mw + 12, sy, lw - mw - 12, sh, m_files_nand, bytes, HitKind::FilesDest);
 
     std::vector<ui::Hint> hints = {{ui::glyph::Y, m.mark, HidNpadButton_Y},
-                                   {ui::glyph::A, s.select, HidNpadButton_A},
+                                   {ui::glyph::ZL, tt.fm_all, HidNpadButton_ZL},
+                                   {ui::glyph::Minus, tt.fm_actions, HidNpadButton_Minus},
                                    {ui::glyph::X, m.install_marked, HidNpadButton_X},
                                    {ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR},
                                    {ui::glyph::B, s.back, HidNpadButton_B}};
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
+    if (m_files_menu) DrawFilesMenu(vg);
 }
 
 void App::UpdateFiles(u64 down, u64 held) {
+    if (m_files_menu) {
+        UpdateFilesMenu(down, held);
+        return;
+    }
+    if (!(held & HidNpadButton_Y)) m_mark_anchor = -1; // the range ends when Y is let go
     if (Repeat(down, held, HidNpadButton_AnyLeft)) m_files_side = true;
     if (Repeat(down, held, HidNpadButton_AnyRight)) m_files_side = false;
     if (down & HidNpadButton_ZR) m_files_nand = !m_files_nand;
@@ -637,20 +727,32 @@ void App::UpdateFiles(u64 down, u64 held) {
         if (down & HidNpadButton_B) LeaveMoreScreen();
         return;
     }
+    const int before = m_file_focus;
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_file_focus > 0) m_file_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_file_focus < int(m_entries.size()) - 1) m_file_focus++;
+    // Y held while moving marks the rows in between, as the first one was set (1A)
+    if (held & HidNpadButton_Y) FilesMarkMove(before, m_file_focus);
     const bool has = m_file_focus >= 0 && m_file_focus < int(m_entries.size());
     if (has && (down & (HidNpadButton_A | HidNpadButton_Y))) {
         const auto e = m_entries[m_file_focus];
-        if (e.dir) {
-            if (down & HidNpadButton_A) {
-                const bool to_root = e.name == ".." && std::find(m_place_roots.begin(), m_place_roots.end(), e.path) != m_place_roots.end();
-                OpenFolder(e.path, to_root);
-            }
-        } else {
+        if (e.dir && (down & HidNpadButton_A)) {
+            const bool to_root = e.name == ".." && std::find(m_place_roots.begin(), m_place_roots.end(), e.path) != m_place_roots.end();
+            OpenFolder(e.path, to_root);
+        } else if (e.name != "..") {
             m_marked[m_file_focus] = !m_marked[m_file_focus];
+            if (down & HidNpadButton_Y) {
+                m_mark_anchor = m_file_focus;
+                m_mark_value = m_marked[m_file_focus];
+            }
         }
     }
+    if (down & HidNpadButton_ZL) {
+        // all, or none when all are marked
+        bool all = true;
+        for (size_t i = 0; i < m_entries.size(); i++) all = all && (m_entries[i].name == ".." || m_marked[i]);
+        for (size_t i = 0; i < m_entries.size(); i++) m_marked[i] = !all && m_entries[i].name != "..";
+    }
+    if ((down & HidNpadButton_Minus) && !m_fwork) OpenFilesMenu();
     if (down & HidNpadButton_X) InstallMarkedFiles();
     if (down & HidNpadButton_B) {
         // up a folder, then back to the tiles
@@ -727,14 +829,37 @@ void App::DrawArrival(NVGcontext* vg) {
                                   {m.mtp_install_nand, mv.nand_allowed ? m.nand_allowed : m.mtp_install_nand_sub, !mv.nand_allowed},
                                   {m.mtp_sd_card, m.mtp_sd_card_sub, false}};
         for (const auto& f : folders) {
-            ui::FillRound(vg, px + 26, y, pw - 52, 66, 12, t.panel2);
-            ui::StrokeRound(vg, px + 26.5f, y + .5f, pw - 53, 65, 12, t.line, 1);
+            ui::FillRound(vg, px + 26, y, pw - 52, 58, 12, t.panel2);
+            ui::StrokeRound(vg, px + 26.5f, y + .5f, pw - 53, 57, 12, t.line, 1);
             nvgGlobalAlpha(vg, f.off ? 0.55f : 1.f);
-            draw::FolderIcon(vg, t, px + 44, y + 33);
-            ui::Text(vg, px + 82, y + 23, 17, t.text, f.name);
-            ui::Text(vg, px + 82, y + 46, 14, t.muted, f.sub);
+            draw::FolderIcon(vg, t, px + 44, y + 29);
+            ui::Text(vg, px + 82, y + 19, 16, t.text, f.name);
+            ui::Text(vg, px + 82, y + 41, 13, t.muted, f.sub);
             nvgGlobalAlpha(vg, 1.f);
-            y += 78;
+            y += 64;
+        }
+        // the read-only folders, each with its switch (8A)
+        const Tools& tt = TrT();
+        ui::Text(vg, px + 28, y + 12, 13, t.muted, tt.mu_title);
+        y += 24;
+        const bool disk = !UsbDisks().empty();
+        const struct { const char* name; const char* sub; } units[] = {
+            {tt.mu_installed, tt.mu_installed_sub}, {tt.mu_saves, tt.mu_saves_sub}, {tt.mu_album, tt.mu_album_sub},
+            {tt.mu_usb, disk ? tt.mu_usb_sub : tt.mu_usb_none}};
+        for (int k = 0; k < 4; k++) {
+            const bool on = (m_ui.mtp_units >> k) & 1;
+            if (k == m_mtp_unit) {
+                ui::FillRound(vg, px + 26, y, pw - 52, 46, 10, t.panel2);
+                ui::Focus(vg, t, px + 26, y, pw - 52, 46, 10, m_time);
+            }
+            AddHit(px + 26, y - 1, pw - 52, 48, HitKind::MtpUnit, k);
+            nvgSave(vg);
+            nvgScissor(vg, px + 40, y, pw - 52 - 90, 46);
+            const float nx = ui::Text(vg, px + 44, y + 23, 15, on ? t.text : t.muted, units[k].name) + 10;
+            ui::Text(vg, nx, y + 23, 13, t.muted, units[k].sub);
+            nvgRestore(vg);
+            draw::Toggle(vg, t, px + pw - 26 - 62, y + 23, on, "mtp-unit:" + std::to_string(k));
+            y += 50;
         }
     } else {
         draw::Box(vg, px + 26, y, pw - 52, 17, t.muted, m.usb_steps);
@@ -828,13 +953,33 @@ void App::DrawArrival(NVGcontext* vg) {
 
     std::vector<ui::Hint> hints;
     // the internal memory allowed can be turned off again: only the SD card
+    if (mtp) hints.push_back({ui::glyph::A, m.st_change, HidNpadButton_A});
     if (mtp) hints.push_back({ui::glyph::X, mv.nand_allowed ? m.mtp_sd_only : m.allow_nand, HidNpadButton_X});
     if (!mtp) hints.push_back({ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, m.stop_back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
 
-void App::UpdateArrival(u64 down, u64 /*held*/) {
+void App::ToggleMtpUnit(int unit) {
+    m_ui.mtp_units ^= 1 << std::clamp(unit, 0, 3);
+    m_ui.Save();
+    // the folders are given when a computer connects: MTP starts again with them (nothing is arriving)
+    if (MtpSnapshot().file.empty()) {
+        MtpStop();
+        OpenMoreScreen(MoreScreen::Mtp);
+    }
+    Notice(TrT().mu_note);
+}
+
+void App::UpdateArrival(u64 down, u64 held) {
+    if (m_more == MoreScreen::Mtp) {
+        if (Repeat(down, held, HidNpadButton_AnyUp) && m_mtp_unit > 0) m_mtp_unit--;
+        if (Repeat(down, held, HidNpadButton_AnyDown) && m_mtp_unit < 3) m_mtp_unit++;
+        if (down & HidNpadButton_A) {
+            ToggleMtpUnit(m_mtp_unit);
+            return;
+        }
+    }
     if (m_more == MoreScreen::Mtp && (down & HidNpadButton_X)) {
         if (MtpSnapshot().nand_allowed) {
             MtpAllowNand(false); // only the SD card again, at once

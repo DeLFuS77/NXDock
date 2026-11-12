@@ -8,6 +8,7 @@
 #include "usb_disks.hpp"
 #include "usb_tinfoil.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 #include "mods.hpp"
 #include "resume.hpp"
 #include "http.hpp"
@@ -231,17 +232,18 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
 // Settings, in groups: the library, installing, notices, the look, the wizard, the HOME menu,
 // connecting by hand.
 enum SettingRow {
-    kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowSpeed,
-    kRowDest, kRowPick, kRowSaveCopy, kRowScreen, kRowCompress,
+    kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
+    kRowDest, kRowPick, kRowSaveCopy, kRowSaveAuto, kRowScreen, kRowCompress,
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowSounds, kRowAnim, kRowFocusView, kRowTouchRumble,
     kRowWizard,
+    kRowSelfUpdate, kRowSelfNotice, kRowSelfBack,
     kRowHome, kRowHomeRemove,
     kRowAddress, kRowKey,
     kSettingRows
 };
 // the first row of each group
-constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowHome, kRowAddress};
+constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowSelfUpdate, kRowHome, kRowAddress};
 constexpr int kGroups = int(std::size(kGroupStarts));
 // the levels of the notice of little battery; 0 is off
 constexpr int kBatterySteps[] = {0, 10, 15, 20, 30};
@@ -529,6 +531,14 @@ void App::Exit() {
     // the backlight on again before leaving
     ScreenOn();
     if (m_lbl) lblExit();
+    // a check or a download of a new version is let go
+    m_updater.reset();
+    // a copy, a move or a delete of the file list stops first (what was done stays done)
+    if (m_fwork) {
+        m_fwork->cancel = true;
+        if (m_fwork_thread.joinable()) m_fwork_thread.join();
+        m_fwork.reset();
+    }
     // what arrives from the computer stops first, so a job reading it ends
     MtpStop();
     UsbLink().Cancel();
@@ -702,6 +712,19 @@ void App::ActivateSetting(int row) {
         case kRowWizard:
             OpenWizard();
             break;
+        case kRowSelfUpdate:
+            AskSelfUpdate();
+            break;
+        case kRowSelfNotice:
+            m_ui.self_update_notice = !m_ui.self_update_notice;
+            m_ui.Save();
+            break;
+        case kRowSelfBack:
+            if (m_update_has_old) {
+                m_dialog = Dialog{};
+                m_dialog.kind = DialogKind::SelfBack;
+            }
+            break;
         case kRowHome:
             AskHomeShortcut(false);
             break;
@@ -744,10 +767,25 @@ void App::ActivateSetting(int row) {
             m_ui.check_updates = !m_ui.check_updates;
             m_ui.Save();
             break;
+        case kRowVersionsList:
+            m_ui.versions_list = !m_ui.versions_list;
+            m_ui.Save();
+            break;
         case kRowSaveCopy:
             m_ui.save_copy = !m_ui.save_copy;
             m_ui.Save();
             break;
+        case kRowSaveAuto: {
+            // no, every 1, 3, 7, 14 or 30 days
+            static constexpr int steps[] = {0, 1, 3, 7, 14, 30};
+            int at = 0;
+            for (int k = 0; k < 6; k++) {
+                if (m_ui.save_auto_days == steps[k]) at = k;
+            }
+            m_ui.save_auto_days = steps[(at + 1) % 6];
+            m_ui.Save();
+            break;
+        }
         case kRowNotifyDone:
             m_ui.notify_done = !m_ui.notify_done;
             m_ui.Save();
@@ -1021,6 +1059,7 @@ void App::ReadTouch(u64& down) {
             m_drag_v = m_drag_vx = 0;
             m_fling_v = 0;      // a finger stops the grid
             m_list_fling = 0;
+            m_touch_at = m_time;
             m_drag_scroll0 = m_scroll;
             // a list drawn last frame under the finger: dragged, it moves its focus row by row
             m_list_drag = m_list_pitch > 0 && m_dialog.kind == DialogKind::None && !m_menu && !m_wifi_open && m_quick < 0 &&
@@ -1057,6 +1096,12 @@ void App::ReadTouch(u64& down) {
         }
         m_touch_x = x;
         m_touch_y = y;
+        // held still for a moment: a long press (the menu of a file, as − does)
+        if (!m_long_fired && !m_dragging && m_tab == Tab::More && m_more == MoreScreen::Files && m_time - m_touch_at > 0.55 && std::fabs(x - m_touch_x0) <= kDragSlop &&
+            std::fabs(y - m_touch_y0) <= kDragSlop && m_dialog.kind == DialogKind::None) {
+            m_long_fired = true;
+            LongPress(x, y);
+        }
         if (m_az_touch) {
             const int slot = std::clamp(int((y - kAzTop) / (g_az_height / 27)), 0, 26);
             JumpToLetter(slot, 0);
@@ -1357,6 +1402,39 @@ bool App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::MoreSide:
                 break;
+            case HitKind::FilesMenuRow:
+                // a row of the menu acts at once, as a button of a question does
+                m_files_menu_focus = it->index;
+                FilesDo(it->index);
+                break;
+            case HitKind::FilesMenuBack:
+                m_files_menu = false;
+                m_vault_menu = false;
+                break;
+            case HitKind::VaultKind:
+                if (m_vault_kind != it->index) {
+                    m_vault_kind = it->index;
+                    OpenVault();
+                }
+                break;
+            case HitKind::VaultMenuRow:
+                m_vault_menu_focus = it->index;
+                VaultMenuDo(it->index);
+                break;
+            case HitKind::MtpUnit:
+                m_mtp_unit = it->index;
+                ToggleMtpUnit(it->index);
+                break;
+            case HitKind::ConsoleMissing:
+                m_console_missing = !m_console_missing;
+                m_console_focus = 0;
+                break;
+            case HitKind::FilesView:
+                if (m_files_all != (it->index == 1)) FilesDo(kFaView);
+                break;
+            case HitKind::FilesAfter:
+                m_files_after = !m_files_after;
+                break;
             case HitKind::ModRow: {
                 const int side = it->index >= 100 ? 1 : 0, row = it->index >= 100 ? it->index - 100 : 0;
                 if (m_mods_side == side && m_mods_focus == row) {
@@ -1652,6 +1730,9 @@ bool App::Frame() {
         if (m_rumble_step < 0) SendRumble(false);
     }
     FollowQueue();
+    FollowFilesWork();
+    FollowSelfUpdate();
+    FollowSaveAuto();
     FollowFinish();
     FollowUsb();
     FollowPush();
@@ -4914,15 +4995,27 @@ void App::DrawSettings(NVGcontext* vg) {
     const char* themes[] = {s.light, s.dark, s.wiz_theme_auto};
     struct Row { const char* label; std::string value; bool accent; };
     const auto yes = [&](bool on) { return std::string(on ? s.yes_word : s.no_word); };
+    // how often the saves are copied by themselves (9A)
+    char save_auto[64];
+    if (m_ui.save_auto_days > 0) std::snprintf(save_auto, sizeof(save_auto), TrT().sv_auto_fmt, m_ui.save_auto_days);
+    else std::snprintf(save_auto, sizeof(save_auto), "%s", s.no_word);
+    // the version, and the newer one when it was found (5A)
+    const Updater::View up = m_updater ? m_updater->Snapshot() : Updater::View{};
+    const bool self_newer = up.stage == Updater::Stage::Newer;
+    char self_update[160];
+    if (self_newer) std::snprintf(self_update, sizeof(self_update), TrT().up_have_new_fmt, NXDOCK_VERSION, up.version.c_str());
+    else std::snprintf(self_update, sizeof(self_update), TrT().up_have_fmt, NXDOCK_VERSION);
     const Row rows[kSettingRows] = {
         {s.library, library, linked},
         {s.forget, "", false},
         {s.share_row, yes(m_prefs.share_installed == 1), m_prefs.share_installed == 1},
         {m.st_updates, yes(m_ui.check_updates), m_ui.check_updates},
+        {TrT().ms_row, yes(m_ui.versions_list), m_ui.versions_list},
         {s.speed_test, running ? s.cancel : s.start, linked},
         {m.st_dest, m_ui.dest == 2 ? s.wiz_ask_each : s.sd_card, true},
         {m.st_pick, picks[std::clamp(m_ui.pick, 0, 2)], true},
         {m.sc_row, yes(m_ui.save_copy), m_ui.save_copy},
+        {TrT().sv_auto_row, save_auto, m_ui.save_auto_days > 0},
         {m.st_screen, screens[m_ui.screen_off_auto ? 2 : m_ui.saver ? 1 : 0], m_ui.saver || m_ui.screen_off_auto},
         {m.cz_row, yes(m_ui.compress_on), m_ui.compress_on},
         {m.st_finish, yes(m_ui.finish_effect), m_ui.finish_effect},
@@ -4935,12 +5028,15 @@ void App::DrawSettings(NVGcontext* vg) {
         {m.st_focus_row, m_ui.focus_view == 1 ? m.st_focus_panel : m.st_focus_band, true},
         {m.st_touch_rumble, yes(m_ui.touch_rumble), m_ui.touch_rumble},
         {s.wiz_row, s.wiz_repeat, true},
+        {TrT().up_row, self_update, self_newer},
+        {TrT().up_notice_row, yes(m_ui.self_update_notice), m_ui.self_update_notice},
+        {TrT().up_back_row, m_update_has_old ? TrT().up_back_kept : TrT().up_back_none, false},
         {m.hm_row, m_home.running_from ? m.hm_in_use : m_home.installed ? m.hm_on : s.no_word, m_home.installed},
         {m.hm_remove_row, "", false},
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
     };
-    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, m.st_g_home, m.st_g_manual};
+    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, TrT().st_g_nxdock, m.st_g_home, m.st_g_manual};
     const float x = 48, w = 540, h = 56, gap = 8, head = 34;
     // where each row goes: a title before the first of each group
     float top_of[kSettingRows];
@@ -4972,7 +5068,7 @@ void App::DrawSettings(NVGcontext* vg) {
         }
         const bool dim = ((i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked) ||
                          (i == kRowHomeRemove && (!m_home.installed || m_home.running_from)) ||
-                         (i == kRowHome && m_home.running_from);
+                         (i == kRowHome && m_home.running_from) || (i == kRowSelfBack && !m_update_has_old);
         nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
         Panel(vg, t, x, y, w, h, 14);
         if (i == m_setting) {
@@ -5011,6 +5107,8 @@ void App::DrawSettings(NVGcontext* vg) {
     else if (m_setting == kRowForget) act = m.fg_go;
     else if (m_setting == kRowSpeed) act = running ? s.cancel : s.start;
     else if (m_setting == kRowHome) act = m_home.installed ? m.hm_update : m.hm_make;
+    else if (m_setting == kRowSelfUpdate) act = m.open;
+    else if (m_setting == kRowSelfBack) act = TrT().up_back_go;
     else if (m_setting == kRowHomeRemove) act = m.hm_remove_go;
     ui::HintBar(vg, t, nullptr,
                 {{ui::glyph::A, act, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},
@@ -6143,6 +6241,28 @@ void App::DrawDialog(NVGcontext* vg) {
             break;
         }
         case DialogKind::None: return;
+        default: {
+            ToolDialog d;
+            d.cancel = s.cancel;
+            if (!ToolDialogText(d)) {
+                m_dialog.kind = DialogKind::None;
+                return;
+            }
+            title = d.title;
+            body = d.body;
+            note = d.note;
+            primary = d.primary;
+            error = d.error;
+            cancel_label = d.cancel;
+            can = d.can;
+            m_dialog.single = d.single;
+            verify_bar = d.bar;
+            verify_running = d.running;
+            verify_frac = d.frac;
+            verify_text = d.bar_text;
+            for (const auto& l : d.lines) lines.push_back({l.text, "", l.right, l.warn ? t.warn : t.text, l.warn ? 2 : 0});
+            break;
+        }
     }
 
     // the layout, from the top
@@ -6323,7 +6443,8 @@ void App::DrawDialog(NVGcontext* vg) {
         // a third choice, between the two: the internal memory (Where), the SD card instead (Nand),
         // leaving some out (DlcNeeds, Reinstall), discarding (Resume)
         const More& m = TrM();
-        const char* label = m_dialog.kind == DialogKind::Where       ? s.internal
+        const char* label = m_dialog.kind == DialogKind::ContentDetails ? TrT().cd_ticket_go
+                            : m_dialog.kind == DialogKind::Where     ? s.internal
                             : m_dialog.kind == DialogKind::Nand      ? m.nand_sd_button
                             : m_dialog.kind == DialogKind::DlcNeeds  ? m.dn_skip
                             : m_dialog.kind == DialogKind::Reinstall ? m.ri_skip
@@ -6368,6 +6489,7 @@ void App::DrawDialog(NVGcontext* vg) {
 }
 
 void App::UpdateDialog(u64 down, u64 held) {
+    if (ToolDialogInput(down, held)) return;
     const bool info = m_dialog.single;
     if (m_dialog.kind == DialogKind::Verify && (down & (HidNpadButton_B | HidNpadButton_A)) && m_queue->GetVerify().running) {
         // stops the check; the question closes
@@ -6449,11 +6571,16 @@ int App::DialogExtra(u64& mask) const {
         case DialogKind::DlcNeeds:
         case DialogKind::Reinstall:
         case DialogKind::Resume: mask = HidNpadButton_X; return 2;
+        case DialogKind::ContentDetails: mask = HidNpadButton_X; return 2;
         default: mask = 0; return -1;
     }
 }
 
 void App::DialogExtraChosen() {
+    if (m_dialog.kind == DialogKind::ContentDetails) {
+        ConsoleTicketBack();
+        return;
+    }
     if (m_dialog.kind == DialogKind::Resume) {
         // discarding is asked once more, Back in focus
         m_dialog.kind = DialogKind::ResumeDiscard;
@@ -6711,9 +6838,13 @@ void App::ConfirmDialog() {
             break;
         case DialogKind::VaultRestore: {
             const Config c = m_link.CurrentConfig();
-            if (m_vault && c.Linked() && m_dialog.game >= 0 && m_dialog.game < int(m_vault_saves.size()) && !m_vault_users.empty()) {
-                m_vault->StartRestore(c.url, c.key, m_vault_users[m_vault_user], m_vault_saves[m_dialog.game].app_id, m_dialog.save,
-                                      TrM().before_restore);
+            if (!m_vault || m_dialog.game < 0 || m_dialog.game >= int(m_vault_saves.size())) break;
+            const Vault::User user = m_vault_users.empty() ? Vault::User{} : m_vault_users[m_vault_user];
+            if (!m_dialog.text.empty()) {
+                // a copy of the SD card (9A)
+                m_vault->StartRestoreSd(user, m_vault_kind, m_vault_saves[m_dialog.game].app_id, m_dialog.text, TrM().before_restore);
+            } else if (c.Linked()) {
+                m_vault->StartRestore(c.url, c.key, user, m_vault_saves[m_dialog.game].app_id, m_dialog.save, TrM().before_restore, m_vault_kind);
             }
             break;
         }
@@ -6745,7 +6876,7 @@ void App::ConfirmDialog() {
             m_history_version = ~0u;
             m_installed_focus = 0;
             break;
-        default: break;
+        default: ConfirmToolDialog(); break;
     }
 }
 

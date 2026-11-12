@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "vault.hpp"
+#include <algorithm>
+#include <ctime>
+#include <dirent.h>
 
 #include "defines.hpp"
 #include "errors.hpp"
@@ -55,11 +58,11 @@ std::string HttpError(const http::Response& r) {
     return VaultError(m.e_refused_t, m.e_refused_d, 0, what);
 }
 
-FsSaveDataAttribute Attribute(const unsigned char uid[16], unsigned long long app_id) {
+FsSaveDataAttribute Attribute(const unsigned char uid[16], unsigned long long app_id, int kind = 0) {
     FsSaveDataAttribute attr{};
     attr.application_id = app_id;
-    std::memcpy(&attr.uid, uid, sizeof(attr.uid));
-    attr.save_data_type = FsSaveDataType_Account;
+    if (kind == 0) std::memcpy(&attr.uid, uid, sizeof(attr.uid));
+    attr.save_data_type = kind == 1 ? FsSaveDataType_Device : kind == 2 ? FsSaveDataType_Bcat : FsSaveDataType_Account;
     return attr;
 }
 
@@ -91,9 +94,9 @@ Result Walk(FsFileSystem* fs, const std::string& dir, std::vector<std::pair<std:
 
 // The save to a zip on the SD card.
 Result SaveToZip(const unsigned char uid[16], unsigned long long app_id, const std::string& zip_path,
-                 const std::function<void(unsigned long long, unsigned long long)>& progress) {
+                 const std::function<void(unsigned long long, unsigned long long)>& progress, int kind = 0) {
     FsFileSystem fs;
-    const FsSaveDataAttribute attr = Attribute(uid, app_id);
+    const FsSaveDataAttribute attr = Attribute(uid, app_id, kind);
     R_TRY(fsOpenSaveDataFileSystem(&fs, FsSaveDataSpaceId_User, &attr));
     ON_SCOPE_EXIT(fsFsClose(&fs));
     std::vector<std::pair<std::string, s64>> items;
@@ -128,7 +131,7 @@ Result SaveToZip(const unsigned char uid[16], unsigned long long app_id, const s
 
 // A zip over the save: everything in it goes, the zip's files come, then it is committed.
 Result ZipToSave(const unsigned char uid[16], unsigned long long app_id, const std::string& zip_path,
-                 const std::function<void(unsigned long long, unsigned long long)>& progress) {
+                 const std::function<void(unsigned long long, unsigned long long)>& progress, int kind = 0) {
     zip::Reader r;
     R_UNLESS(r.Open(zip_path), Result_UnknownContainer);
     unsigned long long total = 0, done = 0;
@@ -140,7 +143,7 @@ Result ZipToSave(const unsigned char uid[16], unsigned long long app_id, const s
         if (!e.Folder()) R_UNLESS(r.Extract(e, [](const void*, size_t) { return true; }), Result_UnknownContainer);
     }
     FsFileSystem fs;
-    const FsSaveDataAttribute attr = Attribute(uid, app_id);
+    const FsSaveDataAttribute attr = Attribute(uid, app_id, kind);
     R_TRY(fsOpenSaveDataFileSystem(&fs, FsSaveDataSpaceId_User, &attr));
     ON_SCOPE_EXIT(fsFsClose(&fs));
     char root[FS_MAX_PATH] = "/";
@@ -197,6 +200,36 @@ http::Response Upload(const std::string& url, const std::string& key, const std:
 
 } // namespace
 
+constexpr const char* kSdSaves = "sdmc:/switch/NXDock/saves";
+
+// The name of a copy on the SD card: when, the kind, the start of the user's ID, the version, and
+// whether it was automatic; its note and who it is of beside it in a .txt.
+std::string SdName(int kind, const unsigned char uid[16], unsigned version, bool automatic) {
+    char name[96];
+    std::snprintf(name, sizeof(name), "%lld-%d-%02x%02x%02x%02x-v%u%s.zip", (long long)std::time(nullptr), kind, kind == 0 ? uid[0] : 0,
+                  kind == 0 ? uid[1] : 0, kind == 0 ? uid[2] : 0, kind == 0 ? uid[3] : 0, version, automatic ? "-a" : "");
+    return name;
+}
+
+std::string SdFolder(unsigned long long app_id) {
+    mkdir(kSdSaves, 0777);
+    const std::string folder = std::string(kSdSaves) + "/" + TitleHex(app_id);
+    mkdir(folder.c_str(), 0777);
+    return folder;
+}
+
+const char* AccountOf(int kind, const std::string& name) {
+    static thread_local std::string out;
+    out = kind == 1 ? "device" : kind == 2 ? "bcat" : name;
+    return out.c_str();
+}
+
+bool SaveZipTo(const unsigned char uid[16], unsigned long long app_id, int kind, const std::string& zip_path) {
+    const bool ok = R_SUCCEEDED(SaveToZip(uid, app_id, zip_path, [](unsigned long long, unsigned long long) {}, kind));
+    if (!ok) std::remove(zip_path.c_str());
+    return ok;
+}
+
 Vault::Vault() {
     mkdir("sdmc:/switch", 0777);
     mkdir("sdmc:/switch/NXDock", 0777);
@@ -248,7 +281,7 @@ std::vector<Vault::User> Vault::Users() {
     return out;
 }
 
-std::vector<Vault::Save> Vault::Saves(const User& user) {
+std::vector<Vault::Save> Vault::Saves(const User& user, int kind) {
     std::vector<Save> out;
     FsSaveDataInfoReader reader;
     if (R_FAILED(fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User))) return out;
@@ -257,7 +290,9 @@ std::vector<Vault::Save> Vault::Saves(const User& user) {
         s64 n = 0;
         if (R_FAILED(fsSaveDataInfoReaderRead(&reader, info, 32, &n)) || n == 0) break;
         for (s64 i = 0; i < n; i++) {
-            if (info[i].save_data_type != FsSaveDataType_Account || std::memcmp(&info[i].uid, user.uid, 16) != 0) continue;
+            const u8 type = kind == 1 ? FsSaveDataType_Device : kind == 2 ? FsSaveDataType_Bcat : FsSaveDataType_Account;
+            if (info[i].save_data_type != type || !info[i].application_id) continue;
+            if (kind == 0 && std::memcmp(&info[i].uid, user.uid, 16) != 0) continue;
             out.push_back({info[i].application_id, info[i].size, {}});
         }
     }
@@ -295,6 +330,7 @@ void Vault::Run(std::function<void()> work) {
     if (m_thread.joinable()) m_thread.join();
     m_busy = true;
     m_view.error.clear();
+    m_view.last_delete = false;
     m_thread = std::thread(std::move(work));
 }
 
@@ -372,21 +408,97 @@ std::string CopySavesBefore(const std::string& url, const std::string& key, unsi
     return {};
 }
 
+std::vector<Vault::SdCopy> Vault::SdCopies(unsigned long long app_id, int kind) {
+    std::vector<SdCopy> out;
+    const std::string folder = std::string(kSdSaves) + "/" + TitleHex(app_id);
+    DIR* d = opendir(folder.c_str());
+    if (!d) return out;
+    while (const dirent* e = readdir(d)) {
+        const std::string name = e->d_name;
+        if (name.size() < 5 || name.substr(name.size() - 4) != ".zip") continue;
+        SdCopy c;
+        long long when = 0;
+        int k = 0;
+        unsigned version = 0;
+        char uid[16] = {};
+        if (std::sscanf(name.c_str(), "%lld-%d-%8[0-9a-f]-v%u", &when, &k, uid, &version) < 4 || k != kind) continue;
+        c.path = folder + "/" + name;
+        c.when = when;
+        c.kind = k;
+        c.version = version;
+        c.automatic = name.find("-a.zip") != std::string::npos;
+        struct stat st{};
+        if (stat(c.path.c_str(), &st) == 0) c.size = (unsigned long long)st.st_size;
+        // its note and who it is of
+        FILE* f = std::fopen((c.path.substr(0, c.path.size() - 4) + ".txt").c_str(), "r");
+        if (f) {
+            char line[512];
+            if (std::fgets(line, sizeof(line), f)) c.who = line;
+            if (std::fgets(line, sizeof(line), f)) c.note = line;
+            std::fclose(f);
+            for (auto* s : {&c.who, &c.note}) {
+                while (!s->empty() && (s->back() == '\n' || s->back() == '\r')) s->pop_back();
+            }
+        }
+        out.push_back(std::move(c));
+    }
+    closedir(d);
+    std::sort(out.begin(), out.end(), [](const SdCopy& a, const SdCopy& b) { return a.when > b.when; });
+    return out;
+}
+
+int Vault::KindOf(const LibrarySave& copy) { return copy.account == "device" ? 1 : copy.account == "bcat" ? 2 : 0; }
+
+namespace {
+
+// A save to the SD card as a copy, with its note; automatic ones keep the newest three.
+Result BackupToSd(const Vault::User& user, int kind, unsigned long long app_id, unsigned version, const std::string& note, bool automatic,
+                  const std::function<void(unsigned long long, unsigned long long)>& progress) {
+    const std::string folder = SdFolder(app_id);
+    const std::string zip = folder + "/" + SdName(kind, user.uid, version, automatic);
+    R_TRY(SaveToZip(user.uid, app_id, zip, progress, kind));
+    FILE* f = std::fopen((zip.substr(0, zip.size() - 4) + ".txt").c_str(), "w");
+    if (f) {
+        std::fprintf(f, "%s\n%s\n", kind == 0 ? user.name.c_str() : AccountOf(kind, ""), note.c_str());
+        std::fclose(f);
+    }
+    if (automatic) {
+        int kept = 0;
+        for (const auto& c : Vault::SdCopies(app_id, kind)) {
+            if (!c.automatic || (kind == 0 && c.who != user.name)) continue;
+            if (++kept > 3) {
+                std::remove(c.path.c_str());
+                std::remove((c.path.substr(0, c.path.size() - 4) + ".txt").c_str());
+            }
+        }
+    }
+    R_SUCCEED();
+}
+
+} // namespace
+
 bool Vault::StartBackup(const std::string& url, const std::string& key, const User& user, unsigned long long app_id, unsigned version,
-                        const std::string& note) {
+                        const std::string& note, int kind) {
     if (Busy()) return false;
-    Run([this, url, key, user, app_id, version, note] {
+    Run([this, url, key, user, app_id, version, note, kind] {
         const More& m = TrM();
+        if (url.empty()) {
+            // no library: to the SD card
+            Progress(0, 0, Stage::Copying);
+            const Result rc = BackupToSd(user, kind, app_id, version, note, false, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); });
+            Done(R_SUCCEEDED(rc) ? std::string{} : VaultError(m.v_copy_failed, m.v_copy_failed_d, rc));
+            return;
+        }
         const std::string zip_path = std::string(kTmp) + "/save.zip";
         Progress(0, 0, Stage::Copying);
-        Result rc = SaveToZip(user.uid, app_id, zip_path, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); });
+        Result rc = SaveToZip(user.uid, app_id, zip_path, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); }, kind);
         if (R_FAILED(rc)) {
             std::remove(zip_path.c_str());
             Done(VaultError(m.v_copy_failed, m.v_copy_failed_d, rc));
             return;
         }
         const std::string target = url + "/install/saves/" + TitleHex(app_id) + "?note=" + Encode(note) +
-                                   "&version=" + std::to_string(version) + "&account=" + Encode(user.name);
+                                   "&version=" + std::to_string(version) + "&account=" + Encode(AccountOf(kind, user.name));
         const auto r = Upload(target, key, zip_path, [this](u64 d, u64 t) { Progress(d, t, Stage::Sending); });
         std::remove(zip_path.c_str());
         Done(r.status == 200 ? std::string{} : HttpError(r));
@@ -394,10 +506,104 @@ bool Vault::StartBackup(const std::string& url, const std::string& key, const Us
     return true;
 }
 
-bool Vault::StartRestore(const std::string& url, const std::string& key, const User& user, unsigned long long app_id,
-                         const LibrarySave& copy, const std::string& before_note) {
+bool Vault::StartBackupAll(const std::string& url, const std::string& key, std::vector<Item> items, const std::string& note, bool automatic) {
+    if (Busy() || items.empty()) return false;
+    Run([this, url, key, items, note, automatic] {
+        const More& m = TrM();
+        int copied = 0;
+        std::string error;
+        for (size_t i = 0; i < items.size(); i++) {
+            const auto& it = items[i];
+            Progress(i, items.size(), Stage::Copying);
+            Result rc = 0;
+            if (url.empty()) {
+                rc = BackupToSd(it.user, it.kind, it.app_id, it.version, note, automatic, [](u64, u64) {});
+            } else {
+                const std::string zip_path = std::string(kTmp) + "/save.zip";
+                rc = SaveToZip(it.user.uid, it.app_id, zip_path, [](u64, u64) {}, it.kind);
+                if (R_SUCCEEDED(rc)) {
+                    const std::string target = url + "/install/saves/" + TitleHex(it.app_id) + "?note=" + Encode(note) +
+                                               "&version=" + std::to_string(it.version) + "&account=" + Encode(AccountOf(it.kind, it.user.name));
+                    const auto r = Upload(target, key, zip_path, [](u64, u64) {});
+                    if (r.status != 200 && error.empty()) error = HttpError(r);
+                    if (r.status != 200) rc = 1;
+                }
+                std::remove(zip_path.c_str());
+            }
+            if (R_SUCCEEDED(rc)) copied++;
+            else if (error.empty()) error = VaultError(m.v_copy_failed, m.v_copy_failed_d, rc);
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.copied = copied;
+        }
+        Done(copied ? std::string{} : error);
+    });
+    return true;
+}
+
+bool Vault::StartDelete(const std::string& url, const std::string& key, const User& user, int kind, unsigned long long app_id, unsigned version,
+                        const std::string& note) {
     if (Busy()) return false;
-    Run([this, url, key, user, app_id, copy, before_note] {
+    Run([this, url, key, user, kind, app_id, version, note] {
+        const More& m = TrM();
+        Progress(0, 0, Stage::Copying);
+        // 1. a copy, where copies go; a copy that fails stops it all
+        Result rc = 0;
+        if (url.empty()) {
+            rc = BackupToSd(user, kind, app_id, version, note, false, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); });
+        } else {
+            const std::string zip_path = std::string(kTmp) + "/save.zip";
+            rc = SaveToZip(user.uid, app_id, zip_path, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); }, kind);
+            if (R_SUCCEEDED(rc)) {
+                const std::string target = url + "/install/saves/" + TitleHex(app_id) + "?note=" + Encode(note) +
+                                           "&version=" + std::to_string(version) + "&account=" + Encode(AccountOf(kind, user.name));
+                const auto r = Upload(target, key, zip_path, [this](u64 d, u64 t) { Progress(d, t, Stage::Sending); });
+                std::remove(zip_path.c_str());
+                if (r.status != 200) {
+                    Done(HttpError(r));
+                    return;
+                }
+            }
+        }
+        if (R_FAILED(rc)) {
+            Done(VaultError(m.v_copy_failed, m.v_copy_failed_d, rc));
+            return;
+        }
+        // 2. the save goes
+        const FsSaveDataAttribute attr = Attribute(user.uid, app_id, kind);
+        rc = fsDeleteSaveDataFileSystemBySaveDataAttribute(FsSaveDataSpaceId_User, &attr);
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.last_delete = true;
+        }
+        Done(R_SUCCEEDED(rc) ? std::string{} : VaultError(m.v_restore_failed, m.v_restore_failed_d, rc));
+    });
+    return true;
+}
+
+bool Vault::StartRestoreSd(const User& user, int kind, unsigned long long app_id, const std::string& zip, const std::string& before_note) {
+    if (Busy()) return false;
+    Run([this, user, kind, app_id, zip, before_note] {
+        const More& m = TrM();
+        // 1. the save it replaces, to the SD card first
+        Progress(0, 0, Stage::Copying);
+        Result rc = BackupToSd(user, kind, app_id, 0, before_note, false, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); });
+        if (R_FAILED(rc)) {
+            Done(VaultError(m.v_no_save, m.v_no_save_d, rc), true);
+            return;
+        }
+        // 2. the copy over the save
+        rc = ZipToSave(user.uid, app_id, zip, [this](u64 d, u64 t) { Progress(d, t, Stage::Restoring); }, kind);
+        Done(R_SUCCEEDED(rc) ? std::string{} : VaultError(m.v_restore_failed, m.v_restore_failed_d, rc), true);
+    });
+    return true;
+}
+
+bool Vault::StartRestore(const std::string& url, const std::string& key, const User& user, unsigned long long app_id,
+                         const LibrarySave& copy, const std::string& before_note, int kind) {
+    if (Busy()) return false;
+    Run([this, url, key, user, app_id, copy, before_note, kind] {
         const More& m = TrM();
         const std::string in = std::string(kTmp) + "/restore.zip", before = std::string(kTmp) + "/before.zip";
         // 1. the copy of the library, to the SD card
@@ -421,14 +627,14 @@ bool Vault::StartRestore(const std::string& url, const std::string& key, const U
         }
         // 2. the save it replaces, to the library first
         Progress(0, 0, Stage::Copying);
-        Result rc = SaveToZip(user.uid, app_id, before, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); });
+        Result rc = SaveToZip(user.uid, app_id, before, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); }, kind);
         if (R_FAILED(rc)) {
             std::remove(in.c_str());
             std::remove(before.c_str());
             Done(VaultError(m.v_no_save, m.v_no_save_d, rc), true);
             return;
         }
-        const std::string target = url + "/install/saves/" + TitleHex(app_id) + "?note=" + Encode(before_note) + "&account=" + Encode(user.name);
+        const std::string target = url + "/install/saves/" + TitleHex(app_id) + "?note=" + Encode(before_note) + "&account=" + Encode(AccountOf(kind, user.name));
         const auto up = Upload(target, key, before, [this](u64 d, u64 t) { Progress(d, t, Stage::Sending); });
         if (up.status != 200) {
             // nothing was touched: the save stays as it was
@@ -438,7 +644,7 @@ bool Vault::StartRestore(const std::string& url, const std::string& key, const U
             return;
         }
         // 3. the copy over the save; the one before stays on the SD card until the next restore
-        rc = ZipToSave(user.uid, app_id, in, [this](u64 d, u64 t) { Progress(d, t, Stage::Restoring); });
+        rc = ZipToSave(user.uid, app_id, in, [this](u64 d, u64 t) { Progress(d, t, Stage::Restoring); }, kind);
         std::remove(in.c_str());
         Done(R_SUCCEEDED(rc) ? std::string{} : VaultError(m.v_restore_failed, m.v_restore_failed_d, rc), true);
     });

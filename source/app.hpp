@@ -3,12 +3,16 @@
 #pragma once
 #include <future>
 #include <set>
+#include <thread>
 
 #include <switch.h>
 #include <memory>
 #include <vector>
 #include "catalog.hpp"
 #include "file_source.hpp"
+#include "fileops.hpp"
+#include "updater.hpp"
+#include "versions_list.hpp"
 #include "forwarder.hpp"
 #include "config.hpp"
 #include "covers.hpp"
@@ -64,7 +68,8 @@ private:
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
-                         OpenBubble, QuickRow, QuickBack };
+                         OpenBubble, QuickRow, QuickBack,
+                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -139,6 +144,96 @@ private:
     double m_places_checked = -100;
     bool m_usb_active = false;       // a list of the computer is being installed
     std::string m_more_error;
+    // the file list's tools (1A to 4A of the test of the new tools, more_files.cpp): every file or the
+    // games only, marking folders and ranges, a menu of actions on −, a clipboard, the work of a
+    // copy, a move or a delete on its own thread, and deleting files once they install well
+    struct FilesRow {
+        int action;          // FilesAction
+        std::string label, right;
+        bool enabled;
+    };
+    enum FilesAction { kFaInstall, kFaView, kFaCopy, kFaCut, kFaPaste, kFaForget, kFaRename, kFaFolder, kFaProps, kFaDelete };
+    std::vector<int> FilesChosen() const;                 // the marked rows, or the one in focus
+    std::vector<std::string> FilesChosenPaths() const;
+    std::vector<FilesRow> FilesMenuRows();
+    void DrawFilesMenu(NVGcontext* vg);
+    void UpdateFilesMenu(u64 down, u64 held);
+    void FilesDo(int action);
+    void FilesMarkMove(int from, int to);                // a range marked while Y is held
+    void StartFilesWork(int kind, std::vector<std::string> paths, const std::string& to);
+    void FollowFilesWork();
+    bool FilesWorkBusy() const { return m_fwork != nullptr; }
+    void ReopenFolder(const std::string& focus_name = {});
+    void LongPress(float x, float y);
+    // the texts and choices of the questions of the new tools (more_files.cpp and the others)
+    struct ToolLine {
+        std::string text, right;
+        bool warn = false;
+    };
+    struct ToolDialog {
+        std::string title, body, note, primary, error, cancel;
+        std::vector<ToolLine> lines;
+        bool can = true, single = false;
+        bool bar = false, running = false;
+        float frac = 0;
+        std::string bar_text;
+    };
+    bool ToolDialogText(ToolDialog& d);       // false: nothing to show (the question closes)
+    bool ToolDialogInput(u64 down, u64 held); // true: the question took the input
+    void ConfirmToolDialog();
+    bool m_files_all = false;          // every file, not only the games
+    bool m_files_menu = false;
+    int m_files_menu_focus = 0;
+    bool m_files_after = false;        // delete the files once they install well (off each time it opens)
+    int m_mark_anchor = -1;            // Y held: where the range began, and what it sets
+    char m_mark_value = 1;
+    std::vector<std::string> m_clip;   // copied or cut, to paste
+    bool m_clip_move = false;
+    std::string m_clip_from;
+    unsigned long long m_clip_bytes = 0;
+    std::unique_ptr<fileops::Progress> m_fwork;
+    std::thread m_fwork_thread;
+    int m_fwork_kind = 0;              // 0 delete, 1 copy, 2 move
+    std::string m_fwork_to, m_fwork_place;
+    bool m_fwork_split = false;
+    double m_fwork_at = 0;
+    std::string m_files_refocus;       // the name to keep in focus when the folder is read again
+    double m_touch_at = 0;             // when the finger came down, for a long press (m_long_fired is shared with the covers)
+    void OpenFilesMenu();
+    std::vector<fileops::GameFile> m_files_found; // the games under what is chosen, read when the menu opens
+    fileops::Count m_files_count;                  // what is chosen holds, read then too
+    ToolDialog m_tool;                             // a question of the new tools, prepared when it opens
+    // NXDock updating itself (5A, more_update.cpp)
+    void FollowSelfUpdate();
+    void AskSelfUpdate();
+    bool UpdaterDialogText(ToolDialog& d);
+    bool UpdaterDialogInput(u64 down);
+    void ConfirmUpdater();
+    std::unique_ptr<Updater> m_updater;
+    bool m_update_silent = false;   // the check at start: only a notice when a newer one is out
+    bool m_update_has_old = false;  // NXDock.nro.old is there, to go back to
+    double m_update_old_at = -100, m_update_done_at = -100;
+    bool m_update_started = false;
+    // what is missing for the games on the console (6A) and the details of a content (7A), more_console.cpp
+    struct Missing {
+        unsigned update = 0;     // a newer update than the one installed, 0 none
+        bool update_lib = false; // the library has it (or one newer than what is installed)
+        int dlc = 0, dlc_known = 0, dlc_lib = 0; // DLC not installed, all known, the missing ones the library has
+        bool Any() const { return update || dlc; }
+    };
+    const Missing& MissingOf(unsigned long long app);
+    void FollowMissing(const Space::View& v);
+    Space::View ConsoleView(const Space::View& v); // only those missing something, when the filter is on
+    void OpenContentDetails(const InstalledApp& a, const InstalledApp::Content& c);
+    void ConsoleTicketBack();
+    void ConsoleVersionReset();
+    std::unique_ptr<VersionsList> m_versions;
+    std::map<unsigned long long, Missing> m_missing;
+    std::string m_missing_key;    // what the missing were worked out from
+    bool m_console_missing = false; // the filter: only the games missing something
+    // more folders over MTP (8A, more.cpp): the one in focus, and a switch turned
+    int m_mtp_unit = 0;
+    void ToggleMtpUnit(int unit);
     // the vault of saves (6A, more_vault.cpp)
     void OpenVault();
     std::vector<LibrarySave> VaultCopies();
@@ -149,6 +244,22 @@ private:
     std::vector<Vault::User> m_vault_users;
     std::vector<Vault::Save> m_vault_saves;
     int m_vault_user = 0, m_vault_focus = 0, m_vault_copy = 0, m_vault_side = 0, m_vault_finished = 0;
+    // more of the saves (9A): the kind, the copies of the SD card, the menu of −, the automatic copies
+    struct VaultRow {
+        bool sd = false;
+        LibrarySave lib;
+        Vault::SdCopy copy;
+        long long When() const { return sd ? copy.when : lib.when; }
+    };
+    std::vector<VaultRow> VaultRows();
+    void DrawVaultMenu(NVGcontext* vg);
+    void VaultMenuDo(int row);
+    void ConfirmSaveDelete();
+    void FollowSaveAuto();
+    int m_vault_kind = 0;
+    bool m_vault_menu = false;
+    int m_vault_menu_focus = 0;
+    bool m_save_auto_started = false, m_vault_auto_running = false;
     // space and dumps (8A, more_space.cpp)
     unsigned long long QueueNeedsOnSd();
     void OpenSpace();
@@ -488,7 +599,8 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove };
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
+                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
