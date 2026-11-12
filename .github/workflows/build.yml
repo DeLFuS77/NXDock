@@ -6,7 +6,9 @@ name: Build
 # program is kept as an artifact of the run; for a version tag (1.2.3), the release is made with
 # it and the matching section of CHANGELOG.md, as a draft: the maintainer signs it on their own
 # computer and publishes it (go run ./tools/releasesign <tag>), so the key of the releases is
-# never on GitHub. Once published, announce.yml sends the notes to Discord.
+# never on GitHub. Once published, announce.yml sends the notes to Discord. A beta tag
+# (1.2.3-beta.4) makes a pre-release: GitHub leaves it out of the latest release, which a version
+# of NXDock asks for, so only the ones who run a beta are told of it by NXDock itself.
 
 on:
   push:
@@ -14,6 +16,7 @@ on:
       - main
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
   pull_request:
   workflow_dispatch:
 
@@ -30,13 +33,18 @@ jobs:
         with:
           persist-credentials: false
 
-      # a version tag must be the version CMakeLists.txt gives NXDock, the one it shows
+      # a version tag must be the version CMakeLists.txt gives NXDock, the one it shows, with the
+      # number of the beta when there is one
       - name: Version
         run: |
           version=$(sed -n 's/^project(NXDock VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           if [ -z "${version}" ]; then
             echo "No version in CMakeLists.txt" >&2
             exit 1
+          fi
+          pre=$(sed -n 's/^set(NXDOCK_PRERELEASE "\(.*\)")$/\1/p' CMakeLists.txt)
+          if [ -n "${pre}" ]; then
+            version="${version}-${pre}"
           fi
           if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "${version}" ]; then
             echo "The tag ${GITHUB_REF_NAME} is not the version of CMakeLists.txt (${version})" >&2
@@ -138,6 +146,17 @@ jobs:
 
       - name: Add how to download
         run: |
+          case "${GITHUB_REF_NAME}" in
+            *-beta.*)
+              cat >> release-notes.md <<EOF
+
+          > [!WARNING]
+          > **This is a beta.** It has not been tested in depth yet, so it may still have bugs and errors. Please
+          > report anything that goes wrong on the [issues page](https://github.com/DeLFuS77/NXDock/issues/new/choose)
+          > or on [Discord](https://discord.gg/acQVZSEBR): every report helps.
+          EOF
+              ;;
+          esac
           cat >> release-notes.md <<EOF
 
           > [!IMPORTANT]
@@ -167,9 +186,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          beta=()
+          title="NXDock ${GITHUB_REF_NAME}"
+          case "${GITHUB_REF_NAME}" in
+            *-beta.*) beta=(--prerelease); title="NXDock ${GITHUB_REF_NAME} (beta)" ;;
+          esac
           gh release create "${GITHUB_REF_NAME}" \
             --draft \
-            --title "NXDock ${GITHUB_REF_NAME}" \
+            "${beta[@]}" \
+            --title "${title}" \
             --notes-file release-notes.md \
             --verify-tag \
             dist/NXDock.nro dist/NXDock-*.zip dist/NXDock-*.intoto.jsonl dist/SHA256SUMS.txt

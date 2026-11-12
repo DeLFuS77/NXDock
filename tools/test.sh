@@ -19,6 +19,8 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   gcc -O1 -c -I$M -I$M/optional -o /tmp/monocypher_ed.o $M/optional/monocypher-ed25519.c
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -I$M -I$M/optional -o /tmp/minisig_test tests/minisig_test.cpp source/minisig.cpp /tmp/monocypher.o /tmp/monocypher_ed.o
   /tmp/minisig_test
+  # the order of versions and betas, for updating itself
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/version_test tests/version_test.cpp && /tmp/version_test
   # what titledb knows of updates and DLC, for the games not in the library
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/versions_test tests/versions_test.cpp source/versions_list.cpp -lpthread
   /tmp/versions_test

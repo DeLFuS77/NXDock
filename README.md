@@ -4,21 +4,22 @@
 
 [![Support on Ko-fi](https://img.shields.io/badge/Support_on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/delfus77)
 [![Discord](https://img.shields.io/badge/Discord-join_the_server-5865F2?logo=discord&logoColor=white)](https://discord.gg/acQVZSEBR)
-[![Release](https://img.shields.io/github/v/release/DeLFuS77/NXDock?sort=semver)](https://github.com/DeLFuS77/NXDock/releases)
+[![Release](https://img.shields.io/github/v/release/DeLFuS77/NXDock?sort=semver&include_prereleases)](https://github.com/DeLFuS77/NXDock/releases)
 [![Downloads](https://img.shields.io/github/downloads/DeLFuS77/NXDock/total?logo=github)](https://github.com/DeLFuS77/NXDock/releases)
 [![Build](https://github.com/DeLFuS77/NXDock/actions/workflows/build.yml/badge.svg)](https://github.com/DeLFuS77/NXDock/actions/workflows/build.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](https://github.com/DeLFuS77/NXDock/blob/main/LICENSE)
 ![Languages: 11](https://img.shields.io/badge/languages-11-blue)
 
-A homebrew installer for the Nintendo Switch. It installs your own NSP, NSZ, XCI and XCZ copies from your
+A homebrew installer for the Nintendo Switch, **in beta**. It installs your own NSP, NSZ, XCI and XCZ copies from your
 [Switch Library Manager Web](https://github.com/DeLFuS77/switch-library-manager-web) library over the network, with
 no files copied to the SD card first. It also installs from the SD card, a USB disk, or a computer over MTP or
 NS-USBloader, and works with the buttons and with the touch screen alike.
 
-> [!IMPORTANT]
-> **NXDock is still being tested.** It needs more people to try it, so any problem you find helps a lot: please
-> [report it](https://github.com/DeLFuS77/NXDock/issues/new/choose), however small. Sorry in advance for any trouble it
-> may cause. NXDock is provided as it is, without any warranty, and its authors are not responsible for any problem or
+> [!WARNING]
+> **NXDock is a beta.** It has not been tested in depth yet, so it may still have bugs and errors. It needs more
+> people to try it, so any problem you find helps a lot: please
+> [report it](https://github.com/DeLFuS77/NXDock/issues/new/choose) or tell on [Discord](https://discord.gg/acQVZSEBR),
+> however small. Sorry in advance for any trouble it may cause. NXDock is provided as it is, without any warranty, and its authors are not responsible for any problem or
 > loss that comes from using it (see the [GPL-3.0](LICENSE)). Keep copies of what matters to you.
 
 💬 Questions, ideas or news of new versions? Join the [Discord server](https://discord.gg/acQVZSEBR), shared with
@@ -123,7 +124,8 @@ More: [Compatibility](https://github.com/DeLFuS77/NXDock/wiki/Compatibility).
 
 ## Installation
 
-1. Download `NXDock-<version>-sd.zip` from the [releases page](https://github.com/DeLFuS77/NXDock/releases/latest).
+1. Download `NXDock-<version>-sd.zip` from the [releases page](https://github.com/DeLFuS77/NXDock/releases). While
+   NXDock is a beta, its releases are marked as pre-releases.
 2. Unpack it at the root of the SD card: it puts `switch/NXDock/NXDock.nro` in place. (Or copy `NXDock.nro` on its
    own to `sdmc:/switch/NXDock/`.)
 3. Open it from the Homebrew Menu. In Settings › HOME menu you can add a shortcut to open it from the HOME menu.

@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-## 0.9.0
+## 0.9.0-beta.1
 
-The first public version. NXDock is still being tested: please report any problem you find.
+The first public beta. It has not been tested in depth yet, so it may still have bugs and errors: please
+report any problem you find, on the issues page or on Discord.
 
 - Installs NSP, NSZ, XCI and XCZ from Switch Library Manager Web over the network, paired with a code, with no
   addresses or keys to type.

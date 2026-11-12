@@ -50,6 +50,8 @@ contributions are accepted under the same license.
 ## Releases
 
 Versions follow [Semantic Versioning](https://semver.org/) and are tagged `MAJOR.MINOR.PATCH` (without a "v"), the
-version of `CMakeLists.txt`. A tag builds `NXDock.nro` and the zip for the SD card, with their checksums and a signed
+version of `CMakeLists.txt`. A beta adds its number, `MAJOR.MINOR.PATCH-beta.N` (`NXDOCK_PRERELEASE` in
+`CMakeLists.txt`), and is published as a pre-release; a beta of NXDock is told of newer betas, a version only of
+newer versions. A tag builds `NXDock.nro` and the zip for the SD card, with their checksums and a signed
 provenance, as a draft; the maintainer signs the checksums on their own computer (`go run ./tools/releasesign <tag>`)
 and publishes it.

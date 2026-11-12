@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a problem! NXDock is still being tested, and every report helps make it better.
+        Thanks for reporting a problem! NXDock is a beta that has not been tested in depth yet, and every report helps make it better.
 
         **Never attach or paste `prod.keys`, `title.keys`, the key of a paired console or any console key**: they are
         not needed and must not be shared. Remove keys and passwords from logs and screenshots before posting.
@@ -16,7 +16,7 @@ body:
     id: version
     attributes:
       label: NXDock version
-      description: Shown in Settings › Look for a new version, e.g. 0.9.0
+      description: Shown in Settings › Look for a new version, e.g. 0.9.0-beta.1
     validations:
       required: true
   - type: dropdown

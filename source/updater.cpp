@@ -3,6 +3,7 @@
 #include "updater.hpp"
 
 #include "minisig.hpp"
+#include "version_order.hpp"
 
 #include <curl/curl.h>
 #include <mbedtls/sha256.h>
@@ -23,7 +24,10 @@
 namespace nxdock {
 namespace {
 
+// the latest release, as GitHub tells it: never a beta (a pre-release); and the last releases, betas
+// too, which a beta asks for, so it hears of the next beta as of the next version
 constexpr const char* kLatest = "https://api.github.com/repos/DeLFuS77/NXDock/releases/latest";
+constexpr const char* kLast = "https://api.github.com/repos/DeLFuS77/NXDock/releases?per_page=10";
 
 struct Sink {
     std::string* body;
@@ -70,21 +74,6 @@ long Fetch(const std::string& url, std::string& body, size_t max, std::atomic<un
     return status;
 }
 
-std::vector<int> Parts(std::string v) {
-    if (!v.empty() && (v[0] == 'v' || v[0] == 'V')) v.erase(0, 1);
-    std::vector<int> out;
-    size_t i = 0;
-    while (i < v.size() && out.size() < 4) {
-        if (v[i] < '0' || v[i] > '9') break; // "-beta.1" and the rest are left out
-        out.push_back(std::atoi(v.c_str() + i));
-        while (i < v.size() && v[i] >= '0' && v[i] <= '9') i++;
-        if (i < v.size() && v[i] == '.') i++;
-        else break;
-    }
-    while (out.size() < 3) out.push_back(0);
-    return out;
-}
-
 std::string Hex(const unsigned char* data, size_t n) {
     static const char* digits = "0123456789abcdef";
     std::string out;
@@ -123,7 +112,7 @@ Updater::View Updater::Snapshot() {
 
 bool Updater::HasKeys() { return !minisig::ParseKeys(NXDOCK_RELEASE_KEYS).empty(); }
 
-bool Updater::Newer(const std::string& a, const std::string& b) { return Parts(a) > Parts(b); }
+bool Updater::Newer(const std::string& a, const std::string& b) { return version::Newer(a, b); }
 
 bool Updater::HasOld(const std::string& nro) { return !nro.empty() && Exists(nro + ".old"); }
 
@@ -196,11 +185,28 @@ void Updater::Check() {
     Set(Stage::Checking);
     m_thread = std::thread([this] {
         std::string body;
-        const long status = Fetch(kLatest, body, 512 * 1024);
+        const bool beta = version::IsBeta(NXDOCK_VERSION);
+        const long status = Fetch(beta ? kLast : kLatest, body, 1024 * 1024);
         if (status == 0) return Set(Stage::Failed, Error::Network);
         if (status != 200) return Set(Stage::Failed, Error::NoRelease); // none published yet (or the repository is private)
         yyjson_doc* doc = yyjson_read(body.data(), body.size(), 0);
         yyjson_val* root = doc ? yyjson_doc_get_root(doc) : nullptr;
+        if (root && yyjson_is_arr(root)) {
+            // a beta: the newest of the last releases, betas too
+            yyjson_val* best = nullptr;
+            std::string best_tag;
+            size_t ri, rn;
+            yyjson_val* r;
+            yyjson_arr_foreach(root, ri, rn, r) {
+                const char* t = yyjson_get_str(yyjson_obj_get(r, "tag_name"));
+                if (!t || yyjson_get_bool(yyjson_obj_get(r, "draft"))) continue;
+                if (!best || version::Newer(t, best_tag)) {
+                    best = r;
+                    best_tag = t;
+                }
+            }
+            root = best;
+        }
         const char* tag = root ? yyjson_get_str(yyjson_obj_get(root, "tag_name")) : nullptr;
         const char* notes = root ? yyjson_get_str(yyjson_obj_get(root, "body")) : nullptr;
         std::string nro, sums, sig;

@@ -2,7 +2,8 @@
 # The release workflow makes the release as a draft, which the maintainer signs and publishes
 # (tools/releasesign): the announcement waits for it. Through the webhook kept in the secret
 # DISCORD_WEBHOOK; without it (a fork) nothing is sent, and if Discord fails the release stays as
-# it is.
+# it is. A beta is announced too, titled as one, through DISCORD_BETA_WEBHOOK when there is that
+# secret, and through DISCORD_WEBHOOK otherwise.
 name: Announce
 
 on:
@@ -14,8 +15,6 @@ permissions:
 
 jobs:
   discord:
-    # a version, not a prerelease such as a beta
-    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -28,11 +27,19 @@ jobs:
         continue-on-error: true
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_BETA_WEBHOOK: ${{ secrets.DISCORD_BETA_WEBHOOK }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          if ! [[ "${TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if ! [[ "${TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
             echo "${TAG} is not the tag of a version: nothing sent to Discord"
             exit 0
+          fi
+          title="NXDock ${TAG}"
+          if [[ "${TAG}" == *-beta.* ]]; then
+            title="NXDock ${TAG} (beta)"
+            if [ -n "${DISCORD_BETA_WEBHOOK}" ]; then
+              DISCORD_WEBHOOK="${DISCORD_BETA_WEBHOOK}"
+            fi
           fi
           if [ -z "${DISCORD_WEBHOOK}" ]; then
             echo "No DISCORD_WEBHOOK secret: nothing sent to Discord"
@@ -45,7 +52,7 @@ jobs:
             found { print }
           ' CHANGELOG.md > discord-notes.md
           python3 .github/scripts/discord_release.py \
-            "NXDock ${TAG}" \
+            "${title}" \
             "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" \
             discord-notes.md > discord-message.json
           curl -fsS --retry 3 -H "Content-Type: application/json" \

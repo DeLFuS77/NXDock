@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.13)
 
 project(NXDock VERSION 0.9.0 LANGUAGES C CXX)
+# A beta adds its number to the version (0.9.0-beta.1); empty for a version. The tag of a release is
+# the whole of it.
+set(NXDOCK_PRERELEASE "beta.1")
+if(NXDOCK_PRERELEASE)
+    set(NXDOCK_FULL_VERSION "${PROJECT_VERSION}-${NXDOCK_PRERELEASE}")
+else()
+    set(NXDOCK_FULL_VERSION "${PROJECT_VERSION}")
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -115,7 +123,7 @@ add_library(yati STATIC
 )
 target_include_directories(yati PUBLIC include compat)
 target_include_directories(yati PRIVATE include/yati/nx/nxdumptool)
-target_compile_definitions(yati PRIVATE NXDOCK_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(yati PRIVATE NXDOCK_VERSION="${NXDOCK_FULL_VERSION}")
 # the core keeps its upstream style: signed/unsigned comparisons and partial initialisers are
 # not reported there; NXDock's own code is built with every -Wall -Wextra warning.
 target_compile_options(yati PRIVATE -Wall -Wextra -Wno-sign-compare -Wno-missing-field-initializers -O2)
@@ -210,7 +218,7 @@ add_executable(nxdock
 )
 
 target_compile_definitions(nxdock PRIVATE
-    NXDOCK_VERSION="${PROJECT_VERSION}"
+    NXDOCK_VERSION="${NXDOCK_FULL_VERSION}"
     NXDOCK_RELEASE_KEYS="${NXDOCK_RELEASE_KEYS}"
 )
 
@@ -242,7 +250,7 @@ nx_generate_nacp(
     OUTPUT nxdock.nacp
     NAME "NXDock"
     AUTHOR "DeLFuS77"
-    VERSION "${PROJECT_VERSION}"
+    VERSION "${NXDOCK_FULL_VERSION}"
 )
 
 nx_create_nro(nxdock
