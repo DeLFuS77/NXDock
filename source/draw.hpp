@@ -67,7 +67,13 @@ inline void Section(NVGcontext* vg, const Theme& t, float x, float y, const char
     for (auto& c : up) {
         if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
     }
-    ui::Text(vg, x, y, 13, t.muted, up.c_str());
+    if (t.style == kStyleHuntress) {
+        nvgTextLetterSpacing(vg, 1.5f);
+        ui::Text(vg, x, y, 13, t.ornament, up.c_str());
+        nvgTextLetterSpacing(vg, 0);
+        return;
+    }
+    ui::Text(vg, x, y, 13, t.style == kStyleNXDock ? t.muted : t.work, up.c_str());
 }
 
 // A folder (orange) or a file (outline), small, for lists.

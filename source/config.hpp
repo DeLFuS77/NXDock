@@ -48,6 +48,7 @@ struct UiPrefs {
     bool compress_on = false;   // compress games, experimental: off until the user turns it on (24A)
     int language = -1;          // -1: the console's; else an index of the languages NXDock speaks
     bool theme_auto = false;    // the theme follows the console's
+    int style = 0;              // the style: 0 NXDock, 1 RuneStone, 2 Vampire, 3 Huntress (Settings › Look)
     int dest = 0;               // where the page of a game installs: 0 SD card, 1 internal memory, 2 ask each time
     int pick = 0;               // what the page of a game ticks: 0 what is missing, 1 the game only, 2 the game and its update
     int sort = 0;               // the order of the library: 0 A-Z, 1 size, 2 not installed first, 3 recent

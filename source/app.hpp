@@ -58,6 +58,9 @@ bool TitleFromName(const std::string& name, u64& id, u32& version);
 int TitleKind(u64 id);
 inline constexpr int kTabs = 6;
 
+// The name of a style of Settings › Look, in the language in use.
+const char* StyleName(int style);
+
 class App {
 public:
     bool Init();
@@ -70,7 +73,7 @@ private:
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
-                         OpenBubble, QuickRow, QuickBack,
+                         OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow };
     struct Hit {
         ui::HitRect rect;
@@ -94,6 +97,12 @@ private:
     void OpenWizard();
     void CloseWizard(bool tour);
     void ApplyTheme(int mode); // 0 light, 1 dark, 2 as the console
+    // the style (Settings › Look): its colours flow in and a wave of light leaves (cx, cy)
+    void SetStyle(int style, float cx, float cy);
+    void StepStyle();                    // the colours on their way, once a frame
+    void DrawStyleWave(NVGcontext* vg); // the wave, over everything
+    // the touch of the style in the opening, under the icon (centred at cx, cy, s wide)
+    void DrawBootStyle(NVGcontext* vg, double a, float cx, float cy, float s, float veil);
     std::vector<WizGroup> WizardGroups();
     void WizardGo(int step);
     void ActivateWizard(int group, int item);
@@ -469,6 +478,11 @@ private:
     void FollowQueue();
     void DrawSettings(NVGcontext* vg);
     void DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h);
+    // the four styles as cards with a small picture of each, while the row Style is in focus
+    void DrawStylePanel(NVGcontext* vg, float x, float y, float w, float h);
+    Theme m_style_from{}, m_style_to{};
+    double m_style_at = -100;
+    float m_style_x = 0, m_style_y = 0;
     void ActivateSetting(int row);
     void DrawTouchFeedback(NVGcontext* vg);
 

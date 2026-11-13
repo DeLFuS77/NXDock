@@ -216,7 +216,8 @@ void App::ApplyTheme(int mode) {
     }
     m_ui.theme_auto = mode == 2;
     m_ui.Save();
-    m_theme = light ? LightTheme() : DarkTheme();
+    m_theme = StyleTheme(m_ui.style, light);
+    m_style_at = -100; // a change of style on its way ends here
     m_link.SaveTheme(light);
 }
 
@@ -608,7 +609,7 @@ void App::DrawWizard(NVGcontext* vg) {
                 ui::FillRound(vg, sx, sy, sw, sh, sh / 2, it.on ? t.work : t.line);
                 nvgBeginPath(vg);
                 nvgCircle(vg, it.on ? sx + sw - 13 : sx + 13, sy + 13, 10);
-                nvgFillColor(vg, nvgRGB(255, 255, 255));
+                nvgFillColor(vg, it.on ? t.on_work : nvgRGB(255, 255, 255));
                 nvgFill(vg);
             } else if (it.kind == WizKind::Action) {
                 ui::Text(vg, x + iw - 18, iy + ih / 2, 15, t.work, it.sub.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);

@@ -37,7 +37,31 @@ float Title(NVGcontext* vg, float x, float y, float size, NVGcolor color, const 
     return Text(vg, x + (size >= 24 ? 0.7f : 0.5f), y, size, color, str, align);
 }
 
+namespace {
+
+NVGcolor Alpha(NVGcolor c, float a) {
+    c.a = a;
+    return c;
+}
+
+// The marks of the corners of Huntress, a stroke `k` long at each corner, `d` outside the box.
+void Corners(NVGcontext* vg, float x, float y, float w, float h, float d, float k, NVGcolor c, float width) {
+    const float q[4][4] = {{x - d, y - d, 1, 1}, {x + w + d, y - d, -1, 1}, {x - d, y + h + d, 1, -1}, {x + w + d, y + h + d, -1, -1}};
+    nvgBeginPath(vg);
+    for (const auto& p : q) {
+        nvgMoveTo(vg, p[0], p[1] + p[3] * k);
+        nvgLineTo(vg, p[0], p[1]);
+        nvgLineTo(vg, p[0] + p[2] * k, p[1]);
+    }
+    nvgStrokeColor(vg, c);
+    nvgStrokeWidth(vg, width);
+    nvgStroke(vg);
+}
+
+} // namespace
+
 void Glass(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
+    if (t.style == kStyleHuntress) r = std::min(r, 4.f); // armour: nearly square
     // the shadow, only outside the panel (it is a little see-through)
     nvgBeginPath(vg);
     nvgRect(vg, x - 16, y - 8, w + 32, h + 30);
@@ -48,6 +72,32 @@ void Glass(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, f
     NVGcolor fill = t.panel;
     fill.a = t.dark ? 0.80f : 0.82f;
     FillRound(vg, x, y, w, h, r, fill);
+    // the frame of the style: RuneStone glows, Vampire has a double edge of its adornment,
+    // Huntress marks its corners and has a line of light along the top
+    if (t.style == kStyleRuneStone) {
+        nvgBeginPath(vg);
+        nvgRect(vg, x - 20, y - 20, w + 40, h + 40);
+        nvgRoundedRect(vg, x, y, w, h, r);
+        nvgPathWinding(vg, NVG_HOLE);
+        nvgFillPaint(vg, nvgBoxGradient(vg, x, y, w, h, r + 2, 18, Alpha(t.work, t.dark ? 0.14f : 0.12f), Alpha(t.work, 0)));
+        nvgFill(vg);
+        StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, nvgLerpRGBA(t.line, t.work, 0.4f), 1);
+        return;
+    }
+    if (t.style == kStyleVampire) {
+        StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, Alpha(t.ornament, 0.6f), 1);
+        if (h > 30) StrokeRound(vg, x + 4.5f, y + 4.5f, w - 9, h - 9, std::max(0.f, r - 3), Alpha(t.ornament, 0.22f), 1);
+        return;
+    }
+    if (t.style == kStyleHuntress) {
+        StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, Alpha(t.ornament, 0.45f), 1);
+        Corners(vg, x + 5, y + 5, w - 10, h - 10, 0, std::min(14.f, h / 4), t.work, 2.5f);
+        nvgBeginPath(vg);
+        nvgRect(vg, x + 24, y, w - 48, 1.5f);
+        nvgFillPaint(vg, nvgLinearGradient(vg, x + 24, y, x + w / 2, y, Alpha(t.work, 0), Alpha(t.work, 0.7f)));
+        nvgFill(vg);
+        return;
+    }
     StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, t.line, 1);
     // the light along the top edge
     if (w > 2 * r) {
@@ -87,8 +137,19 @@ float Chip(NVGcontext* vg, const Theme& t, float x, float y, const char* label, 
 
 void Focus(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r, double time) {
     const float pulse = 0.75f + 0.25f * float(std::sin(time * 3.0));
-    NVGcolor glow = t.work;
-    glow.a = 0.55f * pulse;
+    if (t.style == kStyleHuntress) {
+        // the visor locks on: a thin frame and its corners, which breathe, with a mark on top
+        const float breathe = Lively() ? 0.5f + 0.5f * float(std::sin(time * 3.0)) : 0.6f;
+        StrokeRound(vg, x - 4, y - 4, w + 8, h + 8, 4, Alpha(t.work, 0.5f), 1.5f);
+        const float d = 9 + 2 * breathe, k = std::min(22.f, h / 2.5f);
+        Corners(vg, x, y, w, h, d + 4, k + 4, Alpha(t.work, 0.25f), 8);
+        Corners(vg, x, y, w, h, d, k, t.work, 4);
+        FillRound(vg, x + w / 2 - 14, y - d - 2, 28, 3, 1, t.ornament);
+        return;
+    }
+    NVGcolor glow = t.style == kStyleVampire ? t.ornament : t.work;
+    // RuneStone shines more, breathing
+    glow.a = (t.style == kStyleRuneStone ? 0.8f : 0.55f) * pulse;
     NVGcolor clear = t.work;
     clear.a = 0;
     NVGpaint shadow = nvgBoxGradient(vg, x - 4, y - 4, w + 8, h + 8, r + 4, 24, glow, clear);
@@ -98,7 +159,7 @@ void Focus(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, f
     nvgPathWinding(vg, NVG_HOLE);
     nvgFillPaint(vg, shadow);
     nvgFill(vg);
-    StrokeRound(vg, x - 5, y - 5, w + 10, h + 10, r + 5, t.work, 4);
+    StrokeRound(vg, x - 5, y - 5, w + 10, h + 10, r + 5, t.work, t.style == kStyleVampire ? 2.5f : 4);
 }
 
 float Marquee(NVGcontext* vg, float x, float y, float w, float size, NVGcolor color, const char* str, double time) {
