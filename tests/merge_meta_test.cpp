@@ -105,6 +105,15 @@ int main() {
         Put32(u2.extended.data() + 8, 3u << 26);
         CHECK(mergemeta::MergedCnmt(base, u2, program, m2) && Get32(m2.extended.data() + 8) == mergemeta::kFirmware12);
     }
+    // a base game Nintendo cut down (Compacted: whole only with its update) is whole once merged:
+    // the console would ask for the update it already has; its other attributes stay
+    {
+        mergemeta::Cnmt b2 = base, m2;
+        b2.header[0x14] = mergemeta::kAttributeCompacted | 0x01;
+        CHECK(mergemeta::MergedCnmt(b2, upd, program, m2) && m2.header[0x14] == 0x01);
+        const Bytes rec = mergemeta::DbRecord(m2, program.id, 1000);
+        CHECK(rec[6] == 0x01);
+    }
     // the update of another game, or two of the same type: refused
     {
         mergemeta::Cnmt other = upd, m2;

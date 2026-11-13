@@ -107,6 +107,8 @@ bool MergedCnmt(const Cnmt& base, const Cnmt& update, const Content& program, Cn
     const uint32_t need = std::max({Get32(base.extended.data() + 8), Get32(update.extended.data() + 8), kFirmware12});
     Put32(out.extended.data() + 8, need);
     Put32(out.extended.data() + 0xC, 0); // no required application version
+    // whole now: a base Nintendo cut down (Compacted) no longer needs its update
+    out.header[0x14] &= uint8_t(~kAttributeCompacted);
     // the download firmware of the header: the higher of the two
     Put32(out.header.data() + 0x18, std::max(Get32(base.header.data() + 0x18), Get32(update.header.data() + 0x18)));
     out.contents.clear();
