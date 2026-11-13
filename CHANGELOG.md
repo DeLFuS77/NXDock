@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Styles in Settings › Look: NXDock, RuneStone, Vampire and Huntress, as in NXPress, in light and dark.
+
 ## 0.9.0-beta.1
 
 The first public beta. It has not been tested in depth yet, so it may still have bugs and errors: please

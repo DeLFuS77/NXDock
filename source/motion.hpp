@@ -56,5 +56,8 @@ inline constexpr const char* Stick = "\x01stick"; // drawn: a stick that moves
 
 // The slow lights behind everything, blue and violet.
 void Aurora(NVGcontext* vg, const Theme& t);
+// The scene of the style, over the aurora and the light of the game in focus (runes; the moon,
+// branches and embers; stars and the scan of the visor). Only full animations move it.
+void Scene(NVGcontext* vg, const Theme& t);
 
 } // namespace nxdock::ui

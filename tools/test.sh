@@ -50,6 +50,10 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   /tmp/errors_test
   gcc -O1 -c -o /tmp/yyjson.o build/_deps/yyjson-src/src/yyjson.c
   g++ -std=c++20 -Wall -Wextra -O1 -Ibuild/_deps/yyjson-src/src -o /tmp/catalog_test tests/catalog_test.cpp source/catalog.cpp /tmp/yyjson.o && /tmp/catalog_test
+  # the styles of Settings › Look: colours that read well, the change between two, every language
+  gcc -O1 -c -Ibuild/_deps/nanovg-src/include -Ibuild/_deps/nanovg-src/include/nanovg -Ibuild/_deps/stb_nanovg-src -o /tmp/nanovg.o build/_deps/nanovg-src/source/nanovg.c
+  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -Ibuild/_deps/nanovg-src/include -o /tmp/style_test tests/style_test.cpp source/i18n_more.cpp /tmp/nanovg.o -lm
+  /tmp/style_test
   # the sounds, with the synth the console runs
   g++ -std=c++20 -Wall -Wextra -O2 -Isource -o /tmp/sound_test tests/sound_test.cpp source/synth.cpp && /tmp/sound_test
   # game card images, which container a file is, and the install history

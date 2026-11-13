@@ -39,6 +39,15 @@ string(REPLACE "m_last_image_descriptor = free_image_descriptor;"
 if(NOT _dk_patched STREQUAL _dk_text)
     file(WRITE "${_dk_renderer}" "${_dk_patched}")
 endif()
+# Its commands of a frame have 128 KB, and running out of them stops NXDock: each part of a path
+# is one command, and a screen with many (the scenes of the styles, the cards of Settings › Look)
+# needs more. 512 KB, taken from the data pool, which grows as it needs.
+set(_dk_header "${nanovg_SOURCE_DIR}/include/nanovg/dk_renderer.hpp")
+file(READ "${_dk_header}" _dk_text)
+string(REPLACE "DynamicCmdSize = 0x20000;" "DynamicCmdSize = 0x80000;" _dk_patched "${_dk_text}")
+if(NOT _dk_patched STREQUAL _dk_text)
+    file(WRITE "${_dk_header}" "${_dk_patched}")
+endif()
 
 # yyjson (MIT licence), the JSON reader, the same version Sphaira uses.
 set(YYJSON_INSTALL OFF)
@@ -164,6 +173,7 @@ add_executable(nxdock
     source/i18n_more.cpp
     source/file_source.cpp
     source/motion.cpp
+    source/styles.cpp
     source/more.cpp
     source/more_vault.cpp
     source/more_space.cpp
