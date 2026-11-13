@@ -874,8 +874,20 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         std::memcpy(prog.id.data(), &new_program, 16);
         prog.size = new_size;
         std::vector<u8> mheader, msection;
-        if (!mergemeta::MergedCnmt(bc, uc, prog, mc) ||
-            !mergemeta::MetaNca(reinterpret_cast<const u8*>(&bmh), mc, Sha256, mheader, msection)) {
+        if (!mergemeta::MergedCnmt(bc, uc, prog, mc)) {
+            drop_ph();
+            return failed();
+        }
+        // no more of the system than the record of the update installed asks: an installer may
+        // have lowered it so this console starts the game
+        {
+            std::vector<u8> rec(0x1000);
+            u64 rec_size = 0;
+            if (R_SUCCEEDED(ncmContentMetaDatabaseGet(&s.db, &p.patch, &rec_size, rec.data(), rec.size()))) {
+                mergemeta::KeepRecordedSystem(mc, mergemeta::RecordedSystemVersion(rec.data(), size_t(std::min<u64>(rec_size, rec.size()))));
+            }
+        }
+        if (!mergemeta::MetaNca(reinterpret_cast<const u8*>(&bmh), mc, Sha256, mheader, msection)) {
             drop_ph();
             return failed();
         }

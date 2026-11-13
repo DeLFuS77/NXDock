@@ -114,6 +114,27 @@ int main() {
         const Bytes rec = mergemeta::DbRecord(m2, program.id, 1000);
         CHECK(rec[6] == 0x01);
     }
+    // on the console, what the record of the update asks of the system (lowered by an installer,
+    // say) is kept, never below 12.0.0, and never raised; a record that does not say changes nothing
+    {
+        mergemeta::Cnmt m2 = merged;
+        Bytes rec(8 + 0x18, 0);
+        rec[0] = 0x18;
+        Put32(rec.data() + 8 + 8, 13u << 26);
+        CHECK(mergemeta::RecordedSystemVersion(rec.data(), rec.size()) == (13u << 26));
+        mergemeta::KeepRecordedSystem(m2, mergemeta::RecordedSystemVersion(rec.data(), rec.size()));
+        CHECK(Get32(m2.extended.data() + 8) == (13u << 26));
+        m2 = merged;
+        mergemeta::KeepRecordedSystem(m2, 9u << 26);
+        CHECK(Get32(m2.extended.data() + 8) == mergemeta::kFirmware12);
+        m2 = merged;
+        mergemeta::KeepRecordedSystem(m2, 20u << 26);
+        CHECK(Get32(m2.extended.data() + 8) == (14u << 26));
+        m2 = merged;
+        CHECK(mergemeta::RecordedSystemVersion(rec.data(), 10) == UINT32_MAX);
+        mergemeta::KeepRecordedSystem(m2, UINT32_MAX);
+        CHECK(Get32(m2.extended.data() + 8) == (14u << 26));
+    }
     // the update of another game, or two of the same type: refused
     {
         mergemeta::Cnmt other = upd, m2;
