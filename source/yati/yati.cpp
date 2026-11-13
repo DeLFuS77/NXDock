@@ -26,6 +26,7 @@
 #include "log.hpp"
 #include "lz4nintendo.h"
 #include "merged_updates.hpp"
+#include "update_over_game.hpp"
 
 #include <zstd.h>
 #include <algorithm>
@@ -2147,6 +2148,34 @@ void Yati::UndoRegister(const CnmtCollection& cnmt) {
     }
 }
 
+// NXDock: an official update over a game NXDock compressed, or over an optimized one, would stop
+// it: it reads the original game by places that are no longer there (error 2002-4021). It is not
+// installed, and the error says what works (update_over_game.hpp). Not when its game comes in the
+// same install, in place of the one installed.
+Result CheckUpdatesOverGames(const std::vector<CnmtCollection>& cnmts, const std::vector<char>& skips) {
+    for (size_t i = 0; i < cnmts.size(); i++) {
+        if (skips[i] || cnmts[i].key.type != NcmContentMetaType_Patch) continue;
+        const u64 app = ncm::GetAppId(cnmts[i].key);
+        bool with_game = false;
+        for (size_t j = 0; j < cnmts.size(); j++) {
+            with_game |= !skips[j] && cnmts[j].key.type == NcmContentMetaType_Application && cnmts[j].key.id == app;
+        }
+        if (with_game) continue;
+        const auto base = nxdock::BaseGameOf(app);
+        const auto over = nxdock::UpdateOverGame(base, cnmts[i].key.version);
+        if (over == nxdock::UpdateOver::InGame) {
+            log_write("[NXDock] the update v%u is in the game v%u already: not installed\n", cnmts[i].key.version, base.version);
+            R_THROW(Result_UpdateInGame);
+        }
+        if (over == nxdock::UpdateOver::Breaks) {
+            log_write("[NXDock] the update v%u over the game v%u (%s): it would not start, not installed\n", cnmts[i].key.version, base.version,
+                      base.compressed ? "compressed" : "optimized");
+            R_THROW(Result_UpdateStopsGame);
+        }
+    }
+    R_SUCCEED();
+}
+
 // NXDock: all or nothing. Every cnmt is read, the space and firmware are checked, every NCA is
 // written to a placeholder and its SHA-256 compared with its content id; only then is anything
 // registered. When something fails before that point, the placeholders are deleted and the
@@ -2213,7 +2242,8 @@ Result InstallInternal(ui::ProgressBox* pbox, source::Base* source, const contai
         R_SUCCEED();
     }
 
-    // 2. room and firmware.
+    // 2. an update that would stop its game, room and firmware.
+    R_TRY(CheckUpdatesOverGames(cnmts, skips));
     R_TRY(yati->CheckBeforeInstall(cnmts, skips));
 
     // 3. download, write and check every NCA.
@@ -2338,6 +2368,7 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
     }
     R_UNLESS(std::ranges::count(skips, 0) > 0, Result_YatiNcaNotFound);
     // the firmware (the room was used already)
+    R_TRY(CheckUpdatesOverGames(cnmts, skips));
     R_TRY(yati->CheckBeforeInstall(cnmts, skips, false));
 
     pbox->SetPhase(ui::ProgressBox::Phase::Registering);

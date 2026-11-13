@@ -26,6 +26,8 @@ struct More {
     const char *e_experimental_t, *e_experimental_w, *e_experimental_d;
     const char *e_container_t, *e_container_w, *e_container_d;
     const char *e_running_t, *e_running_w, *e_running_d;
+    const char *e_stops_t, *e_stops_w, *e_stops_d;   // an update that would stop its game
+    const char *e_ingame_t, *e_ingame_w, *e_ingame_d; // an update an optimized game holds
     const char *e_storage_t, *e_storage_w, *e_storage_d;
     const char *e_other_t, *e_other_w, *e_other_d;
     const char *nothing_installed;
@@ -91,7 +93,10 @@ struct More {
     const char *cz_tap, *cz_why_sparse, *cz_why_key, *cz_why_missing, *cz_why_update, *cz_base_t, *cz_base_d, *qm_tag, *qm_merging, *qm_playable, *qm_read, *qm_pack, *qm_check, *qm_installed, *qm_note, *qm_merged_fmt, *qm_at_end, *cz_keys_ok, *cz_keys_missing, *cz_keys_t, *cz_keys_d, *sp_reading_fmt, *sp_names_fmt, *jump_letters;
     const char *cz_possible, *cz_checking_fmt, *cz_measuring_fmt, *cz_counts_fmt, *cz_only_some, *cz_show_all, *cz_none_possible;
     // merge and compress, and the DLC with their game (25F: 1A, 4A)
-    const char *cz_merge_tag, *cz_merge_sub_fmt, *cz_merge_worth_fmt, *cz_merged_fmt, *cz_merged_sub, *cz_update_wait, *cz_update_tag, *cz_update_sub_fmt, *cz_dlc_fmt, *cz_go_merge_title_fmt, *cz_go_merge_body_fmt, *cz_merge_risks, *cz_go_dlc_fmt, *cz_merge_go, *cz_update_notice_fmt, *cz_undo_merged_body;
+    const char *cz_merge_tag, *cz_merge_sub_fmt, *cz_merge_worth_fmt, *cz_merged_fmt, *cz_merged_sub, *cz_update_wait, *cz_update_tag, *cz_update_sub_fmt, *cz_dlc_fmt, *cz_go_merge_title_fmt, *cz_go_merge_body_fmt, *cz_merge_risks, *cz_go_dlc_fmt, *cz_merge_go, *cz_update_notice_fmt;
+    // an official update over a game compressed or optimized: the window before it is queued, and Compress games
+    const char *us_body, *us_no_original, *us_compressed, *us_optimized, *us_ingame, *us_go, *us_leave, *cz_stops_notice_fmt, *cz_stops_tag, *cz_stops_sub_fmt, *cz_why_stops, *cz_fix_original, *cz_remove_update, *cz_stops_orig_title_fmt, *cz_stops_orig_body, *cz_stops_no_original, *cz_stops_rm_title_fmt, *cz_stops_rm_body, *cz_stops_rm_done, *cz_stops_rm_failed;
+    const char *cz_undo_merged_body;
     // a game merged when Nintendo had compressed it: undone before a newer update is merged
     const char *cz_why_redo, *cz_redo_t, *cz_redo_d, *cz_undo_redo_body;
     // the certificate of an https shop changed since it was first opened

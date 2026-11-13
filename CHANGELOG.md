@@ -3,6 +3,12 @@
 ## Unreleased
 
 - Styles in Settings › Look: NXDock, RuneStone, Vampire and Huntress, as in NXPress, in light and dark.
+- An official update over a game compressed by NXDock or optimized with NXPress no longer breaks it (error
+  2002-4021): before it is queued, NXDock offers to install the original game first or to leave the update out, and
+  Compress games shows such a game with both ways out. Thanks to Insane91_PL (GBAtemp) for reporting it.
+- The queue always installs a game before its update and its DLC, whatever order they were added in.
+- Installing an optimized game removes the updates merged into it, a merged game no longer asks to download its
+  update, and merging keeps the system version the update asks for. Thanks to Trickster101 (GBAtemp) for reporting it.
 
 ## 0.9.0-beta.1
 

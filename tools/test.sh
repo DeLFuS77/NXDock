@@ -80,6 +80,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # installing an optimized game takes away the updates merged into it
   g++ -std=c++20 -Wall -Wextra -O1 -Iinclude -o /tmp/merged_updates_test tests/merged_updates_test.cpp
   /tmp/merged_updates_test
+  # an official update over a game NXDock compressed, or over an optimized one, stops it
+  g++ -std=c++20 -Wall -Wextra -O1 -Iinclude -o /tmp/update_over_game_test tests/update_over_game_test.cpp
+  /tmp/update_over_game_test
   # the recipe of a merged game, and its base made again for a newer update (25E)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -Iinclude -o /tmp/merge_recipe_test tests/merge_recipe_test.cpp source/merge_recipe.cpp source/patch_view.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o
   /tmp/merge_recipe_test

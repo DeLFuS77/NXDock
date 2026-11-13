@@ -4509,6 +4509,70 @@ int TitleKind(u64 id) {
     return low == 0 ? 0 : low == 0x800 ? 1 : 2;
 }
 
+// An update in `jobs` that would stop its game (update_over_game.hpp): its game comes neither in
+// these jobs nor in the queue (the queue puts a game before its update), and the console has it
+// compressed by NXDock or optimized. One for each job; Fine for the rest.
+std::vector<App::UpdateCheck> App::UpdatesThatStop(const std::vector<InstallJob>& jobs) const {
+    const auto idof = [](const InstallJob& j, u32& version) {
+        u64 id = j.title_id;
+        version = j.version;
+        if (j.origin != InstallJob::Origin::Library || !id) {
+            u64 named = 0;
+            u32 v = 0;
+            if (TitleFromName(j.game + " " + j.label, named, v)) {
+                if (!id) id = named;
+                if (!version) version = v;
+            }
+        }
+        return id;
+    };
+    std::set<u64> coming;
+    const auto queued = m_queue ? m_queue->Jobs() : std::vector<InstallJob>{};
+    for (const auto* list : {&jobs, &queued}) {
+        for (const auto& j : *list) {
+            if (list == &queued && j.state != InstallJob::State::Waiting && j.state != InstallJob::State::Running) continue;
+            u32 v = 0;
+            const u64 id = idof(j, v);
+            if (id && TitleKind(id) == 0) coming.insert(id);
+        }
+    }
+    std::vector<UpdateCheck> out(jobs.size());
+    std::map<u64, BaseGame> seen;
+    for (size_t i = 0; i < jobs.size(); i++) {
+        u32 version = 0;
+        const u64 id = idof(jobs[i], version);
+        if (!id || TitleKind(id) != 1 || jobs[i].downgrade || !jobs[i].repair.empty()) continue;
+        const u64 app = GameOf(id);
+        if (coming.count(app)) continue;
+        if (!seen.count(app)) seen[app] = BaseGameOf(app);
+        // a version not known is taken as a newer one
+        out[i] = {UpdateOverGame(seen[app], version ? version : ~0u), seen[app], app};
+    }
+    return out;
+}
+
+// The original games of the library that let those updates work, to go before them.
+std::vector<InstallJob> App::OriginalsFor(const std::vector<InstallJob>& jobs) {
+    std::vector<InstallJob> out;
+    std::set<u64> done;
+    for (const auto& c : UpdatesThatStop(jobs)) {
+        if (!OriginalHelps(c.over) || done.count(c.app)) continue;
+        for (const auto& g : m_games) {
+            if (g.title_id != c.app) continue;
+            const CatalogFile* base = g.Base();
+            if (!base) break;
+            InstallJob job = JobFor(g, *base);
+            job.nand = g.installed.base_nand;
+            job.reinstall_ok = true; // the same version as the one compressed: it takes its place
+            if (c.base.version > 0) job.downgrade = true; // an optimized game is at the version of its update
+            out.push_back(std::move(job));
+            done.insert(c.app);
+            break;
+        }
+    }
+    return out;
+}
+
 void App::AddJobs(std::vector<InstallJob> jobs) {
     const auto& s = Tr();
     // a file from the SD card, a USB disk or the computer: the cover and the name of its game in
@@ -4585,6 +4649,19 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
             return;
         }
         for (auto& j : jobs) j.dlc_ok = true;
+    }
+    // an official update over a game compressed by NXDock, or over an optimized one: the game would
+    // not start with it; asked first, with the original game as the way out
+    {
+        const auto over = UpdatesThatStop(jobs);
+        if (std::any_of(over.begin(), over.end(), [](const UpdateCheck& c) { return StopsTheGame(c.over); })) {
+            m_dialog = Dialog{};
+            m_dialog.kind = DialogKind::UpdateStops;
+            m_dialog.jobs = std::move(jobs);
+            m_dialog.checks = over;
+            m_dialog.single = OriginalsFor(m_dialog.jobs).empty();
+            return;
+        }
     }
     // the same version installed already: asked first, as it would end at once and change nothing
     {
@@ -6084,6 +6161,24 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = m.dn_go;
             break;
         }
+        case DialogKind::UpdateStops: {
+            const More& m = TrM();
+            bool only_in_game = true;
+            const auto& checks = m_dialog.checks;
+            for (size_t i = 0; i < checks.size(); i++) {
+                if (!StopsTheGame(checks[i].over)) continue;
+                const auto& j = m_dialog.jobs[i];
+                only_in_game &= checks[i].over == UpdateOver::InGame;
+                const char* why = checks[i].over == UpdateOver::InGame ? m.us_ingame : checks[i].base.compressed ? m.us_compressed : m.us_optimized;
+                lines.push_back({j.game + " · " + j.label, "", why, t.orange});
+            }
+            title = only_in_game ? m.e_ingame_t : m.e_stops_t;
+            body = only_in_game ? std::string(m.e_ingame_w) + " " + m.e_ingame_d : std::string(m.us_body);
+            if (m_dialog.single && !only_in_game) body += std::string("\n") + m.us_no_original;
+            cancel_label = m.us_leave;
+            primary = m.us_go;
+            break;
+        }
         case DialogKind::Reinstall: {
             const More& m = TrM();
             int count = 0;
@@ -6156,6 +6251,8 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::CompressGo:
         case DialogKind::CompressUndo:
         case DialogKind::CompressInfo:
+        case DialogKind::CompressStopsOriginal:
+        case DialogKind::CompressStopsRemove:
             CompressDialogText(title, body, note, primary);
             break;
         case DialogKind::Versions: {
@@ -6675,6 +6772,16 @@ void App::UpdateDialog(u64 down, u64 held) {
         } else if (m_dialog.kind == DialogKind::Share) {
             m_prefs.share_installed = 0;
             m_prefs.Save();
+        } else if (m_dialog.kind == DialogKind::UpdateStops) {
+            // those updates stay out; the rest goes on
+            const auto checks = m_dialog.checks;
+            std::vector<InstallJob> rest;
+            for (size_t i = 0; i < checks.size(); i++) {
+                if (!StopsTheGame(checks[i].over)) rest.push_back(std::move(m_dialog.jobs[i]));
+            }
+            m_dialog = Dialog{};
+            if (!rest.empty()) AddJobs(std::move(rest));
+            return;
         }
         m_dialog.kind = DialogKind::None;
         return;
@@ -6833,6 +6940,8 @@ void App::ConfirmDialog() {
         case DialogKind::CompressIntro:
         case DialogKind::CompressGo:
         case DialogKind::CompressUndo:
+        case DialogKind::CompressStopsOriginal:
+        case DialogKind::CompressStopsRemove:
             ConfirmCompressDialog();
             break;
         case DialogKind::Resume:
@@ -6879,6 +6988,22 @@ void App::ConfirmDialog() {
         case DialogKind::SpaceDump:
             ConfirmSpaceDialog();
             break;
+        case DialogKind::UpdateStops: {
+            // the original games first (the queue puts them before their updates); an update
+            // whose game has no original in the library, or is in the game already, stays out
+            auto originals = OriginalsFor(m_dialog.jobs);
+            std::set<u64> have;
+            for (const auto& o : originals) have.insert(o.title_id);
+            const auto checks = UpdatesThatStop(m_dialog.jobs);
+            std::vector<InstallJob> jobs = std::move(originals);
+            for (size_t i = 0; i < checks.size(); i++) {
+                if (StopsTheGame(checks[i].over) && !(OriginalHelps(checks[i].over) && have.count(checks[i].app))) continue;
+                jobs.push_back(std::move(m_dialog.jobs[i]));
+            }
+            m_dialog = Dialog{};
+            AddJobs(std::move(jobs));
+            return;
+        }
         case DialogKind::DlcNeeds: {
             auto jobs = std::move(m_dialog.jobs);
             for (auto& j : jobs) j.dlc_ok = true;
