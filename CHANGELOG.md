@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.2
+
+These changes have not been tested in depth yet, so some bugs may remain.
 
 - Styles in Settings › Look: NXDock, RuneStone, Vampire and Huntress, as in NXPress, in light and dark.
 - An official update over a game compressed by NXDock or optimized with NXPress no longer breaks it (error

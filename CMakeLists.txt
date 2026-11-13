@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 project(NXDock VERSION 0.9.0 LANGUAGES C CXX)
 # A beta adds its number to the version (0.9.0-beta.1); empty for a version. The tag of a release is
 # the whole of it.
-set(NXDOCK_PRERELEASE "beta.1")
+set(NXDOCK_PRERELEASE "beta.2")
 if(NXDOCK_PRERELEASE)
     set(NXDOCK_FULL_VERSION "${PROJECT_VERSION}-${NXDOCK_PRERELEASE}")
 else()
