@@ -30,13 +30,17 @@ constexpr unsigned Fw(unsigned a, unsigned b, unsigned c) { return a << 26 | b <
 int main() {
     // every NXDock result, every language: nothing empty, the code always there
     for (g_lang = 0; g_lang < 11; g_lang++) {
-        for (u32 d = 1; d <= u32(NXDockResult::NczLz4Rebuild); d++) {
+        for (u32 d = 1; d <= u32(NXDockResult::UpdateInGame); d++) {
             const auto e = ExplainError(MAKERESULT(Module_NXDock, d), {});
             CHECK(!e.title.empty() && !e.what.empty() && !e.todo.empty());
             CHECK(e.code.size() == 9);
         }
         const auto other = ExplainError(MAKERESULT(123, 45), {});
         CHECK(other.what.find("2123-0045") != std::string::npos);
+        // an update that would stop its game says so, with the error the console would show
+        CHECK(ExplainError(Result_UpdateStopsGame, {}).title != other.title);
+        CHECK(ExplainError(Result_UpdateStopsGame, {}).what.find("2002-4021") != std::string::npos);
+        CHECK(ExplainError(Result_UpdateInGame, {}).title != other.title);
     }
     g_lang = 0;
 

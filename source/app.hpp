@@ -435,6 +435,14 @@ private:
     // the question (1A).
     void EnqueuePicked();
     void AddJobs(std::vector<InstallJob> jobs);
+    // an official update over a game compressed by NXDock or optimized (update_over_game.hpp)
+    struct UpdateCheck {
+        UpdateOver over = UpdateOver::Fine;
+        BaseGame base;
+        u64 app = 0;
+    };
+    std::vector<UpdateCheck> UpdatesThatStop(const std::vector<InstallJob>& jobs) const;
+    std::vector<InstallJob> OriginalsFor(const std::vector<InstallJob>& jobs);
     // A job for a file of a game of the library.
     InstallJob JobFor(const Game& g, const CatalogFile& f);
     // The newest update of every installed game that has a newer one in the library.
@@ -637,7 +645,8 @@ private:
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
-                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete };
+                            FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
+                            UpdateStops, CompressStopsOriginal, CompressStopsRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -654,6 +663,7 @@ private:
         std::string text;               // Space*: a name or a size to show; VaultError: its title
         bool to_nand = false;           // SpaceMove: the way it goes
         unsigned long long size = 0;    // SpaceMove: how much moves
+        std::vector<UpdateCheck> checks; // UpdateStops: each job, read from the console once
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;

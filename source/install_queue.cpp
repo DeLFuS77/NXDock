@@ -33,6 +33,10 @@ extern "C" void nxdock_log_open(const char* path);
 extern "C" void nxdock_log_close();
 
 namespace nxdock {
+
+// app.cpp: the title ID and the version in a file name
+bool TitleFromName(const std::string& name, u64& id, u32& version);
+
 namespace {
 
 using sphaira::ui::ProgressBox;
@@ -676,7 +680,22 @@ void InstallQueue::Run() {
             m_version++;
             continue;
         }
-        auto it = std::find_if(m_jobs.begin(), m_jobs.end(), [](const InstallJob& j) { return j.state == InstallJob::State::Waiting; });
+        // the first waiting job, but a game before its update and its DLC, whatever order they
+        // came in: an update is made for the game under it (update_over_game.hpp)
+        auto it = m_jobs.end();
+        {
+            std::vector<std::vector<InstallJob>::iterator> waiting;
+            std::vector<u64> ids;
+            for (auto j = m_jobs.begin(); j != m_jobs.end(); ++j) {
+                if (j->state != InstallJob::State::Waiting) continue;
+                u64 id = j->title_id;
+                u32 version = 0;
+                if (!id) TitleFromName(j->game + " " + j->label, id, version);
+                waiting.push_back(j);
+                ids.push_back(id);
+            }
+            if (!waiting.empty()) it = waiting[NextToInstall(ids)];
+        }
         if (it == m_jobs.end() || m_paused) {
             m_cv.wait(lock);
             continue;

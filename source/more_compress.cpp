@@ -13,6 +13,7 @@
 #include "history.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "uninstall.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -78,6 +79,8 @@ std::vector<int> App::CompressVisible(const Space::View& v, const Compressor::Vi
         const auto st = it->second.state;
         // one to undo and merge again stays in sight
         if (it->second.why == GameEstimate::Why::Redo) return false;
+        // one that does not start with the update over it stays in sight too
+        if (it->second.why == GameEstimate::Why::Stops) return false;
         return st == GameEstimate::State::Already || st == GameEstimate::State::Unsupported;
     });
     return rows;
@@ -163,6 +166,19 @@ void App::DrawCompress(NVGcontext* vg) {
         m_compress_started = m_compress->StartAnalysis(apps);
     }
     const auto rows = CompressVisible(v, c);
+    if (!m_compress_told && !c.analyzing && v.scanned && m_compress_started) {
+        // a game that does not start with the update over it is told first
+        for (const auto& [app, e] : c.games) {
+            if (e.why != GameEstimate::Why::Stops) continue;
+            for (const auto& a : v.apps) {
+                if (a.app_id != app) continue;
+                std::snprintf(text, sizeof(text), m.cz_stops_notice_fmt, a.name.c_str());
+                Notice(text);
+                m_compress_told = true;
+            }
+            if (m_compress_told) break;
+        }
+    }
     if (!m_compress_told && !c.analyzing && v.scanned && m_compress_started) {
         for (const auto& [app, e] : c.games) {
             if (!e.merge || !e.merged ||
@@ -258,6 +274,8 @@ void App::DrawCompress(NVGcontext* vg) {
         const bool merged_ours = e.state == GameEstimate::State::Ours && IsMergedGame(a.app_id);
         // a newer update over a game NXDock merged: it waits to be merged in the same way
         const bool redo = e.why == GameEstimate::Why::Redo;
+        // an official update over it: it does not start
+        const bool stops = e.why == GameEstimate::Why::Stops;
         const bool waiting = e.merge && e.merged && (e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low || redo);
         nvgSave(vg);
         nvgScissor(vg, rx + 24, ry, rw * 0.56f, rh);
@@ -267,7 +285,12 @@ void App::DrawCompress(NVGcontext* vg) {
             std::string sub = draw::Size(a.Bytes());
             const char* tag = nullptr;
             NVGcolor tag_col = t.violet;
-            if (waiting) {
+            if (stops) {
+                std::snprintf(text, sizeof(text), m.cz_stops_sub_fmt, VersionText(e.patch).c_str());
+                sub += std::string(" \xC2\xB7 ") + text;
+                tag = m.cz_stops_tag;
+                tag_col = t.orange;
+            } else if (waiting) {
                 std::snprintf(text, sizeof(text), m.cz_update_sub_fmt, VersionText(e.patch).c_str());
                 sub += std::string(" \xC2\xB7 ") + text;
                 tag = m.cz_update_tag;
@@ -326,6 +349,11 @@ void App::DrawCompress(NVGcontext* vg) {
                 col = t.work;
                 break;
             default:
+                if (stops) {
+                    std::snprintf(text, sizeof(text), "%s", m.cz_why_stops);
+                    col = t.orange;
+                    break;
+                }
                 if (redo) {
                     std::snprintf(text, sizeof(text), "%s", m.cz_why_redo);
                     col = t.orange;
@@ -374,7 +402,14 @@ void App::DrawCompress(NVGcontext* vg) {
     } else if (!rows.empty()) {
         hints.push_back({ui::glyph::DPad, m.jump_letters, HidNpadButton_AnyRight});
         hints.push_back({ui::glyph::Y, m_compress_all ? m.cz_only_some : m.cz_show_all, HidNpadButton_Y});
-        hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
+        const auto focused = c.games.find(m_compress_app);
+        if (focused != c.games.end() && focused->second.why == GameEstimate::Why::Stops) {
+            // the two ways out of a game that does not start with the update over it (2A)
+            hints.push_back({ui::glyph::X, m.cz_remove_update, HidNpadButton_X});
+            hints.push_back({ui::glyph::A, m.cz_fix_original, HidNpadButton_A});
+        } else {
+            hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
+        }
     }
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
@@ -443,13 +478,32 @@ void App::UpdateCompress(u64 down, u64 held) {
         if (down & HidNpadButton_X) m_compress->Stop();
         return;
     }
-    if (!(down & HidNpadButton_A) || rows.empty()) return;
+    if (!(down & (HidNpadButton_A | HidNpadButton_X)) || rows.empty()) return;
     const auto& a = v.apps[size_t(rows[size_t(std::clamp(m_compress_focus, 0, int(rows.size()) - 1))])];
     const More& m = TrM();
     GameEstimate e;
     const auto it = c.games.find(a.app_id);
     bool known = it != c.games.end();
     if (known) e = it->second;
+    if (e.why == GameEstimate::Why::Stops) {
+        // X: the update goes; A: the original from the library goes under it
+        if (m_queue && m_queue->Busy()) {
+            Notice(m.cz_busy);
+            return;
+        }
+        m_dialog = Dialog{};
+        m_dialog.kind = (down & HidNpadButton_X) ? DialogKind::CompressStopsRemove : DialogKind::CompressStopsOriginal;
+        m_dialog.ids = {a.app_id};
+        m_dialog.text = a.name;
+        if (m_dialog.kind == DialogKind::CompressStopsOriginal) {
+            bool in_library = false;
+            for (const auto& g : m_games) in_library |= g.title_id == a.app_id && g.Base();
+            // nothing to install: it says so, and the other way out
+            m_dialog.single = !in_library;
+        }
+        return;
+    }
+    if (!(down & HidNpadButton_A)) return;
     for (const auto& mark : m_compressed_marks) {
         if (!known && mark.app_id == a.app_id) {
             e.state = GameEstimate::State::Ours;
@@ -548,6 +602,18 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
             title = m_dialog.text;
             body = m_dialog.from;
             break;
+        case DialogKind::CompressStopsOriginal:
+            std::snprintf(text, sizeof(text), m.cz_stops_orig_title_fmt, m_dialog.text.c_str());
+            title = text;
+            body = m_dialog.single ? m.cz_stops_no_original : m.cz_stops_orig_body;
+            primary = m.cz_fix_original;
+            break;
+        case DialogKind::CompressStopsRemove:
+            std::snprintf(text, sizeof(text), m.cz_stops_rm_title_fmt, m_dialog.text.c_str());
+            title = text;
+            body = m.cz_stops_rm_body;
+            primary = m.cz_remove_update;
+            break;
         default: break;
     }
     (void)note;
@@ -607,6 +673,50 @@ void App::ConfirmCompressDialog() {
                 return;
             }
             Notice(m.cz_undo_missing);
+            break;
+        }
+        case DialogKind::CompressStopsOriginal: {
+            // the original under the update: it takes the place of the one compressed or optimized
+            const u64 app = m_dialog.ids.empty() ? 0 : m_dialog.ids[0];
+            const BaseGame base = BaseGameOf(app);
+            for (const auto& g : m_games) {
+                if (g.title_id != app || !g.Base()) continue;
+                InstallJob job = JobFor(g, *g.Base());
+                job.nand = g.installed.base_nand;
+                job.reinstall_ok = true;
+                if (base.version > 0) job.downgrade = true;
+                AddJobs({job});
+                return;
+            }
+            Notice(m.cz_undo_missing);
+            break;
+        }
+        case DialogKind::CompressStopsRemove: {
+            // every update of the game, on both storages: the game starts again at its version
+            const u64 app = m_dialog.ids.empty() ? 0 : m_dialog.ids[0];
+            bool ok = true, any = false;
+            if (m_space) {
+                for (const auto& a : m_space->Snapshot().apps) {
+                    if (a.app_id != app) continue;
+                    for (const auto& content : a.contents) {
+                        if (content.type != NcmContentMetaType_Patch) continue;
+                        NcmContentMetaKey key{};
+                        key.id = content.id;
+                        key.version = content.version;
+                        key.type = NcmContentMetaType_Patch;
+                        key.install_type = NcmContentInstallType_Full;
+                        any = true;
+                        if (R_FAILED(RemoveInstalled(key, content.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard))) ok = false;
+                    }
+                }
+            }
+            if (ok && any) NoticeOk(m.cz_stops_rm_done);
+            else Notice(m.cz_stops_rm_failed);
+            // read again: the game and the list as they are now
+            m_compressed_marks = Compressor::Marks();
+            m_compress = std::make_unique<Compressor>();
+            m_compress_started = false;
+            if (m_space) m_space->StartScan();
             break;
         }
         default: break;

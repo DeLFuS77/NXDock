@@ -25,6 +25,7 @@
 //    here, kept in memory, never shown or saved; without it the screen and the error say so.
 // An analysis first, from a sample of the RomFS of each game, says what it would save.
 #include "compress_meta.hpp"
+#include "update_over_game.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -50,7 +51,10 @@ struct GameEstimate {
     // needs its base game, which the library has not (nothing is changed)
     // Redo: a newer update over a game merged when Nintendo had compressed it; it is undone (the
     // original and the update installed again) and merged again
-    enum class Why { None, NotFound, Sparse, Key, Read, Update, Redo };
+    // Stops: an official update over a game NXDock compressed, or over an optimized one: the game
+    // does not start (update_over_game.hpp); the original installed again, or the update taken
+    // away, starts it again
+    enum class Why { None, NotFound, Sparse, Key, Read, Update, Redo, Stops };
     Why why = Why::None;           // Unsupported: why
     // With its update installed, the game is merged with it ("Merge and compress", 25F): `bytes`
     // and `saved` count the base and the update together. `merged`: NXDock merged it already, and

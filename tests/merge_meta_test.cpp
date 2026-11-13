@@ -105,6 +105,36 @@ int main() {
         Put32(u2.extended.data() + 8, 3u << 26);
         CHECK(mergemeta::MergedCnmt(base, u2, program, m2) && Get32(m2.extended.data() + 8) == mergemeta::kFirmware12);
     }
+    // a base game Nintendo cut down (Compacted: whole only with its update) is whole once merged:
+    // the console would ask for the update it already has; its other attributes stay
+    {
+        mergemeta::Cnmt b2 = base, m2;
+        b2.header[0x14] = mergemeta::kAttributeCompacted | 0x01;
+        CHECK(mergemeta::MergedCnmt(b2, upd, program, m2) && m2.header[0x14] == 0x01);
+        const Bytes rec = mergemeta::DbRecord(m2, program.id, 1000);
+        CHECK(rec[6] == 0x01);
+    }
+    // on the console, what the record of the update asks of the system (lowered by an installer,
+    // say) is kept, never below 12.0.0, and never raised; a record that does not say changes nothing
+    {
+        mergemeta::Cnmt m2 = merged;
+        Bytes rec(8 + 0x18, 0);
+        rec[0] = 0x18;
+        Put32(rec.data() + 8 + 8, 13u << 26);
+        CHECK(mergemeta::RecordedSystemVersion(rec.data(), rec.size()) == (13u << 26));
+        mergemeta::KeepRecordedSystem(m2, mergemeta::RecordedSystemVersion(rec.data(), rec.size()));
+        CHECK(Get32(m2.extended.data() + 8) == (13u << 26));
+        m2 = merged;
+        mergemeta::KeepRecordedSystem(m2, 9u << 26);
+        CHECK(Get32(m2.extended.data() + 8) == mergemeta::kFirmware12);
+        m2 = merged;
+        mergemeta::KeepRecordedSystem(m2, 20u << 26);
+        CHECK(Get32(m2.extended.data() + 8) == (14u << 26));
+        m2 = merged;
+        CHECK(mergemeta::RecordedSystemVersion(rec.data(), 10) == UINT32_MAX);
+        mergemeta::KeepRecordedSystem(m2, UINT32_MAX);
+        CHECK(Get32(m2.extended.data() + 8) == (14u << 26));
+    }
     // the update of another game, or two of the same type: refused
     {
         mergemeta::Cnmt other = upd, m2;

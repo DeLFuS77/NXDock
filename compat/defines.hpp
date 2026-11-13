@@ -112,6 +112,8 @@ enum class NXDockResult : u32 {
     UnknownContainer,      // neither an NSP/NSZ nor an XCI/XCZ
     NczBadTable,           // a damaged section or LZ4 table of an NCZSECT2/3
     NczLz4Rebuild,         // an LZ4 block of an NCZSECT3 is not made again to its size
+    UpdateStopsGame,       // an official update over a game compressed or optimized: it would not start
+    UpdateInGame,          // an update an optimized game holds already
 };
 
 #define MAKE_NXDOCK_RESULT_ENUM(x) Result_##x = MAKERESULT(Module_NXDock, (u32)NXDockResult::x)
@@ -174,4 +176,6 @@ enum : Result {
     MAKE_NXDOCK_RESULT_ENUM(UnknownContainer),
     MAKE_NXDOCK_RESULT_ENUM(NczBadTable),
     MAKE_NXDOCK_RESULT_ENUM(NczLz4Rebuild),
+    MAKE_NXDOCK_RESULT_ENUM(UpdateStopsGame),
+    MAKE_NXDOCK_RESULT_ENUM(UpdateInGame),
 };

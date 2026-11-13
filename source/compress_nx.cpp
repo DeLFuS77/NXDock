@@ -874,8 +874,20 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         std::memcpy(prog.id.data(), &new_program, 16);
         prog.size = new_size;
         std::vector<u8> mheader, msection;
-        if (!mergemeta::MergedCnmt(bc, uc, prog, mc) ||
-            !mergemeta::MetaNca(reinterpret_cast<const u8*>(&bmh), mc, Sha256, mheader, msection)) {
+        if (!mergemeta::MergedCnmt(bc, uc, prog, mc)) {
+            drop_ph();
+            return failed();
+        }
+        // no more of the system than the record of the update installed asks: an installer may
+        // have lowered it so this console starts the game
+        {
+            std::vector<u8> rec(0x1000);
+            u64 rec_size = 0;
+            if (R_SUCCEEDED(ncmContentMetaDatabaseGet(&s.db, &p.patch, &rec_size, rec.data(), rec.size()))) {
+                mergemeta::KeepRecordedSystem(mc, mergemeta::RecordedSystemVersion(rec.data(), size_t(std::min<u64>(rec_size, rec.size()))));
+            }
+        }
+        if (!mergemeta::MetaNca(reinterpret_cast<const u8*>(&bmh), mc, Sha256, mheader, msection)) {
             drop_ph();
             return failed();
         }
@@ -1569,7 +1581,8 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
         nxdock_log_open("sdmc:/switch/NXDock/compress.log");
         const auto note = [](unsigned long long app, const GameEstimate& e) {
             static const char* states[] = {"pending", "possible", "worth", "low", "already compressed", "compressed by NXDock", "cannot"};
-            static const char* whys[] = {"", "not found", "sparse", "no key (ticket)", "could not be read", "update", "merged when compressed: undo first"};
+            static const char* whys[] = {"", "not found", "sparse", "no key (ticket)", "could not be read", "update", "merged when compressed: undo first",
+                                          "an official update over it: it does not start"};
             log_write("[NXDock] %016llX: %s%s%s, %llu MB, saves %.0f %%\n", app, states[int(e.state)], e.why != GameEstimate::Why::None ? ": " : "",
                       whys[int(e.why)], e.bytes >> 20, e.gain * 100);
         };
@@ -1591,6 +1604,21 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
             if (e.state != GameEstimate::State::Pending && e.state != GameEstimate::State::Possible) continue;
             e.state = GameEstimate::State::Unsupported;
             e.why = GameEstimate::Why::NotFound;
+            if (HasUpdate(app)) {
+                // an official update over a game NXDock compressed, or over an optimized one: the
+                // game does not start; it cannot be merged from what is installed (the update reads
+                // the original), so the original goes first, or the update goes. A game NXDock
+                // merged keeps its own way (merged again, or undone and merged again).
+                const BaseGame base = BaseGameOf(app);
+                if (!base.merged && StopsTheGame(UpdateOverGame(base, UpdateVersion(app)))) {
+                    e.why = GameEstimate::Why::Stops;
+                    e.patch = UpdateVersion(app);
+                    std::lock_guard lock(m_mutex);
+                    m_view.games[app] = e;
+                    note(app, e);
+                    continue;
+                }
+            }
             for (const auto& m : marks) {
                 // one NXDock merged with a newer update installed over it: merged again (25E)
                 if (m.app_id == app && !HasUpdate(app)) {
@@ -1747,6 +1775,31 @@ bool IsMergedGame(unsigned long long app) {
 }
 
 bool CanMergeAgain(unsigned long long app) { return HasRecipe(app); }
+
+BaseGame BaseGameOf(unsigned long long app) {
+    BaseGame b;
+    if (R_FAILED(ncmInitialize())) return b;
+    for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+        Storage s(sid);
+        GameContents g;
+        if (!s.ok || !FindGame(s, app, g)) continue;
+        b.installed = true;
+        b.version = g.key.version;
+        // compressed while the program NXDock wrote is the one installed
+        const std::string program = Hex(&g.program, sizeof(g.program));
+        std::lock_guard lock(g_marks);
+        for (const auto& m : LoadCompressed(kCompressedList)) {
+            if (m.app_id == app && m.program == program) b.compressed = true;
+        }
+        break;
+    }
+    ncmExit();
+    // a merged game is an Application at the version of its update: the original installed again
+    // by another installer leaves the files of the merge behind, and is not one
+    b.merged = b.version > 0 && IsMergedGame(app);
+    b.recipe = b.merged && HasRecipe(app);
+    return b;
+}
 
 std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, const std::function<void(int, uint64_t, uint64_t)>& progress,
                         uint64_t& saved) {
