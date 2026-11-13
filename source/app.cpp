@@ -236,7 +236,7 @@ enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
     kRowDest, kRowPick, kRowSaveCopy, kRowSaveAuto, kRowScreen, kRowCompress,
     kRowFinish, kRowBattery, kRowNotifyDone,
-    kRowLanguage, kRowTheme, kRowSounds, kRowAnim, kRowFocusView, kRowTouchRumble,
+    kRowLanguage, kRowTheme, kRowStyle, kRowSounds, kRowAnim, kRowFocusView, kRowTouchRumble,
     kRowWizard,
     kRowSelfUpdate, kRowSelfNotice, kRowSelfBack,
     kRowHome, kRowHomeRemove,
@@ -409,6 +409,7 @@ bool App::Init() {
         }
         m_theme = color == ColorSetId_Dark ? DarkTheme() : LightTheme();
     }
+    m_theme = StyleTheme(m_ui.style, !m_theme.dark);
     m_psm = R_SUCCEEDED(psmInitialize());
     m_nifm = R_SUCCEEDED(nifmInitialize(NifmServiceType_User));
     perf::Mark("settings and services");
@@ -709,6 +710,10 @@ void App::ActivateSetting(int row) {
         case kRowTheme:
             // light, dark, as the console
             ApplyTheme(((m_ui.theme_auto ? 2 : m_theme.dark ? 1 : 0) + 1) % 3);
+            break;
+        case kRowStyle:
+            // the next style, its wave from its card
+            SetStyle((m_ui.style + 1) % kStyles, -1, -1);
             break;
         case kRowLanguage:
             // the console's, then each language NXDock speaks
@@ -1287,6 +1292,11 @@ bool App::Tap(float x, float y, u64& down) {
                     m_setting = it->index;
                 }
                 break;
+            case HitKind::StyleCard:
+                // a card of a style is chosen at once, its wave from the finger
+                m_setting = kRowStyle;
+                SetStyle(it->index, m_touch_x, m_touch_y);
+                break;
             case HitKind::PairRow:
                 if (m_pair_focus == it->index) {
                     down |= HidNpadButton_A;
@@ -1639,6 +1649,11 @@ void App::Update(u64 down, u64 held) {
             UpdateMore(down, held);
             break;
         case Tab::Settings:
+            if (m_setting == kRowStyle) {
+                // left and right go through the styles, as their cards are laid out
+                if (Repeat(down, held, HidNpadButton_AnyLeft)) SetStyle((m_ui.style + kStyles - 1) % kStyles, -1, -1);
+                if (Repeat(down, held, HidNpadButton_AnyRight)) SetStyle((m_ui.style + 1) % kStyles, -1, -1);
+            }
             if (Repeat(down, held, up) && m_setting > 0) m_setting--;
             if (Repeat(down, held, dn) && m_setting < kSettingRows - 1) m_setting++;
             if (down & HidNpadButton_A) ActivateSetting(m_setting);
@@ -1873,6 +1888,7 @@ void App::Draw(NVGcontext* vg) {
     const bool low = m_queue && m_queue->Busy() && m_battery >= 0 && m_battery < 20 && !m_charging;
     {
         perf::Timer t_("draw: background and aurora");
+        StepStyle();
         Background(vg, m_theme);
         // the slow lights behind, paused while installing on little battery
         if (!low) ui::Aurora(vg, m_theme);
@@ -1889,6 +1905,8 @@ void App::Draw(NVGcontext* vg) {
             DrawBackdrop(vg, m_games[m_view[std::clamp(m_focus, 0, int(m_view.size()) - 1)]], false);
         }
     }
+    // the scene of the style, over the light of the game, paused as the aurora
+    if (!low) ui::Scene(vg, m_theme);
     if (m_wizard) {
         DrawWizard(vg);
         AddHints(m_hint_rects);
@@ -2025,6 +2043,7 @@ void App::Draw(NVGcontext* vg) {
     DrawTour(vg);
     DrawWifiCard(vg);
     DrawBoot(vg);
+    DrawStyleWave(vg);
     DrawTouchFeedback(vg);
     DrawSaver(vg);
     DrawScreenOff(vg);
@@ -3518,8 +3537,10 @@ void App::DrawBoot(NVGcontext* vg) {
     nvgFillColor(vg, bg);
     nvgFill(vg);
     nvgGlobalAlpha(vg, lively ? 1.f : veil);
-    // a soft light under the icon while it is in the middle
-    if (veil > 0.01f) {
+    // a soft light under the icon while it is in the middle; the other styles have their own touch
+    if (veil > 0.01f && lively && t.style != kStyleNXDock) {
+        DrawBootStyle(vg, a, x + s / 2, y + s / 2, s, veil);
+    } else if (veil > 0.01f) {
         NVGcolor glow = t.work;
         glow.a = 0.25f * veil;
         nvgBeginPath(vg);
@@ -3530,7 +3551,9 @@ void App::DrawBoot(NVGcontext* vg) {
     ui::Brand(vg, x, y, s, card, bar, lamp);
     if (name > 0.01f) {
         nvgGlobalAlpha(vg, name);
-        ui::Title(vg, kWidth / 2, 448, 36, t.text, "NXDock", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        if (t.style == kStyleHuntress) nvgTextLetterSpacing(vg, 6);
+        ui::Title(vg, kWidth / 2, 448, 36, t.text, t.style == kStyleHuntress ? "NXDOCK" : "NXDock", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgTextLetterSpacing(vg, 0);
     }
     nvgGlobalAlpha(vg, 1.f);
 }
@@ -3937,7 +3960,7 @@ void App::DrawDetail(NVGcontext* vg) {
         const bool on = m_detail_pick[rows[r]];
         ui::FillRound(vg, rx + 20, y + 9, 24, 24, 6, on ? t.work : Hex(0, 0));
         if (on) {
-            ui::CheckMark(vg, rx + 32, y + 21, 13, nvgRGB(255, 255, 255), 2.4f);
+            ui::CheckMark(vg, rx + 32, y + 21, 13, t.on_work, 2.4f);
         } else {
             ui::StrokeRound(vg, rx + 20.5f, y + 9.5f, 23, 23, 6, t.muted, 1.5f);
         }
@@ -5118,6 +5141,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {m.qw_notify_row, yes(m_ui.notify_done), m_ui.notify_done},
         {s.wiz_language, language, true},
         {s.theme, themes[theme], true},
+        {m.style_row, StyleName(m_ui.style), true},
         {s.sounds_row, yes(m_ui.sounds), m_ui.sounds},
         {m.anim_row, m_ui.anim == 2 ? m.anim_none : m_ui.anim == 1 ? m.anim_soft : m.anim_full, m_ui.anim != 2},
         {m.st_focus_row, m_ui.focus_view == 1 ? m.st_focus_panel : m.st_focus_band, true},
@@ -5158,9 +5182,11 @@ void App::DrawSettings(NVGcontext* vg) {
     for (int i = 0; i < kSettingRows; i++) {
         const float y = y0 + top_of[i];
         if (group < kGroups && kGroupStarts[group] == i) {
-            draw::Section(vg, t, x + 6, y - 13, groups[group]);
+            if (y > view_top - 8 && y - 26 < view_bottom) draw::Section(vg, t, x + 6, y - 13, groups[group]);
             group++;
         }
+        // only the rows in sight are drawn (the GPU has room for so many strokes a frame)
+        if (y + h + 12 < view_top - 8 || y - 12 > view_bottom) continue;
         const bool dim = ((i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked) ||
                          (i == kRowHomeRemove && (!m_home.installed || m_home.running_from)) ||
                          (i == kRowHome && m_home.running_from) || (i == kRowSelfBack && !m_update_has_old);
@@ -5193,7 +5219,8 @@ void App::DrawSettings(NVGcontext* vg) {
     }
     nvgRestore(vg);
 
-    DrawSpeedPanel(vg, 620, 96, kWidth - 620 - 48, 548);
+    if (m_setting == kRowStyle) DrawStylePanel(vg, 620, 96, kWidth - 620 - 48, 548);
+    else DrawSpeedPanel(vg, 620, 96, kWidth - 620 - 48, 548);
 
     // A changes a choice; the rows that open something say what they do
     const char* act = m.st_change;
@@ -5205,6 +5232,10 @@ void App::DrawSettings(NVGcontext* vg) {
     else if (m_setting == kRowSelfUpdate) act = m.open;
     else if (m_setting == kRowSelfBack) act = TrT().up_back_go;
     else if (m_setting == kRowHomeRemove) act = m.hm_remove_go;
+    if (m_setting == kRowStyle) {
+        ui::HintBar(vg, t, nullptr, {{ui::glyph::DPad, act, HidNpadButton_AnyRight}, {ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
+        return;
+    }
     ui::HintBar(vg, t, nullptr,
                 {{ui::glyph::A, act, HidNpadButton_A}, {ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X},
                  {ui::glyph::B, s.back, HidNpadButton_B}},
@@ -5385,7 +5416,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     if (!v.remember) {
         ui::StrokeRound(vg, rx + 26.5f, my + .5f, 29, 29, 8, t.muted, 1.5f);
     } else {
-        ui::CheckMark(vg, rx + 41, my + 15, 16, nvgRGB(255, 255, 255), 2.6f);
+        ui::CheckMark(vg, rx + 41, my + 15, 16, t.on_work, 2.6f);
     }
     ui::Text(vg, rx + 68, my + 15, 17, t.text, s.remember);
     ui::Text(vg, rx + rw - 26, my + 16, 22, t.muted, ui::glyph::Y, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
