@@ -25,6 +25,7 @@
 #include "yati_env.hpp"
 #include "log.hpp"
 #include "lz4nintendo.h"
+#include "merged_updates.hpp"
 
 #include <zstd.h>
 #include <algorithm>
@@ -386,6 +387,8 @@ struct Yati {
     Result ShouldSkip(const CnmtCollection& cnmt, bool& skip);
     Result ImportTickets(std::span<TikCollection> tickets);
     Result RemoveInstalledNcas(const CnmtCollection& cnmt);
+    // NXDock: the updates a game already at the version of an update (optimized) leaves behind.
+    Result RemoveMergedUpdates(const CnmtCollection& cnmt);
     Result RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_version_num);
     // NXDock: before the download, and undoing a commit that did not finish.
     Result CheckBeforeInstall(std::span<const CnmtCollection> cnmts, std::span<const char> skip, bool check_space = true);
@@ -411,6 +414,8 @@ struct Yati {
     // NXDock: see ConfigOverride::resume.
     ConfigOverride::Resume resume{};
     keys::Keys keys{};
+    // NXDock: the updates RemoveMergedUpdates took away, to be taken off the record too.
+    std::vector<NcmContentMetaKey> removed_updates{};
 
     // tracks what Setup() actually managed to acquire. these services are
     // refcounted process wide and other parts of sphaira (the game menu, the
@@ -1931,6 +1936,53 @@ Result Yati::RemoveInstalledNcas(const CnmtCollection& cnmt) {
     }
 
     log_write("done with keys\n");
+
+    // NXDock: a game at the version of an update is one optimized, its update merged in. No update
+    // may stay under it: the console would read that update over it, and the update reads the base
+    // game that is no longer there (the game is closed with an error).
+    if (nxdock::IsMergedGame(cnmt.key.type, cnmt.key.version)) {
+        R_TRY(RemoveMergedUpdates(cnmt));
+    }
+    R_SUCCEED();
+}
+
+// NXDock: every update of the game at or below the version of the game installed, on both
+// storages, with its NCAs. A newer update stays, as the console would run it.
+Result Yati::RemoveMergedUpdates(const CnmtCollection& cnmt) {
+    const auto app_id = ncm::GetAppId(cnmt.key);
+    for (size_t i = 0; i < std::size(NCM_STORAGE_IDS); i++) {
+        auto& cs = ncm_cs[i];
+        auto& db = ncm_db[i];
+        s32 total = 0, count = 0;
+        std::vector<NcmContentMetaKey> keys(8);
+        R_TRY(ncmContentMetaDatabaseList(std::addressof(db), std::addressof(total), std::addressof(count), keys.data(), s32(keys.size()), NcmContentMetaType_Patch, app_id, 0, UINT64_MAX, NcmContentInstallType_Full));
+        if (total > s32(keys.size())) {
+            keys.resize(size_t(total));
+            R_TRY(ncmContentMetaDatabaseList(std::addressof(db), std::addressof(total), std::addressof(count), keys.data(), s32(keys.size()), NcmContentMetaType_Patch, app_id, 0, UINT64_MAX, NcmContentInstallType_Full));
+        }
+        keys.resize(size_t(count));
+        for (const auto& key : keys) {
+            if (!nxdock::UpdateIsInGame(cnmt.key.type, cnmt.key.version, key.type, key.version)) continue;
+            log_write("[NXDock] the update %016lX v%u is in the game v%u: removed\n", key.id, key.version, cnmt.key.version);
+            NcmContentMetaHeader header;
+            u64 out_size = 0;
+            R_TRY(ncmContentMetaDatabaseGet(std::addressof(db), std::addressof(key), std::addressof(out_size), std::addressof(header), sizeof(header)));
+            R_UNLESS(out_size == sizeof(header), Result_YatiNcmDbCorruptHeader);
+            std::vector<NcmContentInfo> infos(header.content_count);
+            s32 read = 0;
+            R_TRY(ncmContentMetaDatabaseListContentInfo(std::addressof(db), std::addressof(read), infos.data(), s32(infos.size()), std::addressof(key), 0));
+            R_UNLESS(read == s32(infos.size()), Result_YatiNcmDbCorruptInfos);
+            for (const auto& info : infos) {
+                bool has{};
+                if (R_SUCCEEDED(ncmContentStorageHas(std::addressof(cs), std::addressof(has), std::addressof(info.content_id))) && has) {
+                    R_TRY(ncm::Delete(std::addressof(cs), std::addressof(info.content_id)));
+                }
+            }
+            R_TRY(ncmContentMetaDatabaseRemove(std::addressof(db), std::addressof(key)));
+            R_TRY(ncmContentMetaDatabaseCommit(std::addressof(db)));
+            removed_updates.push_back(key);
+        }
+    }
     R_SUCCEED();
 }
 
@@ -1975,6 +2027,24 @@ Result Yati::RegisterNcasAndPushRecord(const CnmtCollection& cnmt, u32 latest_ve
     pbox->NewTransfer("Pushing application record");
 
     R_TRY(ns::PushApplicationRecord(app_id, std::addressof(content_storage_record), 1));
+    // NXDock: the updates removed for an optimized game leave the record, or the console would
+    // still look for them
+    if (!removed_updates.empty()) {
+        std::vector<ncm::ContentStorageRecord> records;
+        R_TRY(ns::GetApplicationRecords(app_id, records));
+        std::vector<ncm::ContentStorageRecord> kept;
+        for (const auto& r : records) {
+            const bool removed = std::ranges::any_of(removed_updates, [&](const NcmContentMetaKey& k) {
+                return r.key.id == k.id && r.key.version == k.version && r.key.type == k.type;
+            });
+            if (!removed) kept.push_back(r);
+        }
+        if (kept.size() != records.size()) {
+            R_TRY(ns::DeleteApplicationRecord(app_id));
+            R_TRY(ns::PushApplicationRecord(app_id, kept.data(), u32(kept.size())));
+        }
+        removed_updates.clear();
+    }
     if (hosversionAtLeast(6,0,0)) {
         R_TRY(avmInitialize());
         ON_SCOPE_EXIT(avmExit());
