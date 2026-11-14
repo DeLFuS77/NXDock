@@ -26,6 +26,7 @@
 #include "i18n.hpp"
 #include "net.hpp"
 #include "uninstall.hpp"
+#include "merged_updates.hpp"
 
 namespace nxdock {
 namespace {
@@ -4665,6 +4666,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
     }
     // the same version installed already: asked first, as it would end at once and change nothing
     {
+        const auto installed = m_queue ? m_queue->Installed() : std::map<u64, InstalledState>{};
         bool any = false;
         for (auto& j : jobs) {
             if (j.reinstall_ok || !j.repair.empty() || j.downgrade || j.resumed) continue;
@@ -4677,6 +4679,13 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
                     id = named;
                     version = v;
                 }
+            }
+            // an optimized game with an update of it under it: installing it takes that update
+            // away (merged_updates.hpp), so it is no repeat and nothing is asked
+            const auto it = id && TitleKind(id) == 0 ? installed.find(id) : installed.end();
+            if (it != installed.end() && nxdock::ReinstallTakesUpdate(version, it->second.patch)) {
+                j.reinstall_ok = true;
+                continue;
             }
             if (id && HasContent(id, version)) {
                 any = true;

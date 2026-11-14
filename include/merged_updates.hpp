@@ -30,6 +30,14 @@ constexpr bool UpdateIsInGame(uint8_t game_type, uint32_t game_version, uint8_t 
     return IsMergedGame(game_type, game_version) && type == kMetaPatch && version <= game_version;
 }
 
+// Installing again an optimized game the console has at the same version is no repeat when an
+// update of it at or below that version is installed too: the install takes that update away, so
+// NXDock does not ask "it is installed already, this changes nothing" (installed_patch is 0 without
+// an update).
+constexpr bool ReinstallTakesUpdate(uint32_t game_version, uint32_t installed_patch) {
+    return game_version > 0 && installed_patch > 0 && installed_patch <= game_version;
+}
+
 // An NCA of an update that goes is deleted only when the game being installed does not list it:
 // an optimized game keeps the control NCA (and the legal information and HTML documents) of the
 // update it was made from, with the same content ID. Deleting it with the update left the game

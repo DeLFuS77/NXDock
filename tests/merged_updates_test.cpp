@@ -35,6 +35,12 @@ int main() {
     Check(ContentInGame(game, control.data()), "the control NCA shared with the update stays");
     Check(!ContentInGame(game, update_program.data()), "the program NCA of the update goes");
     Check(!ContentInGame({}, control.data()), "with no NCA of the game, every NCA of the update goes");
+    // installing again an optimized game with its update under it is no repeat: no question
+    Check(ReinstallTakesUpdate(458752, 458752), "the update merged in, under the game: no question");
+    Check(ReinstallTakesUpdate(458752, 65536), "an older update under the game: no question");
+    Check(!ReinstallTakesUpdate(458752, 0), "no update under it: asked as a repeat");
+    Check(!ReinstallTakesUpdate(458752, 524288), "a newer update stays: asked as a repeat");
+    Check(!ReinstallTakesUpdate(0, 65536), "a game at v0 keeps its update: asked as a repeat");
     if (failed) return 1;
     std::printf("merged_updates: all right\n");
     return 0;
