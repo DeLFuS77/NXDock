@@ -295,7 +295,7 @@ void App::DrawVault(NVGcontext* vg) {
     std::vector<ui::Hint> hints;
     if (!m_vault_saves.empty()) hints.push_back({ui::glyph::X, m.copy_now, HidNpadButton_X});
     if (!copies.empty()) hints.push_back({ui::glyph::A, m.restore, HidNpadButton_A});
-    if (!m_vault_saves.empty()) hints.push_back({ui::glyph::Minus, tt.sv_more, HidNpadButton_Minus});
+    if (!m_vault_saves.empty()) hints.push_back({ui::glyph::Plus, tt.sv_more, HidNpadButton_Plus});
     hints.push_back({ui::glyph::ZL, tt.sv_kind, HidNpadButton_ZL});
     if (m_vault_users.size() > 1 && m_vault_kind == 0) hints.push_back({ui::glyph::ZR, m.user_word, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
@@ -303,7 +303,7 @@ void App::DrawVault(NVGcontext* vg) {
     if (m_vault_menu) DrawVaultMenu(vg);
 }
 
-// The menu of −: Copy all, Delete the save.
+// The menu of +: Copy all, Delete the save.
 void App::DrawVaultMenu(NVGcontext* vg) {
     const Theme& t = m_theme;
     const Tools& tt = TrT();
@@ -387,7 +387,7 @@ void App::UpdateVault(u64 down, u64 held) {
     const More& m = TrM();
     if (m_vault_menu) {
         if (Repeat(down, held, HidNpadButton_AnyUp) || Repeat(down, held, HidNpadButton_AnyDown)) m_vault_menu_focus = 1 - m_vault_menu_focus;
-        if (down & (HidNpadButton_B | HidNpadButton_Minus)) m_vault_menu = false;
+        if (down & (HidNpadButton_B | HidNpadButton_Plus | HidNpadButton_Minus)) m_vault_menu = false;
         else if (down & HidNpadButton_A) VaultMenuDo(m_vault_menu_focus);
         return;
     }
@@ -424,7 +424,7 @@ void App::UpdateVault(u64 down, u64 held) {
     }
     const Config c = m_link.CurrentConfig();
     if (m_vault_saves.empty() || !m_vault) return;
-    if (down & HidNpadButton_Minus) {
+    if (down & (HidNpadButton_Plus | HidNpadButton_Minus)) { // + (1A); - as before
         m_vault_menu = true;
         m_vault_menu_focus = 0;
         m_list_at = m_time;

@@ -565,7 +565,7 @@ void TabIcon(NVGcontext* vg, int tab, float cx, float cy, NVGcolor c) {
 } // namespace
 
 float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs_out[6], const char* sd_free, int battery,
-             bool charging, int wifi, HitRect* wifi_hit, float sd_used) {
+             bool charging, int wifi, HitRect* wifi_hit, float sd_used, int from_tab, float slide) {
     // only the icon: the name of NXDock is on its opening and in the HOME menu (8A)
     Brand(vg, 36, 19, 34);
     const auto& s = Tr();
@@ -584,44 +584,68 @@ float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect t
     const bool sd = sd_free && sd_free[0];
     if (sd) inner += gap + 12 + 7 + (sd_used >= 0 ? 38 + 7 : 0) + TextWidth(vg, 16, sd_free);
     const float cap_x = 1244 - inner - 2 * pad;
-    // the tabs: when every name does not fit before the capsule (long languages), the tabs not
+    // the tabs, every one with its icon and its name (2A): in a long language the names get a
+    // little smaller first; only when even that does not fit before the capsule do the tabs not
     // shown keep only their icon
-    float names = 0;
-    for (int i = 0; i < 6; i++) names += TextWidth(vg, 17, tabs[i]) + 58 + 4 + ((i == 2 && queue_count > 0) ? 32.f : 0.f);
-    const bool compact = 114 + names + 30 > cap_x - 16;
+    constexpr float kPad = 48; // the icon, the gap after it and the ends of the light
+    const float room = cap_x - 16 - 114 - 30;
+    const auto row = [&](float size) {
+        float w = 0;
+        for (int i = 0; i < 6; i++) w += TextWidth(vg, size, tabs[i]) + kPad + 4 + ((i == 2 && queue_count > 0) ? 32.f : 0.f);
+        return w;
+    };
+    float size = 17;
+    while (size > 15 && row(size) > room) size -= 1;
+    const bool compact = row(size) > room;
+    struct Box {
+        float x, w, tw;
+        bool named;
+    } box[6];
     float x = 98;
     Text(vg, x, 37, 22, t.muted, glyph::L, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     x += 16;
     for (int i = 0; i < 6; i++) {
-        const bool on = i == tab;
-        const bool named = on || !compact;
-        const float tw = named ? TextWidth(vg, 17, tabs[i]) : 0.f;
+        const bool named = i == tab || !compact;
+        const float tw = named ? TextWidth(vg, size, tabs[i]) : 0.f;
         const float badge = (i == 2 && queue_count > 0) ? 32.f : 0.f;
-        const float w = named ? tw + 58 + badge : 46 + badge;
-        if (on) {
-            NVGcolor bgc = t.work;
-            bgc.a = 0.16f;
-            FillRound(vg, x, 18, w, 36, 18, bgc);
-            // the line under the tab shown, with a little glow
-            NVGcolor glow = t.work;
-            glow.a = 0.45f;
-            nvgBeginPath(vg);
-            nvgRect(vg, x + 6, 44, w - 12, 20);
-            nvgFillPaint(vg, nvgBoxGradient(vg, x + 18, 52, w - 36, 3, 1.5f, 8, glow, Hex(0, 0)));
-            nvgFill(vg);
-            FillRound(vg, x + 18, 52, w - 36, 3, 1.5f, t.work);
+        box[i] = {x, named ? tw + kPad + badge : 46 + badge, tw, named};
+        tabs_out[i] = {x - 2, 0, box[i].w + 4, 72, 0};
+        x += box[i].w + 4;
+    }
+    // the light of the tab shown, sliding from the one before
+    {
+        const Box& b = box[std::clamp(tab, 0, 5)];
+        float lx = b.x, lw = b.w;
+        if (from_tab >= 0 && from_tab < 6 && from_tab != tab && slide < 1) {
+            const float k = std::clamp(slide, 0.f, 1.f);
+            const Box& a = box[from_tab];
+            lx = a.x + (b.x - a.x) * k;
+            lw = a.w + (b.w - a.w) * k;
         }
-        TabIcon(vg, i, x + (named ? 25 : 23), 36, on ? t.work : t.muted);
-        if (named) Text(vg, x + 42, 36, 17, on ? t.text : t.muted, tabs[i]);
-        if (badge > 0) {
-            char n[8];
+        NVGcolor bgc = t.work;
+        bgc.a = 0.16f;
+        FillRound(vg, lx, 18, lw, 36, 18, bgc);
+        // the line under the tab shown, with a little glow
+        NVGcolor glow = t.work;
+        glow.a = 0.45f;
+        nvgBeginPath(vg);
+        nvgRect(vg, lx + 6, 44, lw - 12, 20);
+        nvgFillPaint(vg, nvgBoxGradient(vg, lx + 18, 52, lw - 36, 3, 1.5f, 8, glow, Hex(0, 0)));
+        nvgFill(vg);
+        FillRound(vg, lx + 18, 52, lw - 36, 3, 1.5f, t.work);
+    }
+    for (int i = 0; i < 6; i++) {
+        const Box& b = box[i];
+        const bool on = i == tab;
+        TabIcon(vg, i, b.x + (b.named ? 22 : 23), 36, on ? t.work : t.muted);
+        if (b.named) Text(vg, b.x + 38, 36, size, on ? t.text : t.muted, tabs[i]);
+        if (i == 2 && queue_count > 0) {
+            char n[12];
             std::snprintf(n, sizeof(n), "%d", queue_count);
-            const float bx = named ? x + 42 + tw + 8 : x + 40;
+            const float bx = b.named ? b.x + 38 + b.tw + 8 : b.x + 40;
             FillRound(vg, bx, 26, 24, 20, 10, t.work);
             Text(vg, bx + 12, 36, 13, t.on_work, n, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         }
-        tabs_out[i] = {x - 2, 0, w + 4, 72, 0};
-        x += w + 4;
     }
     Text(vg, x + 8, 37, 22, t.muted, glyph::R, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 

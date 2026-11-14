@@ -135,6 +135,8 @@ struct More {
     // the new look (11/11): the game in focus, a vibration on touch, the quick menu of a cover held,
     // the bubble to open a cover tapped once, pulling down to read the library again
     const char *st_focus_row, *st_focus_band, *st_focus_panel, *st_touch_rumble, *fv_open, *tap_open, *qm_install_sd, *qm_page, *pr_done_fmt;
+    // + no longer leaves: the HOME button does
+    const char *home_exit;
 };
 
 const More& TrM();

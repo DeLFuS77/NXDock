@@ -412,6 +412,7 @@ private:
     void AskUpdateAll();
     bool m_menu = false;
     int m_menu_focus = 0;
+    double m_menu_at = 0; // when the Options menu opened
     bool m_az_touch = false;
     int m_jump_letter = -1;
     double m_jump_at = -100;
@@ -586,6 +587,12 @@ private:
     // opens a card with the network, the coverage and the addresses
     // the image of a game's cover; for one the library has none of, its icon on the console
     int CoverOf(const Game& g);
+    // a menu of + growing out of its symbol in the bar (call between nvgSave and nvgRestore);
+    // its alpha. Then each row coming in after the one before.
+    float GrowFromPlus(NVGcontext* vg, double at, float x, float y, float w, float h);
+    float RowComesIn(NVGcontext* vg, double at, int row, float alpha);
+    // the line that says NXDock is left with the HOME button
+    void HomeToLeave(NVGcontext* vg);
     void CoverLoading(NVGcontext* vg, float x, float y, float size, const std::string& path);
     void CheckWifi();
     void DrawWifiCard(NVGcontext* vg);
@@ -606,6 +613,7 @@ private:
     float m_lift_dx = 0, m_lift_dy = 0;
     Tab m_shown_tab = Tab::Library;
     double m_tab_at = -100;
+    int m_tab_before = -1; // the tab shown before, the light of the top bar slides from it
     float m_tab_dir = 1;
     bool m_shown_detail = false;
     double m_detail_at = -100;
