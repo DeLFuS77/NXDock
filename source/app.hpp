@@ -61,6 +61,10 @@ inline constexpr int kTabs = 6;
 // The name of a style of Settings › Look, in the language in use.
 const char* StyleName(int style);
 
+// After a game has gone from In the console, when asked (7A): its folder in atmosphere/contents
+// (its mods and cheats) and its tickets, each saved to the SD card first (more_console.cpp).
+void RemoveGameExtras(unsigned long long app);
+
 class App {
 public:
     bool Init();
@@ -75,7 +79,7 @@ private:
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
-                         ActRow, ActBack, DialogTick };
+                         ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, TicketRow };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -414,7 +418,7 @@ private:
     bool m_menu = false;
     // The menu of actions of + on every other screen (1A, 14/11): the same rows as its buttons, with
     // the button of each at its right (2A); - opens it too.
-    enum class ActScreen { None, Detail, ConsoleList, ConsoleGame, Session, History, Queue, Shops, SpacePick, Compress };
+    enum class ActScreen { None, Detail, ConsoleList, ConsoleGame, Session, History, Queue, Shops, SpacePick, Compress, ConsoleSort, Tickets };
     struct ActRow {
         int id = 0;            // what it does (more_actions.cpp)
         std::string label, right;
@@ -424,6 +428,8 @@ private:
         int icon = 0;
     };
     ActScreen CurrentActScreen();
+    // the screen a menu belongs to: the orders of In the console open from its menu (4A)
+    static ActScreen ActParent(ActScreen s) { return s == ActScreen::ConsoleSort ? ActScreen::ConsoleList : s; }
     std::vector<ActRow> ActRows(ActScreen screen, std::string& title);
     void OpenActions(ActScreen screen);
     void UpdateActions(u64 down, u64 held);
@@ -476,6 +482,7 @@ private:
     bool UpdatePending(const Game& g) const;
     // The repairs a finished check asks for; false when the library lacks a version.
     bool RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>& out);
+    bool RepairJobsFor(const Game& g, const InstallQueue::VerifyView& v, std::vector<InstallJob>& out);
     std::string ContentLabel(const Game& g, const NcmContentMetaKey& key) const;
     // The Installed tab (2A, 3A): what this session installed, and the history.
     void DrawInstalled(NVGcontext* vg);
@@ -675,13 +682,50 @@ private:
     void PickedText(const Space::View& v, char* out, size_t size);
     std::vector<ui::Hint> ConsoleHints();
     unsigned m_console_scanned_for = ~0u;                 // the version of the queue last read for
+    // In the console, group 2 (14/11): check and repair a game from its page (1A), play it (2A), the
+    // order of the list (4A), the updates and DLC without their game (5C)
+    bool m_console_orphans = false;                       // only those without their game
+    double m_console_check_at = -100;                     // when that check was asked for
+    bool m_console_check_focus = false;                   // the check ended with something to repair: Repair in focus
+    std::vector<TicketId> m_ticket_delete;                // the tickets the question deletes
+    double m_console_list_at = -100;                      // the rows come in again (a new order, a filter)
+    int m_console_btn = 0;                                // the page of a game: 1 Play, 2 Repair in focus; 0 a row
+    unsigned long long m_console_check = 0;               // the game whose check is on its page
+    double m_launch_at = -100;                            // a game asked to open: NXDock closes after a moment
+    std::string m_launch_name;
+    void CheckConsoleGame();
+    void RepairConsoleGame();
+    void PlayConsoleGame(bool asked);
+    void InstallConsoleBase();
+    bool ConsoleCanPlay(const InstalledApp& a) const;
+    bool LibraryBase(unsigned long long app) const; // the library has the game itself
+    // why Repair from the library cannot be done (nullptr: it can)
+    const char* ConsoleRepairBlock(unsigned long long app);
+    void DrawLaunch(NVGcontext* vg);
+    // the tickets of the console, in More › Space (6A)
+    struct TicketRow {
+        TicketId id;
+        unsigned long long title = 0;
+        std::string name;    // empty: no name known
+        bool orphan = false; // its title is on the console in no way
+    };
+    std::vector<TicketRow> m_tickets;
+    std::vector<char> m_ticket_marks;
+    int m_ticket_focus = 0, m_ticket_first = 0;
+    bool m_tickets_ok = true;
+    void OpenTickets();
+    void DrawTickets(NVGcontext* vg);
+    void UpdateTickets(u64 down, u64 held);
+    void AskDeleteTickets();
+    // what else of a game goes with it when asked (7A): its mods folder and its tickets
+    void ConsoleRemoveExtras(const std::vector<unsigned long long>& apps);
     int m_installed_focus = 0;
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
-                            UpdateStops, CompressStopsOriginal, CompressStopsRemove };
+                            UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -700,6 +744,9 @@ private:
         unsigned long long size = 0;    // SpaceMove: how much moves
         std::vector<UpdateCheck> checks; // UpdateStops: each job, read from the console once
         bool keep_saves = true;          // ConsoleRemove: the saves are copied first (3A)
+        bool remove_extra = false;       // ConsoleRemove: its mods and its tickets go too (7A)
+        int extra_mods = 0;              // ConsoleRemove: the folders of mods found
+        int extra_common = 0, extra_personal = 0; // ConsoleRemove: the tickets found
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;

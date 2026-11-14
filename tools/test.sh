@@ -21,6 +21,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   /tmp/minisig_test
   # the order of versions and betas, for updating itself
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/version_test tests/version_test.cpp && /tmp/version_test
+  # In the console: the orders, the play time in words, without the game, the folders of mods
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/console_order_test tests/console_order_test.cpp source/console_order.cpp
+  /tmp/console_order_test /tmp
   # what titledb knows of updates and DLC, for the games not in the library
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/versions_test tests/versions_test.cpp source/versions_list.cpp -lpthread
   /tmp/versions_test

@@ -219,6 +219,7 @@ add_executable(nxdock
     source/fileops.cpp
     source/i18n_tools.cpp
     source/more_actions.cpp
+    source/console_order.cpp
     source/more_files.cpp
     source/minisig.cpp
     source/updater.cpp

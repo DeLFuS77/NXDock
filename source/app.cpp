@@ -1402,6 +1402,11 @@ bool App::Tap(float x, float y, u64& down) {
                 if (m_installed_view == 0) {
                     // In the console: a game of the list, or a line of its page
                     int& focus = m_console_app ? m_console_item : m_console_focus;
+                    if (m_console_app && m_console_btn) {
+                        m_console_btn = 0; // from Play or Repair to a row
+                        focus = it->index;
+                        break;
+                    }
                     if (focus == it->index) {
                         down |= HidNpadButton_A;
                     } else {
@@ -1446,6 +1451,25 @@ bool App::Tap(float x, float y, u64& down) {
                 break;
             }
             case HitKind::DialogTick: m_dialog.keep_saves = !m_dialog.keep_saves; break;
+            case HitKind::DialogTickExtra: m_dialog.remove_extra = !m_dialog.remove_extra; break;
+            case HitKind::ConsoleButton:
+                // Play or Repair on the page of a game: they act at once, as buttons do
+                m_console_btn = it->index;
+                down |= HidNpadButton_A;
+                break;
+            case HitKind::ConsoleOrphans:
+                m_console_orphans = !m_console_orphans;
+                m_console_missing = false;
+                m_console_focus = 0;
+                m_console_list_at = m_time;
+                break;
+            case HitKind::TicketRow:
+                if (m_ticket_focus == it->index) {
+                    down |= HidNpadButton_Y;
+                } else {
+                    m_ticket_focus = it->index;
+                }
+                break;
             case HitKind::MenuRow:
                 // a row of the menu acts at once, as a button of a question does
                 m_menu_focus = it->index;
@@ -1506,7 +1530,9 @@ bool App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::ConsoleMissing:
                 m_console_missing = !m_console_missing;
+                m_console_orphans = false;
                 m_console_focus = 0;
+                m_console_list_at = m_time;
                 break;
             case HitKind::FilesView:
                 if (m_files_all != (it->index == 1)) FilesDo(kFaView);
@@ -1604,6 +1630,11 @@ bool App::Tap(float x, float y, u64& down) {
 }
 
 void App::Update(u64 down, u64 held) {
+    if (m_launch_at > 0) {
+        // a game asked to open (2A): NXDock closes once its line has been seen, and does nothing else
+        if (m_time - m_launch_at > 0.8) m_quit = true;
+        return;
+    }
     if (m_dialog.kind != DialogKind::None) {
         UpdateDialog(down, held);
         return;
@@ -1631,7 +1662,7 @@ void App::Update(u64 down, u64 held) {
     // + opens the actions of the screen, − too (1A, 14/11); the library, Files and Saves have their own
     {
         const ActScreen act = CurrentActScreen();
-        if (m_act && act != m_act_screen) m_act = false;
+        if (m_act && act != ActParent(m_act_screen)) m_act = false;
         if (m_act) {
             UpdateActions(down, held);
             return;
@@ -2083,7 +2114,7 @@ void App::Draw(NVGcontext* vg) {
     if (m_quick >= 0 && GridTab() && !m_detail) {
         DrawQuick(vg);
     }
-    if (m_act && CurrentActScreen() == m_act_screen) {
+    if (m_act && CurrentActScreen() == ActParent(m_act_screen)) {
         DrawActions(vg);
     }
     if (m_dialog.kind != DialogKind::None) {
@@ -2117,6 +2148,7 @@ void App::Draw(NVGcontext* vg) {
     DrawTouchFeedback(vg);
     DrawSaver(vg);
     DrawScreenOff(vg);
+    DrawLaunch(vg);
 }
 
 void App::DrawTransitions(NVGcontext* vg) {
@@ -4320,7 +4352,12 @@ bool App::RepairJobs(const InstallQueue::VerifyView& v, std::vector<InstallJob>&
     if (m_dialog.game < 0 || m_dialog.game >= int(m_games.size())) {
         return false;
     }
-    const Game& g = m_games[m_dialog.game];
+    return RepairJobsFor(m_games[m_dialog.game], v, out);
+}
+
+// The repairs of a check, from the files of a game of the library; false when it lacks a version.
+bool App::RepairJobsFor(const Game& g, const InstallQueue::VerifyView& v, std::vector<InstallJob>& out) {
+    out.clear();
     bool all = true;
     for (const auto& c : v.result) {
         if (c.bad.empty()) {
@@ -6052,6 +6089,7 @@ void App::DrawDialog(NVGcontext* vg) {
     bool can = true, bar = false;
     bool verify_bar = false, verify_running = false;
     bool tick = false; // ConsoleRemove: the box of the saves (3A)
+    bool tick2 = false; // ConsoleRemove: the box of its mods and its tickets (7A)
     std::string cancel_label = s.cancel;
     float verify_frac = 0;
     std::string verify_text;
@@ -6306,6 +6344,34 @@ void App::DrawDialog(NVGcontext* vg) {
             // the saves can be copied first, when the game itself goes (3A, 14/11)
             tick = ConsoleRemoveTakesGame();
             primary = tick && m_dialog.keep_saves ? m.ic_rm_copy_go : m.ic_rm_go;
+            // its mods and its tickets, only when it has any (7A)
+            tick2 = tick && (m_dialog.extra_mods > 0 || m_dialog.extra_common + m_dialog.extra_personal > 0);
+            break;
+        }
+        case DialogKind::Play: {
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.pl_title_fmt, m_dialog.text.c_str());
+            title = text;
+            body = m.pl_body;
+            primary = m.pl_play;
+            break;
+        }
+        case DialogKind::TicketsDelete: {
+            const More& m = TrM();
+            char text[200];
+            std::snprintf(text, sizeof(text), m.tk_del_title_fmt, int(m_ticket_delete.size()));
+            title = text;
+            for (const auto& id : m_ticket_delete) {
+                for (const auto& r : m_tickets) {
+                    if (std::memcmp(r.id.rights, id.rights, sizeof(id.rights)) || r.id.personal != id.personal) continue;
+                    lines.push_back({(r.name.empty() ? std::string(m.tk_no_name) : r.name) + " \xC2\xB7 " + (id.personal ? m.tk_personal : m.tk_common), "",
+                                     r.orphan ? m.tk_no_game : "", r.orphan ? t.orange : t.muted});
+                    break;
+                }
+            }
+            body = m.tk_del_body;
+            primary = m.tk_del_go;
             break;
         }
         case DialogKind::ShopRemove: {
@@ -6565,7 +6631,7 @@ void App::DrawDialog(NVGcontext* vg) {
 
     // the layout, from the top
     const float w = 740, pad = 32, iw = w - 2 * pad;
-    const float tick_h = tick ? 84.f + 14 : 0.f;
+    const float tick_h = (tick ? 84.f + 14 : 0.f) + (tick2 ? 84.f + 14 : 0.f);
     const int shown = std::min<int>(int(lines.size()), m_dialog.kind == DialogKind::HistoryInfo ? 8 : 5);
     const bool more = int(lines.size()) > shown;
     // rows a finger chooses are 48 px high; the others 40
@@ -6657,7 +6723,7 @@ void App::DrawDialog(NVGcontext* vg) {
             nvgScissor(vg, tx, ly - lp / 2, iw - 32 - rw - 140, lp);
             tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, l.text.c_str());
             const bool colored = m_dialog.kind == DialogKind::HistoryInfo || m_dialog.kind == DialogKind::Verify ||
-                                 m_dialog.kind == DialogKind::PreCheck;
+                                 m_dialog.kind == DialogKind::PreCheck || m_dialog.kind == DialogKind::TicketsDelete;
             nvgRestore(vg);
             if (!l.tag.empty()) {
                 const float tw = ui::TextWidth(vg, 13, l.tag.c_str()) + 16;
@@ -6731,7 +6797,7 @@ void App::DrawDialog(NVGcontext* vg) {
         // a big box to tick, on by default: the saves copied before (3A); a tap or Y changes it
         const bool on = m_dialog.keep_saves;
         const More& m = TrM();
-        const float th = tick_h - 14;
+        const float th = 84;
         NVGcolor fill = t.work;
         fill.a = on ? 0.12f : 0.04f;
         ui::FillRound(vg, x + pad, cy, iw, th, 14, fill);
@@ -6743,7 +6809,45 @@ void App::DrawDialog(NVGcontext* vg) {
         ui::Text(vg, x + pad + 62, cy + th / 2 + 14, 14, t.muted, m_link.CurrentConfig().Linked() ? m.ic_rm_keep_lib : m.ic_rm_keep_sd);
         ui::Symbol(vg, t, x + pad + iw - 30, cy + th / 2, 24, ui::glyph::Y, t.muted, HidNpadButton_Y);
         AddHit(x + pad, cy, iw, th, HitKind::DialogTick);
-        cy += tick_h;
+        cy += th + 14;
+    }
+    if (tick2) {
+        // a second box, off by default: its mods and its tickets go too (7A); a tap or X changes it
+        const bool on = m_dialog.remove_extra;
+        const More& m = TrM();
+        const float th = 84;
+        // it comes in a little after the question
+        const float in = ui::EaseOut(ui::Appear(m_dialog_at + 0.3, 0.3f));
+        nvgSave(vg);
+        nvgTranslate(vg, 0, (1 - in) * 10);
+        nvgGlobalAlpha(vg, in * std::min(1.f, pop * 1.4f));
+        NVGcolor fill = t.work;
+        fill.a = on ? 0.12f : 0.04f;
+        ui::FillRound(vg, x + pad, cy, iw, th, 14, fill);
+        NVGcolor edge = t.work;
+        edge.a = 0.6f;
+        ui::StrokeRound(vg, x + pad + 1, cy + 1, iw - 2, th - 2, 14, on ? edge : t.line, 2);
+        draw::TickBox(vg, t, x + pad + 22, cy + th / 2, on, "remove-extra");
+        ui::Text(vg, x + pad + 62, cy + th / 2 - 13, 18, t.text, m.rx_title);
+        // what was found: "Mods: 2 folders · common ticket"
+        std::string found;
+        char text[96];
+        if (m_dialog.extra_mods > 0) {
+            if (m_dialog.extra_mods == 1) std::snprintf(text, sizeof(text), "%s", m.rx_mods_one);
+            else std::snprintf(text, sizeof(text), m.rx_mods_fmt, m_dialog.extra_mods);
+            found = text;
+        }
+        const int tickets = m_dialog.extra_common + m_dialog.extra_personal;
+        if (tickets > 0) {
+            if (tickets == 1) std::snprintf(text, sizeof(text), "%s", m_dialog.extra_personal ? m.rx_ticket_personal : m.rx_ticket_common);
+            else std::snprintf(text, sizeof(text), m.rx_tickets_fmt, tickets);
+            found += (found.empty() ? "" : " \xC2\xB7 ") + std::string(text);
+        }
+        ui::Text(vg, x + pad + 62, cy + th / 2 + 14, 14, t.muted, found.c_str());
+        ui::Symbol(vg, t, x + pad + iw - 30, cy + th / 2, 24, ui::glyph::X, t.muted, HidNpadButton_X);
+        nvgRestore(vg);
+        AddHit(x + pad, cy, iw, th, HitKind::DialogTickExtra);
+        cy += th + 14;
     }
 
     // the buttons: Cancel (or Close) first in focus, the action on the right
@@ -6809,6 +6913,11 @@ void App::UpdateDialog(u64 down, u64 held) {
     if (ToolDialogInput(down, held)) return;
     if (m_dialog.kind == DialogKind::ConsoleRemove && (down & HidNpadButton_Y) && ConsoleRemoveTakesGame()) {
         m_dialog.keep_saves = !m_dialog.keep_saves; // the box of the saves (3A)
+        return;
+    }
+    if (m_dialog.kind == DialogKind::ConsoleRemove && (down & HidNpadButton_X) && ConsoleRemoveTakesGame() &&
+        (m_dialog.extra_mods > 0 || m_dialog.extra_common + m_dialog.extra_personal > 0)) {
+        m_dialog.remove_extra = !m_dialog.remove_extra; // the box of its mods and its tickets (7A)
         return;
     }
     const bool info = m_dialog.single;
@@ -7026,6 +7135,18 @@ void App::ConfirmDialog() {
         case DialogKind::Quit:
             m_quit = true;
             break;
+        case DialogKind::Play:
+            m_dialog = Dialog{};
+            PlayConsoleGame(true);
+            return;
+        case DialogKind::TicketsDelete:
+            // they wait while something installs: an install writes tickets
+            if ((m_queue && (m_queue->Busy() || m_queue->Undoing())) || !m_space || !m_space->StartDeleteTickets(m_ticket_delete)) {
+                Notice(TrM().cz_busy);
+            } else {
+                std::fill(m_ticket_marks.begin(), m_ticket_marks.end(), 0);
+            }
+            break;
         case DialogKind::Forget:
             m_speed.Cancel();
             m_link.Forget();
@@ -7137,6 +7258,9 @@ void App::ConfirmDialog() {
                     return CopySavesBefore(url, key, app, it == versions.end() ? 0 : it->second, note, {});
                 };
             }
+            // then its mods and its tickets, when asked (7A); the tickets are saved to the SD card first
+            std::function<void(unsigned long long)> after;
+            if (m_dialog.remove_extra && ConsoleRemoveTakesGame()) after = RemoveGameExtras;
             // taking contents off while the queue installs could take those of the install going on
             if (m_queue && (m_queue->Busy() || m_queue->Undoing())) {
                 Notice(TrM().cz_busy);
@@ -7164,7 +7288,7 @@ void App::ConfirmDialog() {
                 char text[200];
                 std::snprintf(text, sizeof(text), TrM().ic_done_many_fmt, int(games.size()), SizeText(bytes).c_str());
                 m_console_done_text = text;
-                if (m_space && m_space->StartRemove(games, before)) {
+                if (m_space && m_space->StartRemove(games, before, after)) {
                     m_console_removing.clear();
                     for (const auto& g : games) m_console_removing.insert(g.first);
                     m_console_picked.clear();
@@ -7172,7 +7296,7 @@ void App::ConfirmDialog() {
                     m_console_done.clear();
                     Notice(TrM().cz_busy);
                 }
-            } else if (m_space && m_space->StartRemove(m_console_app, m_console_remove, before)) {
+            } else if (m_space && m_space->StartRemove(m_console_app, m_console_remove, before, after)) {
                 // one game, or a part of it
                 u64 bytes = 0;
                 bool base = false;

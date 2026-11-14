@@ -7,16 +7,22 @@
 // apart), where what goes is marked and taken off after a question. The saves are never touched.
 #include "app.hpp"
 
+#include "console_order.hpp"
 #include "draw.hpp"
+#include "fileops.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
 #include "i18n_tools.hpp"
+#include "log.hpp"
+#include "mods.hpp"
+#include "net.hpp"
 #include "yati/nx/es.hpp"
 #include "yati/nx/ns.hpp"
 
 #include <algorithm>
 #include <cstdio>
 #include <ctime>
+#include <sys/stat.h>
 
 namespace nxdock {
 
@@ -84,6 +90,54 @@ const char* WhereOf(const InstalledApp& a, const Strings& s) {
     both = std::string("SD + ") + s.internal_short;
     if (a.nand_bytes && a.sd_bytes) return both.c_str();
     return a.nand_bytes ? s.internal_short : "SD";
+}
+
+// A small clock, before the play time (3A).
+void Clock(NVGcontext* vg, float cx, float cy, float r, NVGcolor c) {
+    nvgStrokeColor(vg, c);
+    nvgStrokeWidth(vg, 1.5f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgBeginPath(vg);
+    nvgCircle(vg, cx, cy, r);
+    nvgStroke(vg);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, cx, cy - r + 2.5f);
+    nvgLineTo(vg, cx, cy);
+    nvgLineTo(vg, cx + r - 2.5f, cy);
+    nvgStroke(vg);
+}
+
+const char* SortName(const More& m, int sort) {
+    switch (sort) {
+        case kSortSize: return m.so_size;
+        case kSortLast: return m.so_last;
+        case kSortTime: return m.so_time;
+        case kSortWhere: return m.so_where;
+        default: return m.so_name;
+    }
+}
+
+bool NeverOpened(const InstalledApp& a) {
+    return a.launches == 0 || (a.play_minutes <= 0 && a.idle_minutes < 0);
+}
+
+// How long a game was played: "42 h 10 min", or that it was never opened.
+std::string PlayedText(const InstalledApp& a) {
+    const More& m = TrM();
+    if (NeverOpened(a)) return m.ps_never;
+    return PlayTimeText(a.play_minutes, m.ps_h_min_fmt, m.ps_h_fmt, m.ps_min_fmt);
+}
+
+// The line of the page of a game: "42 h 10 min · opened 37 times · last played 3 days ago".
+std::string StatsText(const InstalledApp& a) {
+    const More& m = TrM();
+    if (NeverOpened(a)) return m.ps_never;
+    const std::string ago = a.idle_minutes < 0 ? std::string("?")
+                                               : AgoText(a.idle_minutes, m.ps_today, m.ps_yesterday, m.ps_days_fmt, m.ps_weeks_fmt, m.ps_months_fmt);
+    char text[200];
+    if (a.launches == 1) std::snprintf(text, sizeof(text), m.ps_stats_once_fmt, PlayedText(a).c_str(), ago.c_str());
+    else std::snprintf(text, sizeof(text), m.ps_stats_fmt, PlayedText(a).c_str(), std::max(0, a.launches), ago.c_str());
+    return text;
 }
 
 } // namespace
@@ -155,7 +209,7 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
         return;
     }
     const bool library = m_catalog.GetState() == Catalog::State::Ready;
-    m_console_focus = std::clamp(m_console_focus, 0, int(v.apps.size()) - 1);
+    m_console_focus = std::clamp(m_console_focus, 0, std::max(0, int(v.apps.size()) - 1));
     // the size, at the right of the views: a tap chooses it
     {
         const char* names[] = {m.ic_size_list, m.ic_size_mid, m.ic_size_big};
@@ -171,8 +225,11 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
             x -= 6;
         }
         // the filter: only the games missing an update or a DLC (6A)
-        int missing = 0;
-        for (const auto& a : all.apps) missing += !a.archived && MissingOf(a.app_id).Any();
+        int missing = 0, orphans = 0;
+        for (const auto& a : all.apps) {
+            missing += !a.archived && !WithoutGame(a) && MissingOf(a.app_id).Any();
+            orphans += WithoutGame(a);
+        }
         char text[96];
         std::snprintf(text, sizeof(text), tt.ms_filter_fmt, missing);
         const float w = ui::TextWidth(vg, 13, text) + 22;
@@ -181,9 +238,27 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
         else ui::StrokeRound(vg, x, 80, w, 24, 12, t.line, 1.f);
         ui::Text(vg, x + w / 2, 92, 13, m_console_missing ? t.on_work : t.muted, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         AddHit(x - 2, 72, w + 4, 48, HitKind::ConsoleMissing, 0);
+        // the updates and DLC without their game, in orange (5C); only when there are some
+        if (orphans > 0 || m_console_orphans) {
+            std::snprintf(text, sizeof(text), m.og_chip_fmt, orphans);
+            const float ow = ui::TextWidth(vg, 13, text) + 22;
+            x -= 8 + ow;
+            if (m_console_orphans) ui::FillRound(vg, x, 80, ow, 24, 12, t.orange);
+            else ui::StrokeRound(vg, x, 80, ow, 24, 12, t.orange, 1.2f);
+            ui::Text(vg, x + ow / 2, 92, 13, m_console_orphans ? t.on_work : t.orange, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            AddHit(x - 2, 72, ow + 4, 48, HitKind::ConsoleOrphans, 0);
+        }
+        // the order chosen in + (4A), when there is room left of the filters
+        std::snprintf(text, sizeof(text), m.so_head_fmt, SortName(m, m_ui.console_sort));
+        if (x - 18 - ui::TextWidth(vg, 14, text) > 470) {
+            const float k = ui::EaseOut(ui::Appear(m_console_list_at, 0.3f));
+            nvgGlobalAlpha(vg, k);
+            ui::Text(vg, x - 18, 92 - (1 - k) * 8, 14, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            nvgGlobalAlpha(vg, 1.f);
+        }
     }
     if (v.apps.empty()) {
-        // the filter on, and nothing missing
+        // a filter on, and nothing for it
         ui::Text(vg, kWidth / 2, 340, 20, t.muted, tt.ms_nothing, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         ui::HintBar(vg, t, nullptr, ConsoleHints(), m_hint_rects);
         return;
@@ -199,7 +274,12 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
     for (int r = first; r < int(v.apps.size()) && r < first + visible; r++) {
         const InstalledApp& a = v.apps[size_t(r)];
         const float y = top + (r - first) * pitch;
+        // the rows come in one after another, after a new order or a filter
+        const float in = ui::EaseOut(ui::Appear(m_console_list_at + 0.04 * (r - first), 0.3f));
+        nvgSave(vg);
+        nvgTranslate(vg, -(1 - in) * 24, 0);
         if (r == m_console_focus) {
+            nvgGlobalAlpha(vg, in);
             ui::FillRound(vg, 48, y, kWidth - 96, pitch - 6, 12, t.panel2);
             ui::Focus(vg, t, 48, y, kWidth - 96, pitch - 6, 12, m_time);
         }
@@ -208,11 +288,14 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
         int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
         if (!image) image = m_covers.Get(IconPath(a.app_id));
         const bool removing = m_console_removing.count(a.app_id) && v.task == Space::Task::Remove;
-        nvgGlobalAlpha(vg, removing ? 0.25f : a.archived ? 0.55f : 1.f);
+        const bool orphan = WithoutGame(a);
+        // an update or a DLC without its game, lighter (5C)
+        nvgGlobalAlpha(vg, in * (removing ? 0.25f : a.archived ? 0.55f : orphan ? 0.62f : 1.f));
         ui::Cover(vg, t, 62, y + 5, 56, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, 9, image);
         nvgSave(vg);
         nvgScissor(vg, 134, y, 920, pitch);
         float x = ui::Text(vg, 134, y + 23, 18, t.text, a.name.c_str()) + 12;
+        if (orphan) x = Tag(vg, x, y + 23, m.og_tag, t.orange);
         if (library && !g) x = Tag(vg, x, y + 23, m.ic_not_lib, t.orange);
         if (a.archived) x = Tag(vg, x, y + 23, m.archived_tag, t.muted);
         bool newer = false;
@@ -220,21 +303,32 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
         if (newer) x = Tag(vg, x, y + 23, m.ic_dlc_needs_tag, t.orange);
         // the version, the DLC and where
         int dlc = 0;
-        for (const auto& c : a.contents) dlc += c.type == NcmContentMetaType_AddOnContent;
+        bool update = false;
+        for (const auto& c : a.contents) {
+            dlc += c.type == NcmContentMetaType_AddOnContent;
+            update = update || c.type == NcmContentMetaType_Patch;
+        }
         std::string sub;
         if (!a.archived) {
             char text[160];
-            sub = VersionText(GameVersion(a));
+            if (!orphan || update) sub = VersionText(GameVersion(a));
             if (dlc) {
                 std::snprintf(text, sizeof(text), m.ic_dlc_fmt, dlc);
-                sub += std::string(" · ") + text;
+                sub += std::string(sub.empty() ? "" : " · ") + text;
             }
             sub += std::string(" · ") + WhereOf(a, s);
+            if (orphan) sub += std::string(" · ") + m.og_sub;
         } else {
             sub = m.ic_archived_sub;
         }
         float px = ui::Text(vg, 134, y + 47, 14, t.muted, sub.c_str()) + 12;
-        if (!a.archived) {
+        if (!a.archived && !orphan && (a.play_minutes >= 0 || a.launches >= 0)) {
+            // how long it was played, with a small clock (3A)
+            px = ui::Text(vg, px - 4, y + 47, 14, t.muted, "· ") + 2;
+            Clock(vg, px + 6, y + 47, 6, t.muted);
+            px = ui::Text(vg, px + 16, y + 47, 14, t.muted, PlayedText(a).c_str()) + 12;
+        }
+        if (!a.archived && !orphan) {
             // what is missing, in cyan and violet (6A)
             const Missing& ms = MissingOf(a.app_id);
             char pill[96];
@@ -251,6 +345,7 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
             ui::Text(vg, marking ? 1180 : 1218, y + 33, 16, t.muted, draw::Size(a.Bytes()).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         }
         nvgGlobalAlpha(vg, 1.f);
+        nvgRestore(vg);
     }
     // the names still being read, on a big list
     char left[160] = "";
@@ -286,7 +381,8 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
         int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
         if (!image) image = m_covers.Get(IconPath(a.app_id));
         const bool removing = m_console_removing.count(a.app_id) && v.task == Space::Task::Remove;
-        nvgGlobalAlpha(vg, removing ? 0.25f : a.archived ? 0.55f : 1.f);
+        const bool orphan = WithoutGame(a);
+        nvgGlobalAlpha(vg, removing ? 0.25f : a.archived ? 0.55f : orphan ? 0.62f : 1.f);
         ui::Cover(vg, t, x, y, cover, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, big ? 14 : 11, image);
         if (i == m_console_focus) ui::Focus(vg, t, x - 4, y - 4, cover + 8, cover + 8, big ? 17 : 14, m_time);
         if (!m_console_picked.empty() && !a.archived) {
@@ -307,10 +403,11 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
             nvgRestore(vg);
             by += 22;
         };
+        if (orphan) badge(m.og_tag, t.orange);
         if (library && !g) badge(m.ic_not_lib, t.orange);
         if (newer) badge(m.ic_dlc_needs_tag, t.orange);
         if (a.archived) badge(m.archived_tag, t.muted);
-        if (!a.archived) {
+        if (!a.archived && !orphan) {
             const Missing& ms = MissingOf(a.app_id);
             if (ms.update) badge(VersionText(ms.update).c_str(), t.cyan);
             if (ms.dlc) {
@@ -368,14 +465,27 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     for (size_t i = 0; i < items.size(); i++) {
         if (m_console_marks[i] && items[i].type == NcmContentMetaType_Application) base_marked = true;
     }
+    const bool orphan = WithoutGame(a);
+    const bool play = ConsoleCanPlay(a);
+    if (!play && m_console_btn == 1) m_console_btn = 0;
 
     const Game* g = LibraryGame(a.app_id);
     int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
     if (!image) image = m_covers.Get(IconPath(a.app_id));
+    nvgGlobalAlpha(vg, orphan ? 0.62f : 1.f);
     ui::Cover(vg, t, 48, 100, 300, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, 16, image);
+    nvgGlobalAlpha(vg, 1.f);
     const Tools& tt = TrT();
     const Missing& ms = MissingOf(a.app_id);
-    if (!a.archived) {
+    if (orphan) {
+        // an update or a DLC without its game (5C): what that means, and whether the library has it
+        const float cx = 48, cw = 300, cy0 = 418;
+        draw::Panel(vg, t, cx, cy0, cw, 216, 12);
+        ui::Text(vg, cx + 16, cy0 + 24, 16, t.text, m.og_not_here);
+        Paragraph(vg, cx + 16, cy0 + 50, cw - 32, 14, t.orange, m.og_cannot);
+        const bool has = LibraryBase(a.app_id);
+        ui::Text(vg, cx + 16, cy0 + 120, 13, has ? t.ok : t.muted, has ? m.og_in_lib : m.og_not_lib);
+    } else if (!a.archived) {
         // what it lacks, and where it could come from (6A)
         const float cx = 48, cw = 300;
         float cy0 = 418;
@@ -411,21 +521,56 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     }
 
     const float x0 = 384, w = kWidth - 48 - x0;
-    nvgSave(vg);
-    nvgScissor(vg, x0, 90, w, 60);
-    ui::Text(vg, x0, 116, 26, t.text, a.name.c_str());
-    nvgRestore(vg);
     char text[300];
+    // the title ID, on the right of the name (4A)
+    std::snprintf(text, sizeof(text), "ID %016llX", a.app_id);
+    const float idw = ui::TextWidth(vg, 15, text);
+    ui::Text(vg, x0 + w, 116, 15, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    nvgSave(vg);
+    nvgScissor(vg, x0, 90, w - idw - 20, 60);
+    float nx = ui::Text(vg, x0, 116, 26, t.text, a.name.c_str()) + 14;
+    if (orphan) Tag(vg, nx, 118, m.og_tag, t.orange);
+    nvgRestore(vg);
+    float hy = 150;
     if (a.archived) {
-        ui::Text(vg, x0, 150, 15, t.muted, m.ic_archived_sub);
+        ui::Text(vg, x0, hy, 15, t.muted, m.ic_archived_sub);
         Paragraph(vg, x0, 200, w, 16, t.muted, m.ic_archived_note);
     } else {
-        std::snprintf(text, sizeof(text), m.ic_meta_fmt, draw::Size(a.Bytes()).c_str(), WhereOf(a, s), VersionText(GameVersion(a)).c_str());
-        ui::Text(vg, x0, 150, 15, t.muted, text);
+        std::snprintf(text, sizeof(text), m.ic_meta_fmt, draw::Size(a.Bytes()).c_str(), WhereOf(a, s),
+                      orphan ? m.og_sub : VersionText(GameVersion(a)).c_str());
+        ui::Text(vg, x0, hy, 15, t.muted, text);
+    }
+    if (!a.archived && !orphan && (a.play_minutes >= 0 || a.launches >= 0)) {
+        // how long it was played, how many times it was opened and when last (3A)
+        hy += 26;
+        Clock(vg, x0 + 7, hy, 7, t.work);
+        ui::Text(vg, x0 + 22, hy, 15, t.text, StatsText(a).c_str());
+    }
+    float top = hy + 28;
+    if (play) {
+        // Play, big and blue: what is done most from here (2A)
+        const float by = hy + 20, bh = 56, bw = std::max(200.f, ui::TextWidth(vg, 18, m.pl_play) + 80);
+        if (m_console_btn == 1) ui::Focus(vg, t, x0, by, bw, bh, 14, m_time);
+        ui::FillRound(vg, x0, by, bw, bh, 14, t.work);
+        const float icx = x0 + 30, icy = by + bh / 2;
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, icx - 6, icy - 9);
+        nvgLineTo(vg, icx + 9, icy);
+        nvgLineTo(vg, icx - 6, icy + 9);
+        nvgClosePath(vg);
+        nvgFillColor(vg, t.on_work);
+        nvgFill(vg);
+        ui::Text(vg, x0 + 52, icy, 18, t.on_work, m.pl_play);
+        AddHit(x0, by, bw, bh, HitKind::ConsoleButton, 1);
+        top = by + bh + 18;
     }
 
-    const float top = 178, pitch = 56;
-    const int visible = 7;
+    // the check of this game, when one was asked for from its page (1A)
+    const bool checked = m_console_check == a.app_id && m_queue;
+    const auto cv = checked ? m_queue->GetVerify() : InstallQueue::VerifyView{};
+    if (checked && cv.done && IsCancelled(cv.rc)) m_console_check = 0; // stopped: as before
+    const float pitch = 56, panel_h = 84;
+    const int visible = std::max(1, int((650 - top - (checked ? panel_h + 8 : 40)) / pitch));
     ListArea(x0, top, w, visible * pitch, pitch);
     const int first = std::clamp(m_console_item - visible + 1, 0, std::max(0, int(items.size()) - visible));
     unsigned long long freed = 0;
@@ -436,10 +581,26 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
             marked++;
         }
     }
+    std::string bad_names;
+    int parts = 0, bad_count = 0;
+    if (checked && cv.done) {
+        for (const auto& c : cv.result) {
+            parts++;
+            if (c.bad.empty()) continue;
+            bad_count++;
+            InstalledApp::Content ct{c.key.id, c.key.version, c.key.type, c.nand, 0, 0};
+            bad_names += (bad_names.empty() ? "" : ", ") + ContentLabel(ct, a.app_id);
+        }
+    }
     for (int r = first; r < int(items.size()) && r < first + visible; r++) {
         const auto& c = items[size_t(r)];
         const float y = top + (r - first) * pitch, cy = y + 24;
-        if (r == m_console_item) {
+        // the rows come in one after another when the page opens
+        const float in = ui::EaseOut(ui::Appear(m_console_list_at + 0.05 * (r - first), 0.3f));
+        nvgSave(vg);
+        nvgTranslate(vg, (1 - in) * 30, 0);
+        nvgGlobalAlpha(vg, in);
+        if (r == m_console_item && m_console_btn == 0) {
             ui::FillRound(vg, x0, y, w, pitch - 6, 10, t.panel2);
             ui::Focus(vg, t, x0, y, w, pitch - 6, 10, m_time);
         } else {
@@ -449,31 +610,122 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
         const bool on = m_console_marks[size_t(r)] || base_marked;
         draw::TickBox(vg, t, x0 + 16, cy, on, "console:" + std::to_string(c.id) + ":" + std::to_string(c.version));
         nvgSave(vg);
-        nvgScissor(vg, x0 + 52, y, w - 52 - 190, pitch);
+        nvgScissor(vg, x0 + 52, y, w - 52 - 330, pitch);
         float x = ui::Text(vg, x0 + 52, cy, 17, t.text, ContentLabel(c, a.app_id).c_str()) + 12;
         if (NeedsNewer(a, c)) {
             std::snprintf(text, sizeof(text), m.ic_needs_fmt, VersionText(c.required).c_str());
             x = Tag(vg, x, cy, text, t.orange);
         }
         nvgRestore(vg);
+        float rx = x0 + w - 16;
+        if (checked && (cv.running || cv.done)) {
+            // OK in green, Damaged in red, Checking… in blue while it runs
+            int state = cv.running ? 0 : -1;
+            for (const auto& vc : cv.result) {
+                if (vc.key.id == c.id && vc.key.version == c.version) state = vc.bad.empty() ? 1 : 2;
+            }
+            if (state >= 0) {
+                const char* label = state == 0 ? m.ck_wait : state == 1 ? m.ck_ok : m.ck_bad;
+                const NVGcolor col = state == 0 ? t.work : state == 1 ? t.ok : t.err;
+                const float k = 1.f;
+                const float pw = ui::TextWidth(vg, 14, label) + 40, sx = rx - pw;
+                nvgGlobalAlpha(vg, in * k);
+                NVGcolor bg = col;
+                bg.a = 0.18f;
+                ui::FillRound(vg, sx, cy - 13, pw, 26, 13, bg);
+                if (state == 0) ui::Spinner(vg, sx + 15, cy, 6, col, m_time);
+                else if (state == 1) ui::CheckMark(vg, sx + 15, cy, 10, col, 2.4f);
+                else {
+                    nvgBeginPath(vg);
+                    nvgMoveTo(vg, sx + 10, cy - 5);
+                    nvgLineTo(vg, sx + 20, cy + 5);
+                    nvgMoveTo(vg, sx + 20, cy - 5);
+                    nvgLineTo(vg, sx + 10, cy + 5);
+                    nvgStrokeColor(vg, col);
+                    nvgStrokeWidth(vg, 2.4f);
+                    nvgStroke(vg);
+                }
+                ui::Text(vg, sx + 28, cy, 14, col, label);
+                nvgGlobalAlpha(vg, in);
+                rx = sx - 14;
+            }
+        }
         std::snprintf(text, sizeof(text), "%s · %s", c.nand ? s.internal_short : "SD", draw::Size(c.bytes).c_str());
-        ui::Text(vg, x0 + w - 16, cy, 15, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        ui::Text(vg, rx, cy, 15, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
     }
-    // what goes, how much it frees; the saves stay
-    const float fy = top + visible * pitch + 14;
-    if (base_marked) {
-        ui::Text(vg, x0, fy, 15, t.muted, m.ic_with_game);
+    const float fy = top + visible * pitch + 8;
+    if (checked && (cv.running || cv.done)) {
+        // under the list: how far the check is, then what it found (1A)
+        const float k = ui::EaseOutBack(ui::Appear(m_console_check_at, 0.3f));
+        nvgSave(vg);
+        nvgGlobalAlpha(vg, std::min(1.f, k));
+        draw::Panel(vg, t, x0, fy, w, panel_h, 14);
+        const char* block = ConsoleRepairBlock(a.app_id);
+        if (cv.running) {
+            std::snprintf(text, sizeof(text), m.ck_checking_fmt, cv.parts_done + (cv.parts_done < cv.parts ? 1 : 0), cv.parts,
+                          draw::Size(cv.bytes_done).c_str(), draw::Size(cv.bytes).c_str());
+            ui::Text(vg, x0 + 20, fy + 26, 17, t.text, text);
+            ui::Progress(vg, t, x0 + 20, fy + 52, w - 40, 10, cv.bytes ? float(double(cv.bytes_done) / double(cv.bytes)) : 0.f, t.work, m_time);
+        } else if (R_FAILED(cv.rc)) {
+            ui::Text(vg, x0 + 20, fy + 26, 17, t.err, m.ck_error);
+            std::snprintf(text, sizeof(text), "0x%X", cv.rc);
+            ui::Text(vg, x0 + 20, fy + 56, 14, t.muted, text);
+        } else if (bad_count) {
+            std::snprintf(text, sizeof(text), m.ck_bad_fmt, bad_names.c_str());
+            nvgSave(vg);
+            nvgScissor(vg, x0 + 20, fy, w - 290, panel_h);
+            ui::Text(vg, x0 + 20, fy + 26, 17, t.err, text);
+            nvgRestore(vg);
+            if (!block) {
+                ui::Text(vg, x0 + 20, fy + 56, 14, t.muted, m.ck_repair_note);
+                // Repair, in focus when the check ends
+                const float rbw = 230, rbh = 48, rbx = x0 + w - rbw - 18, rby = fy + 18;
+                if (m_console_btn == 2) ui::Focus(vg, t, rbx, rby, rbw, rbh, 12, m_time);
+                ui::FillRound(vg, rbx, rby, rbw, rbh, 12, t.work);
+                ui::Symbol(vg, t, rbx + 28, rby + rbh / 2, 24, ui::glyph::A, t.on_work, HidNpadButton_A);
+                ui::Text(vg, rbx + 50, rby + rbh / 2, 17, t.on_work, m.ck_repair_go);
+                AddHit(rbx, rby, rbw, rbh, HitKind::ConsoleButton, 2);
+            } else {
+                ui::Text(vg, x0 + 20, fy + 56, 14, t.muted, block == m.ck_not_lib ? m.ck_cannot : block);
+            }
+        } else {
+            std::snprintf(text, sizeof(text), m.ck_all_ok_fmt, parts, parts);
+            ui::Text(vg, x0 + 20, fy + 26, 17, t.ok, text);
+        }
+        nvgRestore(vg);
+        if (cv.done && bad_count && !block && m_console_check_focus) {
+            m_console_check_focus = false;
+            m_console_btn = 2;
+        }
+        if (m_console_btn == 2 && (!cv.done || !bad_count || block)) m_console_btn = 0;
+    } else {
+        if (m_console_btn == 2) m_console_btn = 0;
+        // what goes, how much it frees; the saves stay
+        if (base_marked) {
+            ui::Text(vg, x0, fy + 6, 15, t.muted, m.ic_with_game);
+        }
+        std::snprintf(text, sizeof(text), m.ic_marked_fmt, marked, draw::Size(freed).c_str());
+        ui::Text(vg, x0, fy + 6 + (base_marked ? 24 : 0), 15, marked ? t.text : t.muted, text);
     }
-    std::snprintf(text, sizeof(text), m.ic_marked_fmt, marked, draw::Size(freed).c_str());
-    ui::Text(vg, x0, fy + (base_marked ? 24 : 0), 15, marked ? t.text : t.muted, text);
 
     // as everywhere: Y marks, + has every action (deleting what is marked among them)
     std::vector<ui::Hint> hints;
+    if (checked && cv.running) {
+        hints.push_back({ui::glyph::Plus, tt.fm_actions, HidNpadButton_Plus});
+        hints.push_back({ui::glyph::B, m.ck_stop, HidNpadButton_B});
+        ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
+        return;
+    }
     if (!items.empty()) {
-        hints.push_back({ui::glyph::A, tt.cd_hint, HidNpadButton_A});
+        hints.push_back({ui::glyph::A, m_console_btn == 1 ? m.pl_play : m_console_btn == 2 ? m.ck_repair_go : tt.cd_hint, HidNpadButton_A});
         hints.push_back({ui::glyph::Y, m.ic_mark, HidNpadButton_Y});
     }
-    if (g) hints.push_back({ui::glyph::X, ms.Any() && (ms.update_lib || ms.dlc_lib) ? tt.ms_install_hint : m.ic_from_library, HidNpadButton_X});
+    if (orphan) {
+        if (LibraryBase(a.app_id)) hints.push_back({ui::glyph::X, m.og_install, HidNpadButton_X});
+    } else if (g) {
+        hints.push_back({ui::glyph::X, ms.Any() && (ms.update_lib || ms.dlc_lib) ? tt.ms_install_hint : m.ic_from_library, HidNpadButton_X});
+    }
     if (!items.empty()) hints.push_back({ui::glyph::Plus, tt.fm_actions, HidNpadButton_Plus});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, v.task == Space::Task::Remove ? m.ic_removing : nullptr, hints, m_hint_rects);
@@ -525,6 +777,7 @@ void App::AskConsoleRemoveMany(const Space::View& v) {
         return;
     }
     m_dialog.kind = DialogKind::ConsoleRemove;
+    ConsoleRemoveExtras(m_dialog.ids);
 }
 
 void App::UpdateConsole(u64 down, u64 held) {
@@ -556,10 +809,10 @@ void App::UpdateConsole(u64 down, u64 held) {
             if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_focus > 0) m_console_focus--;
             if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_focus < n - 1) m_console_focus++;
         }
-        // by first letter, for long lists
+        // by first letter, for long lists (when they are in the order of their names)
         const bool left = m_ui.console_size == 0 && Repeat(down, held, HidNpadButton_AnyLeft),
                    right = m_ui.console_size == 0 && Repeat(down, held, HidNpadButton_AnyRight);
-        if (left || right) {
+        if ((left || right) && m_ui.console_sort == kSortName) {
             std::vector<std::string> names;
             for (const auto& a : v.apps) names.push_back(a.name);
             m_console_focus = ListJump(names, m_console_focus, right ? 1 : -1);
@@ -568,7 +821,9 @@ void App::UpdateConsole(u64 down, u64 held) {
         if (down & HidNpadButton_A) {
             m_console_app = v.apps[size_t(m_console_focus)].app_id;
             m_console_item = 0;
+            m_console_btn = 0;
             m_console_marks.clear();
+            m_console_list_at = m_time; // its rows come in
         }
         return;
     }
@@ -577,17 +832,50 @@ void App::UpdateConsole(u64 down, u64 held) {
     for (const auto& a : v.apps) {
         if (a.app_id == m_console_app) found = &a;
     }
+    const bool checking = m_console_check == m_console_app && m_queue && m_queue->GetVerify().running;
     if (down & HidNpadButton_B) {
+        if (checking) {
+            m_queue->CancelVerify(); // stops the check; the page stays
+            return;
+        }
         m_console_app = 0;
+        m_console_check = 0;
+        m_console_btn = 0;
         return;
     }
     if (!found) return;
     const auto items = Items(*found);
     if (m_console_marks.size() != items.size()) m_console_marks.assign(items.size(), 0);
-    if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_item > 0) m_console_item--;
-    if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_item < int(items.size()) - 1) m_console_item++;
+    // Play over the rows, Repair under them (1A, 2A)
+    const bool play = ConsoleCanPlay(*found);
+    bool repair = false;
+    if (m_console_check == m_console_app && m_queue && !ConsoleRepairBlock(m_console_app)) {
+        const auto cv = m_queue->GetVerify();
+        if (cv.done && R_SUCCEEDED(cv.rc)) {
+            for (const auto& c : cv.result) repair = repair || !c.bad.empty();
+        }
+    }
+    if (Repeat(down, held, HidNpadButton_AnyUp)) {
+        if (m_console_btn == 2) m_console_btn = 0;
+        else if (m_console_btn == 0 && m_console_item > 0) m_console_item--;
+        else if (m_console_btn == 0 && play) m_console_btn = 1;
+    }
+    if (Repeat(down, held, HidNpadButton_AnyDown)) {
+        if (m_console_btn == 1) m_console_btn = 0;
+        else if (m_console_btn == 0 && m_console_item < int(items.size()) - 1) m_console_item++;
+        else if (m_console_btn == 0 && repair) m_console_btn = 2;
+    }
     m_console_item = std::clamp(m_console_item, 0, std::max(0, int(items.size()) - 1));
+    if ((down & HidNpadButton_A) && m_console_btn == 1) {
+        PlayConsoleGame(false);
+        return;
+    }
+    if ((down & HidNpadButton_A) && m_console_btn == 2) {
+        RepairConsoleGame();
+        return;
+    }
     if ((down & HidNpadButton_Y) && !items.empty()) {
+        m_console_btn = 0;
         m_console_marks[size_t(m_console_item)] = !m_console_marks[size_t(m_console_item)];
     }
     if ((down & HidNpadButton_A) && !items.empty()) {
@@ -596,6 +884,11 @@ void App::UpdateConsole(u64 down, u64 held) {
         return;
     }
     if (down & HidNpadButton_X) {
+        if (WithoutGame(*found)) {
+            // an update or a DLC without its game: the game itself from the library (5C)
+            InstallConsoleBase();
+            return;
+        }
         // the game in the library, to install what it lacks; B comes back here
         if (LibraryGame(m_console_app)) {
             for (int i = 0; i < int(m_view.size()); i++) {
@@ -627,9 +920,11 @@ void App::AskConsoleRemoveMarked() {
     for (size_t i = 0; i < items.size(); i++) {
         if (m_console_marks[i] && items[i].type == NcmContentMetaType_Application) base = true;
     }
+    // without its game, Remove takes all of it (5C)
+    const bool all = WithoutGame(*found);
     m_console_remove.clear();
     for (size_t i = 0; i < items.size(); i++) {
-        if (m_console_marks[i] || base) m_console_remove.push_back(items[i]);
+        if (m_console_marks[i] || base || all) m_console_remove.push_back(items[i]);
     }
     if (m_console_remove.empty()) {
         Notice(TrM().ic_nothing);
@@ -642,6 +937,153 @@ void App::AskConsoleRemoveMarked() {
     m_dialog = Dialog{};
     m_dialog.kind = DialogKind::ConsoleRemove;
     m_dialog.text = found->name;
+    if (base) ConsoleRemoveExtras({m_console_app});
+}
+
+// ---- check, repair and play from the page of a game (1A, 2A), its mods and tickets (7A) ----
+
+bool App::ConsoleCanPlay(const InstalledApp& a) const {
+    // the game itself must be there: not archived, not an update or a DLC alone
+    return !a.archived && std::any_of(a.contents.begin(), a.contents.end(),
+                                      [](const InstalledApp::Content& c) { return c.type == NcmContentMetaType_Application; });
+}
+
+bool App::LibraryBase(unsigned long long app) const {
+    const Game* g = LibraryGame(app);
+    if (!g) return false;
+    return std::any_of(g->files.begin(), g->files.end(), [](const CatalogFile& f) { return f.kind == CatalogFile::Kind::Game; });
+}
+
+const char* App::ConsoleRepairBlock(unsigned long long app) {
+    const More& m = TrM();
+    if (!m_link.CurrentConfig().Linked()) return m.ck_no_lib;
+    if (!LibraryGame(app)) return m.ck_not_lib;
+    return nullptr;
+}
+
+void App::CheckConsoleGame() {
+    if (!m_queue || !m_console_app) return;
+    if (!m_queue->StartVerify(m_console_app)) {
+        Notice(Tr().verify_wait); // something installs: the check waits
+        return;
+    }
+    m_console_check = m_console_app;
+    m_console_check_at = m_time;
+    m_console_check_focus = true;
+    m_console_btn = 0;
+}
+
+void App::RepairConsoleGame() {
+    if (!m_queue || m_console_check != m_console_app) return;
+    const auto v = m_queue->GetVerify();
+    const Game* g = LibraryGame(m_console_check);
+    if (!v.done || !g || ConsoleRepairBlock(m_console_check)) return;
+    // only the damaged parts come from the library, as from the page of a game of the library
+    std::vector<InstallJob> jobs;
+    if (!RepairJobsFor(*g, v, jobs)) {
+        Notice(Tr().repair_missing);
+        return;
+    }
+    AddJobs(std::move(jobs));
+    NoticeOk(TrM().ck_queued);
+    m_console_check = 0;
+    m_console_btn = 0;
+}
+
+void App::InstallConsoleBase() {
+    const Game* g = LibraryGame(m_console_app);
+    const CatalogFile* base = nullptr;
+    if (g) {
+        for (const auto& f : g->files) {
+            if (f.kind == CatalogFile::Kind::Game && (!base || f.version > base->version)) base = &f;
+        }
+    }
+    if (!base) {
+        Notice(TrM().og_not_lib);
+        return;
+    }
+    AddJobs({JobFor(*g, *base)});
+}
+
+void App::PlayConsoleGame(bool asked) {
+    const More& m = TrM();
+    if (!m_space || !m_console_app) return;
+    std::string name;
+    for (const auto& a : m_space->Snapshot().apps) {
+        if (a.app_id == m_console_app) name = a.name;
+    }
+    // NXDock closes when the game opens: never while it installs, removes or checks
+    if ((m_queue && (m_queue->Busy() || m_queue->Undoing() || m_queue->GetVerify().running)) || m_space->Busy()) {
+        Notice(m.cz_busy);
+        return;
+    }
+    if (!asked && !net::IsAppletMode()) {
+        // opened inside a game (R held, or the HOME shortcut): that game closes, so it asks first
+        m_dialog = Dialog{};
+        m_dialog.kind = DialogKind::Play;
+        m_dialog.text = name;
+        m_dialog.ids = {m_console_app};
+        return;
+    }
+    const Result rc = appletRequestLaunchApplication(m_console_app, nullptr);
+    if (R_FAILED(rc)) {
+        char text[200];
+        std::snprintf(text, sizeof(text), m.pl_failed_fmt, unsigned(rc));
+        Notice(text);
+        return;
+    }
+    // the console opens the game once NXDock has gone; its name is shown meanwhile
+    m_launch_at = m_time;
+    m_launch_name = name;
+}
+
+void App::DrawLaunch(NVGcontext* vg) {
+    if (m_launch_at < 0) return;
+    const float k = ui::EaseOut(ui::Appear(m_launch_at, 0.4f));
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.92f * k));
+    nvgFill(vg);
+    const Game* g = LibraryGame(m_console_app);
+    int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
+    if (!image) image = m_covers.Get(IconPath(m_console_app));
+    const float s = 140 + 50 * k;
+    nvgGlobalAlpha(vg, k);
+    ui::Cover(vg, m_theme, kWidth / 2 - s / 2, kHeight / 2 - s / 2 - 30, s, PlaceholderColor(m_launch_name), Initial(m_launch_name).c_str(), nullptr,
+              false, false, 22, image);
+    char text[300];
+    std::snprintf(text, sizeof(text), TrM().pl_opening_fmt, m_launch_name.c_str());
+    ui::Text(vg, kWidth / 2, kHeight / 2 + s / 2 + 4, 20, nvgRGBf(0.91f, 0.93f, 0.95f), text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgGlobalAlpha(vg, 1.f);
+}
+
+void App::ConsoleRemoveExtras(const std::vector<unsigned long long>& apps) {
+    // what else of these games is on the SD card and in the console: their mods, their tickets
+    m_dialog.remove_extra = false; // off by default: cheats are not lost by mistake
+    m_dialog.extra_mods = m_dialog.extra_common = m_dialog.extra_personal = 0;
+    for (const auto app : apps) {
+        m_dialog.extra_mods += std::max(0, ModFolders(ContentsDir(app)));
+        for (const auto& t : TicketsOf(app)) (t.personal ? m_dialog.extra_personal : m_dialog.extra_common)++;
+    }
+}
+
+void RemoveGameExtras(unsigned long long app) {
+    // its folder in atmosphere/contents, and what NXDock wrote down of its mods
+    const std::string dir = ContentsDir(app);
+    struct stat st{};
+    if (stat(dir.c_str(), &st) == 0) {
+        fileops::Progress p;
+        char id[20];
+        std::snprintf(id, sizeof(id), "%016llX", app);
+        std::vector<std::string> paths = {dir};
+        const std::string state = ModsStateDir() + "/" + id;
+        if (stat(state.c_str(), &st) == 0) paths.push_back(state);
+        if (!fileops::DeleteAll(paths, p)) log_write("[NXDock] remove: the mods of %016llX did not all go\n", app);
+    }
+    // its tickets, each saved to the SD card first; one that cannot be saved stays
+    int kept = 0;
+    SaveAndDeleteTickets(TicketsOf(app), &kept);
+    if (kept) log_write("[NXDock] remove: %d tickets of %016llX stay (their copy failed)\n", kept, app);
 }
 
 // ---- what is missing (6A) ----
@@ -662,7 +1104,7 @@ void App::FollowMissing(const Space::View& v) {
     m_missing.clear();
     const bool list = m_versions && m_ui.versions_list && m_versions->Ready();
     for (const auto& a : v.apps) {
-        if (a.archived) continue;
+        if (a.archived || WithoutGame(a)) continue; // without its game, nothing is missing of it (5C)
         Missing ms;
         const unsigned have = GameVersion(a);
         std::set<unsigned long long> have_dlc;
@@ -698,13 +1140,17 @@ void App::FollowMissing(const Space::View& v) {
 }
 
 Space::View App::ConsoleView(const Space::View& v) {
-    if (!m_console_missing) return v;
-    FollowMissing(v);
+    // the filters (what is missing, 6A; without the game, 5C), then the order (4A)
+    if (!m_console_missing && !m_console_orphans && m_ui.console_sort == kSortName) return v;
+    if (m_console_missing) FollowMissing(v);
     Space::View out = v;
-    out.apps.clear();
-    for (const auto& a : v.apps) {
-        if (!a.archived && MissingOf(a.app_id).Any()) out.apps.push_back(a);
+    if (m_console_missing || m_console_orphans) {
+        out.apps.clear();
+        for (const auto& a : v.apps) {
+            if (m_console_orphans ? WithoutGame(a) : (!a.archived && !WithoutGame(a) && MissingOf(a.app_id).Any())) out.apps.push_back(a);
+        }
     }
+    SortConsole(out.apps, m_ui.console_sort);
     return out;
 }
 
@@ -756,6 +1202,7 @@ void App::OpenContentDetails(const InstalledApp& a, const InstalledApp::Content&
                     if (R_SUCCEEDED(sphaira::es::Initialize())) {
                         sphaira::es::IsRightsIdCommon(rid.rights_id, &common);
                         sphaira::es::IsRightsIdPersonalised(rid.rights_id, &personal);
+                        sphaira::es::Exit(); // closed again: es keeps the saves it read open while it is open
                     }
                     ticket = common ? tt.cd_t_common : personal ? tt.cd_t_personal : tt.cd_t_missing;
                     ticket_missing = !common && !personal;
