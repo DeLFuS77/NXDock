@@ -44,8 +44,6 @@ void App::FollowCard() {
     if (m_card_read.valid() && m_card_read.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         GameCard card = m_card_read.get();
         if (card.ok && m_card_in) {
-            // the tiles after it move one place on: the one in focus stays the same tool
-            if (!m_card.ok && m_tab == Tab::More && m_more == MoreScreen::Tiles && m_tile >= 4) m_tile++;
             m_card = std::move(card);
             m_card_at = m_time;
         } else if (m_more == MoreScreen::Card) {
@@ -67,9 +65,7 @@ void App::FollowCard() {
         return;
     }
     // taken out: its tile goes, its screen closes, and an install from it stops (yati says so)
-    const bool had = m_card.ok;
     m_card = GameCard{};
-    if (had && m_tab == Tab::More && m_more == MoreScreen::Tiles && m_tile > 4) m_tile--;
     if (m_more == MoreScreen::Card) {
         m_more = MoreScreen::Tiles;
         if (!card_jobs) Notice(TrM().gc_gone);

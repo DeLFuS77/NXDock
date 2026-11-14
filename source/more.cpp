@@ -26,29 +26,35 @@
 namespace nxdock {
 namespace {
 
-// Ten tiles: four without the library app, six on the console (the dumps apart from Space, as
-// the recommended option A of the visual test of 11/11; Compress games apart too, 14/11, so it is
-// in sight). kOrder gives the tool of each place.
-constexpr int kTiles = 10, kCols = 6, kFirstRow = 4;
+// Ten tiles in three rows of four, all of the same size (14/11): four without the library app,
+// six on the console (the dumps apart from Space, as the recommended option A of the visual test
+// of 11/11; Compress games apart too, so it is in sight). kOrder gives the tool of each place.
+constexpr int kTiles = 10, kCols = 4, kFirstRow = 4;
 // the tool of Compress games (the game card is 9)
 constexpr int kCompressTool = 10;
 constexpr int kOrder[kTiles] = {0, 1, 2, 3, 4, 5, kCompressTool, 8, 6, 7};
-constexpr float kTileGap = 18, kTileH = 170;
-// the first row keeps the width of five tiles (its long names fit); the second has six
-constexpr float TileWidth(int cols) { return (kWidth - 96 - float(cols - 1) * kTileGap) / float(cols); }
-constexpr float kTileWFirst = TileWidth(5), kTileWSecond = TileWidth(kCols);
+constexpr float kTileGap = 18, kTileH = 148, kRowGap = 14;
+constexpr float kTileW = (kWidth - 96 - float(kCols - 1) * kTileGap) / float(kCols);
 constexpr float kSideW = 250;
 constexpr float kRowTop = 134, kRowPitch = 50, kRowsBottom = 576;
 constexpr int kVisibleRows = int((kRowsBottom - kRowTop) / kRowPitch);
-// The game card (14A of groups 3 and 4): while one is in, a fifth tile of the first row, tool 9.
+// The game card (14A of groups 3 and 4): while one is in, the last tile of the console, tool 9.
 constexpr int kCardTool = 9;
 int TileCount(bool card) { return kTiles + (card ? 1 : 0); }
-int FirstRow(bool card) { return kFirstRow + (card ? 1 : 0); }
 int ToolAt(int place, bool card) {
-    if (card && place == kFirstRow) return kCardTool;
-    if (card && place > kFirstRow) place--;
+    if (card && place == kTiles) return kCardTool;
     return kOrder[std::clamp(place, 0, kTiles - 1)];
 }
+// The row and column of a place: the first row without the library app, then the console's.
+int RowOf(int place) { return place < kFirstRow ? 0 : 1 + (place - kFirstRow) / kCols; }
+int ColOf(int place) { return place < kFirstRow ? place : (place - kFirstRow) % kCols; }
+// The place at a row and column, or the last of that row when it is shorter.
+int PlaceAt(int row, int col, int tiles) {
+    const int first = row == 0 ? 0 : kFirstRow + (row - 1) * kCols;
+    const int count = row == 0 ? kFirstRow : std::min(kCols, tiles - first);
+    return first + std::clamp(col, 0, std::max(0, count - 1));
+}
+int Rows(int tiles) { return 1 + (tiles - kFirstRow + kCols - 1) / kCols; }
 
 // A small padlock: what NXDock never deletes, renames or moves.
 void Padlock(NVGcontext* vg, float x, float cy, NVGcolor c) {
@@ -224,15 +230,16 @@ void App::DrawTiles(NVGcontext* vg) {
     const char* subs[kTiles + 1] = {m.t_files_sub, m.t_mtp_sub, m.t_usb_sub, m.t_shops_sub, m.t_saves_sub, m.t_space_sub, m.t_mods_sub, m.t_screen_sub, m.t_dumps_sub,
                                     card_sub.c_str(), m.cz_action_sub};
     const bool card = m_card.ok;
-    const int tiles = TileCount(card), first_row = FirstRow(card);
+    const int tiles = TileCount(card);
     m_tile = std::clamp(m_tile, 0, tiles - 1);
     m_tile_lift.resize(size_t(tiles), 0.f);
     for (int i = 0; i < tiles; i++) {
-        const int row = i < first_row ? 0 : 1, col = i < first_row ? i : i - first_row;
+        const int row = RowOf(i), col = ColOf(i);
         const int tool = ToolAt(i, card);
-        const float y0 = 100 + row * (kTileH + 64);
-        if (col == 0) draw::Section(vg, t, 50, y0, row == 0 ? m.sect_noserver : m.sect_console);
-        const float tile_w = row == 0 ? kTileWFirst : kTileWSecond;
+        // the title of each group over its first row; the third row follows the second
+        const float y0 = row == 0 ? 100 : 100 + (kTileH + 42) + float(row - 1) * (kTileH + kRowGap);
+        if (col == 0 && row < 2) draw::Section(vg, t, 50, y0, row == 0 ? m.sect_noserver : m.sect_console);
+        const float tile_w = kTileW;
         const float x = 48 + col * (tile_w + kTileGap), y = y0 + 20;
         AddHit(x, y, tile_w, kTileH, HitKind::MoreTile, i);
         // in one after another with a little bounce (2A); the one in focus lifted and leaning; the
@@ -284,18 +291,18 @@ void App::DrawTiles(NVGcontext* vg) {
         }
         if (tool == kCardTool) {
             // the game card: its cover with a card on it and "inserted", not a picture in a bubble
-            DrawCardTile(vg, x + 20, y + 18, 52, 52);
+            DrawCardTile(vg, x + 20, y + 16, 52, 52);
             nvgSave(vg);
             nvgIntersectScissor(vg, x + 12, y, tile_w - 24, kTileH);
-            ui::Title(vg, x + 20, y + 94, 19, t.text, titles[tool]);
+            ui::Title(vg, x + 20, y + 88, 19, t.text, titles[tool]);
             nvgRestore(vg);
-            draw::Box(vg, x + 20, y + 112, tile_w - 40, 14, t.muted, subs[tool]);
+            draw::Box(vg, x + 20, y + 104, tile_w - 40, 14, t.muted, subs[tool]);
             nvgRestore(vg);
             continue;
         }
         // its picture in white in a bubble of the colour of its group: blue to install without the
         // library, violet for the console (13A); never red
-        const float bx = x + 20, by = y + 18, bs = 52;
+        const float bx = x + 20, by = y + 16, bs = 52;
         nvgBeginPath(vg);
         nvgRect(vg, bx - 14, by - 6, bs + 28, bs + 26);
         nvgFillPaint(vg, nvgBoxGradient(vg, bx, by + 5, bs, bs, 15, 12, nvgRGBAf(0, 0, 0, t.dark ? 0.4f : 0.18f), nvgRGBAf(0, 0, 0, 0)));
@@ -322,9 +329,9 @@ void App::DrawTiles(NVGcontext* vg) {
         nvgIntersectScissor(vg, x + 12, y, tile_w - 24, kTileH);
         // a long name (as «Desde el ordenador (MTP)») gets a little smaller instead of being cut
         const float tw = ui::TextWidth(vg, 19, titles[tool]);
-        ui::Title(vg, x + 20, y + 94, tw > tile_w - 40 ? std::max(15.f, 19 * (tile_w - 40) / tw) : 19.f, t.text, titles[tool]);
+        ui::Title(vg, x + 20, y + 88, tw > tile_w - 40 ? std::max(15.f, 19 * (tile_w - 40) / tw) : 19.f, t.text, titles[tool]);
         nvgRestore(vg);
-        draw::Box(vg, x + 20, y + 112, tile_w - 40, 14, t.muted, subs[tool]);
+        draw::Box(vg, x + 20, y + 104, tile_w - 40, 14, t.muted, subs[tool]);
         nvgRestore(vg);
     }
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}};
@@ -489,15 +496,14 @@ void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy, const NVGcol
 }
 
 void App::UpdateTiles(u64 down, u64 held) {
-    // four in the first row (five with the game card), six in the second
-    const int tiles = TileCount(m_card.ok), first_row = FirstRow(m_card.ok);
+    // three rows of four: left and right along a row, up and down to the same column
+    const int tiles = TileCount(m_card.ok);
     m_tile = std::clamp(m_tile, 0, tiles - 1);
-    const bool second = m_tile >= first_row;
-    const int col = second ? m_tile - first_row : m_tile;
+    const int row = RowOf(m_tile), col = ColOf(m_tile);
     if (Repeat(down, held, HidNpadButton_AnyLeft) && col > 0) m_tile--;
-    if (Repeat(down, held, HidNpadButton_AnyRight) && col < (second ? tiles - first_row : first_row) - 1) m_tile++;
-    if (Repeat(down, held, HidNpadButton_AnyUp) && second) m_tile = std::min(col, first_row - 1);
-    if (Repeat(down, held, HidNpadButton_AnyDown) && !second) m_tile = std::min(first_row + col, tiles - 1);
+    if (Repeat(down, held, HidNpadButton_AnyRight) && m_tile + 1 < tiles && RowOf(m_tile + 1) == row) m_tile++;
+    if (Repeat(down, held, HidNpadButton_AnyUp) && row > 0) m_tile = PlaceAt(row - 1, col, tiles);
+    if (Repeat(down, held, HidNpadButton_AnyDown) && row + 1 < Rows(tiles)) m_tile = PlaceAt(row + 1, col, tiles);
     if (down & HidNpadButton_A) OpenMoreTile(m_tile);
 }
 
