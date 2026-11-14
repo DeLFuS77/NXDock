@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0-beta.3
+
+These changes have not been tested in depth yet, so some bugs may remain.
+
+- Installing an optimized game over its own update no longer leaves it unable to start: the files it shares with
+  that update stay when the update is removed.
+- Installing an optimized game with its update under it no longer asks whether to install it again.
+
 ## 0.9.0-beta.2
 
 These changes have not been tested in depth yet, so some bugs may remain.
