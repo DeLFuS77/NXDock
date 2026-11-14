@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdio>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -96,5 +97,13 @@ std::vector<GameFile> GamesUnder(const std::vector<std::string>& paths, int max_
 // The largest file a FAT32 file system holds, and the size of each part of a split file.
 inline constexpr unsigned long long kFat32Max = 0xFFFFFFFFull;
 inline constexpr unsigned long long kSplitPart = 0xFFFF0000ull;
+// Whether a file of `size` bytes does not fit in FAT32 and has to be kept in parts there.
+inline bool NeedsParts(unsigned long long size) { return size > kFat32Max; }
+
+// A file opened to be written with `size` bytes. On the SD card a file of 4 GB or more is made
+// first as a big file, which the console keeps as a folder of parts (with the archive bit, parts
+// 00, 01…) and reads as one file. `plain_first` (MTP, 19): a plain file first, which only an exFAT
+// card takes, so the parts are made only on FAT32.
+FILE* OpenOut(const std::string& path, unsigned long long size, bool plain_first = false);
 
 } // namespace nxdock::fileops

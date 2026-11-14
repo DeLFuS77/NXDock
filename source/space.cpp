@@ -1085,50 +1085,134 @@ bool Space::StartDump(const std::string& url, const std::string& key, unsigned l
     return true;
 }
 
+namespace {
+
+// The NCAs of the secure partition of the game card, each with a reader (the dumps, and installing
+// from the card, 14A). 1: no card (or it cannot be opened); 2: it could not be read.
+int CardFiles(std::vector<NspMaker::File>& files, Result& rc) {
+    files.clear();
+    FsDeviceOperator op;
+    rc = fsOpenDeviceOperator(&op);
+    if (R_FAILED(rc)) return 1;
+    bool in = false;
+    FsGameCardHandle handle{};
+    fsDeviceOperatorIsGameCardInserted(&op, &in);
+    if (in) rc = fsDeviceOperatorGetGameCardHandle(&op, &handle);
+    fsDeviceOperatorClose(&op);
+    if (!in || R_FAILED(rc)) return 1;
+    auto fs = std::shared_ptr<FsFileSystem>(new FsFileSystem{}, [](FsFileSystem* f) {
+        fsFsClose(f);
+        delete f;
+    });
+    rc = fsOpenGameCardFileSystem(fs.get(), &handle, FsGameCardPartition_Secure);
+    if (R_FAILED(rc)) return 1;
+    FsDir dir;
+    char root[FS_MAX_PATH] = "/";
+    rc = fsFsOpenDirectory(fs.get(), root, FsDirOpenMode_ReadFiles, &dir);
+    if (R_FAILED(rc)) return 2;
+    std::vector<FsDirectoryEntry> entries(64);
+    s64 n = 0;
+    fsDirRead(&dir, &n, entries.size(), entries.data());
+    fsDirClose(&dir);
+    for (s64 i = 0; i < n; i++) {
+        const std::string fname = entries[size_t(i)].name;
+        if (!fname.ends_with(".nca")) continue;
+        auto file = std::shared_ptr<FsFile>(new FsFile{}, [](FsFile* f) {
+            fsFileClose(f);
+            delete f;
+        });
+        char p[FS_MAX_PATH];
+        std::snprintf(p, sizeof(p), "/%s", fname.c_str());
+        if (R_FAILED(fsFsOpenFile(fs.get(), p, FsOpenMode_Read, file.get()))) return 2;
+        files.push_back({fname, u64(entries[size_t(i)].file_size), [file, fs](u64 off, void* b, size_t k) {
+                             u64 got = 0;
+                             return R_SUCCEEDED(fsFileRead(file.get(), s64(off), b, k, FsReadOption_None, &got)) && got == k;
+                         }});
+    }
+    return files.empty() ? 2 : 0;
+}
+
+} // namespace
+
+bool GameCardInserted() {
+    bool in = false;
+    FsDeviceOperator op;
+    if (R_SUCCEEDED(fsOpenDeviceOperator(&op))) {
+        fsDeviceOperatorIsGameCardInserted(&op, &in);
+        fsDeviceOperatorClose(&op);
+    }
+    return in;
+}
+
+unsigned long long GameCard::Bytes() const {
+    unsigned long long all = 0;
+    for (const auto& c : contents) all += c.bytes;
+    return all;
+}
+
+GameCard ReadGameCard() {
+    GameCard card;
+    if (!GameCardInserted() || R_FAILED(ncmInitialize())) return card;
+    {
+        Store store(NcmStorageId_GameCard);
+        bool read = false;
+        const auto keys = store.Keys(&read);
+        for (const auto& k : keys) {
+            if (k.type != NcmContentMetaType_Application && k.type != NcmContentMetaType_Patch && k.type != NcmContentMetaType_AddOnContent) continue;
+            InstalledApp::Content c;
+            c.id = k.id;
+            c.version = k.version;
+            c.type = k.type;
+            for (const auto& info : store.Contents(k)) c.bytes += InfoSize(info);
+            card.contents.push_back(c);
+            if (k.type == NcmContentMetaType_Application && !card.app) card.app = k.id;
+        }
+        card.ok = read && card.app != 0;
+    }
+    ncmExit();
+    const auto rank = [](unsigned char type) {
+        return type == NcmContentMetaType_Application ? 0 : type == NcmContentMetaType_Patch ? 1 : 2;
+    };
+    std::stable_sort(card.contents.begin(), card.contents.end(), [&](const InstalledApp::Content& a, const InstalledApp::Content& b) {
+        return rank(a.type) != rank(b.type) ? rank(a.type) < rank(b.type) : a.id < b.id;
+    });
+    if (card.ok && R_SUCCEEDED(nsInitialize())) {
+        auto control = std::make_unique<NsApplicationControlData>();
+        u64 size = 0;
+        if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, card.app, control.get(), sizeof(*control), &size))) {
+            NacpLanguageEntry* lang = nullptr;
+            if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang && lang->name[0]) card.name = lang->name;
+        }
+        nsExit();
+    }
+    if (card.ok && card.name.empty()) {
+        char id[20];
+        std::snprintf(id, sizeof(id), "%016llX", card.app);
+        card.name = id;
+    }
+    return card;
+}
+
+std::shared_ptr<InstalledNsp> OpenGameCardNsp() {
+    std::vector<NspMaker::File> files;
+    Result rc = 0;
+    if (CardFiles(files, rc) != 0) return nullptr;
+    auto nsp = std::make_shared<NspMaker>(std::move(files));
+    auto out = std::make_shared<InstalledNsp>();
+    out->size = nsp->Size();
+    out->read = [nsp](unsigned long long off, void* buf, size_t n) { return nsp->Read(off, buf, n); };
+    return out;
+}
+
 bool Space::StartCardDump(const std::string& url, const std::string& key, const std::string& name) {
     if (Busy()) return false;
     Run(Task::Dump, [this, url, key, name]() -> std::string {
         const More& m = TrM();
-        FsDeviceOperator op;
-        Result rc = fsOpenDeviceOperator(&op);
-        if (R_FAILED(rc)) return Packed(m.s_no_card, m.s_no_card_d, rc);
-        bool in = false;
-        FsGameCardHandle handle{};
-        fsDeviceOperatorIsGameCardInserted(&op, &in);
-        if (in) rc = fsDeviceOperatorGetGameCardHandle(&op, &handle);
-        fsDeviceOperatorClose(&op);
-        if (!in || R_FAILED(rc)) return Packed(m.s_no_card, m.s_no_card_d, rc);
-        auto fs = std::shared_ptr<FsFileSystem>(new FsFileSystem{}, [](FsFileSystem* f) {
-            fsFsClose(f);
-            delete f;
-        });
-        rc = fsOpenGameCardFileSystem(fs.get(), &handle, FsGameCardPartition_Secure);
-        if (R_FAILED(rc)) return Packed(m.s_no_card, m.s_no_card_d, rc);
-        FsDir dir;
-        char root[FS_MAX_PATH] = "/";
-        rc = fsFsOpenDirectory(fs.get(), root, FsDirOpenMode_ReadFiles, &dir);
-        if (R_FAILED(rc)) return Packed(m.s_dump_failed, m.s_dump_failed_d, rc);
-        std::vector<FsDirectoryEntry> entries(64);
-        s64 n = 0;
-        fsDirRead(&dir, &n, entries.size(), entries.data());
-        fsDirClose(&dir);
         std::vector<NspMaker::File> files;
-        for (s64 i = 0; i < n; i++) {
-            const std::string fname = entries[size_t(i)].name;
-            if (!fname.ends_with(".nca")) continue;
-            auto file = std::shared_ptr<FsFile>(new FsFile{}, [](FsFile* f) {
-                fsFileClose(f);
-                delete f;
-            });
-            char p[FS_MAX_PATH];
-            std::snprintf(p, sizeof(p), "/%s", fname.c_str());
-            if (R_FAILED(fsFsOpenFile(fs.get(), p, FsOpenMode_Read, file.get()))) return Packed(m.s_dump_failed, m.s_dump_failed_d);
-            files.push_back({fname, u64(entries[size_t(i)].file_size), [file, fs](u64 off, void* b, size_t k) {
-                                 u64 got = 0;
-                                 return R_SUCCEEDED(fsFileRead(file.get(), s64(off), b, k, FsReadOption_None, &got)) && got == k;
-                             }});
-        }
-        if (files.empty()) return Packed(m.s_dump_failed, m.s_dump_failed_d);
+        Result rc = 0;
+        const int failed = CardFiles(files, rc);
+        if (failed == 1) return Packed(m.s_no_card, m.s_no_card_d, rc);
+        if (failed) return Packed(m.s_dump_failed, m.s_dump_failed_d, rc);
         NspMaker nsp(std::move(files));
         Progress(0, nsp.Size(), name);
         return Upload(url, key, name, nsp, m_cancel, [this](u64 d, u64 t) { Progress(d, t); });

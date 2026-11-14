@@ -9,6 +9,7 @@
 
 #include "defines.hpp"
 #include "file_source.hpp"
+#include "fileops.hpp"
 #include "i18n_more.hpp"
 #include "ui/progress_box.hpp"
 
@@ -307,7 +308,9 @@ bool MtpStart(std::function<bool(InstallJob)> enqueue, std::function<bool()> que
     std::vector<std::shared_ptr<mtp::Storage>> storages = {
         std::make_shared<InstallStorage>(m.mtp_install_sd, false),
         std::make_shared<InstallStorage>(m.mtp_install_nand, true),
-        std::make_shared<mtp::FolderStorage>("sdmc:/", m.mtp_sd_card),
+        // a file over 4 GB on a FAT32 card is kept in parts, as the file list copies it (19)
+        std::make_shared<mtp::FolderStorage>("sdmc:/", m.mtp_sd_card,
+                                             [](const std::string& path, uint64_t size) { return fileops::OpenOut(path, size, true); }),
     };
     MtpAddMore(storages, units); // the read-only folders of 8A
     g_running = true;

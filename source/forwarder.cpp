@@ -686,6 +686,8 @@ bool RunningFrom(u64 tid) {
 
 } // namespace
 
+bool NroAssets(const std::string& path, std::vector<u8>& icon, NacpStruct& nacp) { return ReadNroAssets(path, icon, nacp); }
+
 Status Query() {
     Status s;
     s.nro = NroPath();

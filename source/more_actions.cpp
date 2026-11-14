@@ -10,6 +10,8 @@
 #include "app.hpp"
 
 #include "console_order.hpp"
+#include "file_match.hpp"
+#include "mtp.hpp"
 
 #include "draw.hpp"
 #include "i18n.hpp"
@@ -32,13 +34,16 @@ constexpr float kActW = 470, kActRow = 56;
 
 // What a row does when it has no button of its own (kButton: as its button)
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
-             kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kSortBase = 100 };
+             kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
+             kViewTop, kViewClose, kUpdateShop, kUsb3, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
-// a card, an arrow, a plus, a funnel, a grid, a spanner.
+// a card, an arrow, a plus, a funnel, a grid, a spanner, a box half filled, a die, lines wrapped, arrows to
+// the end and to the top.
 enum : int { kIconInstall = 0, kIconList = 1, kIconCross = 5, kIconEdit = 6, kIconInfo = 8, kIconBin = 9, kIconTick = 20, kIconBox,
-             kIconPause, kIconPlay, kIconScreen, kIconAgain, kIconShield, kIconCard, kIconOpen, kIconPlus, kIconFunnel, kIconGrid, kIconMods };
+             kIconPause, kIconPlay, kIconScreen, kIconAgain, kIconShield, kIconCard, kIconOpen, kIconPlus, kIconFunnel, kIconGrid, kIconMods,
+             kIconInvert, kIconDie, kIconWrap, kIconEnd, kIconTop };
 
 void Icon(NVGcontext* vg, NVGcolor c, int icon, float x, float cy) {
     if (icon < 20) {
@@ -148,6 +153,48 @@ void Icon(NVGcontext* vg, NVGcolor c, int icon, float x, float cy) {
             nvgLineTo(vg, x + 2, cy + 8);
             nvgStroke(vg);
             break;
+        case kIconInvert:
+            ui::StrokeRound(vg, x + 1, cy - 9, 18, 18, 4, c, 2.2f);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x + 4, cy + 6);
+            nvgLineTo(vg, x + 16, cy - 6);
+            nvgLineTo(vg, x + 16, cy + 6);
+            nvgClosePath(vg);
+            nvgFill(vg);
+            break;
+        case kIconDie:
+            ui::StrokeRound(vg, x + 1, cy - 9, 18, 18, 4, c, 2.2f);
+            for (int k = 0; k < 3; k++) {
+                nvgBeginPath(vg);
+                nvgCircle(vg, x + 5.5f + 4.5f * float(k), cy - 4.5f + 4.5f * float(k), 1.8f);
+                nvgFill(vg);
+            }
+            break;
+        case kIconWrap:
+            nvgMoveTo(vg, x + 1, cy - 7);
+            nvgLineTo(vg, x + 19, cy - 7);
+            nvgMoveTo(vg, x + 1, cy);
+            nvgLineTo(vg, x + 15, cy);
+            nvgArc(vg, x + 15, cy + 4, 4, -1.5708f, 1.5708f, NVG_CW);
+            nvgLineTo(vg, x + 9, cy + 8);
+            nvgMoveTo(vg, x + 12, cy + 5);
+            nvgLineTo(vg, x + 9, cy + 8);
+            nvgLineTo(vg, x + 12, cy + 11);
+            nvgStroke(vg);
+            break;
+        case kIconEnd:
+        case kIconTop: {
+            const float d = icon == kIconEnd ? 1.f : -1.f;
+            nvgMoveTo(vg, x + 10, cy - 8 * d);
+            nvgLineTo(vg, x + 10, cy + 5 * d);
+            nvgMoveTo(vg, x + 4, cy);
+            nvgLineTo(vg, x + 10, cy + 6 * d);
+            nvgLineTo(vg, x + 16, cy);
+            nvgMoveTo(vg, x + 2, cy + 10 * d);
+            nvgLineTo(vg, x + 18, cy + 10 * d);
+            nvgStroke(vg);
+            break;
+        }
         default: break;
     }
 }
@@ -169,6 +216,7 @@ const char* GlyphOf(u64 button) {
         case HidNpadButton_Y: return ui::glyph::Y;
         case HidNpadButton_ZR: return ui::glyph::ZR;
         case HidNpadButton_ZL: return ui::glyph::ZL;
+        case HidNpadButton_B: return ui::glyph::B;
         default: return nullptr;
     }
 }
@@ -191,6 +239,8 @@ App::ActScreen App::CurrentActScreen() {
             return m_shop_active ? ActScreen::None : ActScreen::Shops;
         case Tab::More:
             if (m_more == MoreScreen::Shops) return ActScreen::Shops;
+            if (m_more == MoreScreen::Viewer) return ActScreen::Viewer; // the text viewer (20A)
+            if (m_more == MoreScreen::Mtp || m_more == MoreScreen::Usb) return ActScreen::Arrival; // USB 3.0 there
             if (m_more == MoreScreen::Space && m_space) {
                 if (m_space_mode == 1 && m_pick_kind == 0) return ActScreen::SpacePick;
                 if (m_space_mode == 4) return ActScreen::Tickets;
@@ -239,6 +289,7 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 rows.push_back({kButton, m.ac_mark, {}, !a.archived, HidNpadButton_Y, false, m_console_picked.count(a.app_id) ? kIconTick : kIconBox});
                 rows.push_back({kMarkAll, m.ac_mark_all, {}, can > picked, 0, false, kIconTick});
                 rows.push_back({kUnmarkAll, m.ac_unmark, {}, !m_console_picked.empty(), 0, false, kIconBox});
+                rows.push_back({kInvert, m.ac_invert, {}, can > 0, 0, false, kIconInvert}); // 16A
             }
             rows.push_back({kMissing, m_console_missing ? tt.ms_hint_all : tt.ms_hint_filter, {}, true, 0, false, kIconFunnel});
             // those without their game (5C), when there are some
@@ -250,6 +301,12 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                     rows.push_back({kOrphans, m_console_orphans ? tt.ms_hint_all : m.og_filter, m_console_orphans ? std::string{} : text, true, 0, false,
                                     kIconFunnel});
                 }
+            }
+            // a game at random (21A of groups 3 and 4)
+            {
+                const auto all = m_space->Snapshot();
+                const bool any = std::any_of(all.apps.begin(), all.apps.end(), [this](const InstalledApp& a) { return ConsoleCanPlay(a); });
+                rows.push_back({kRandom, m.rg_row, {}, any, 0, false, kIconDie});
             }
             // the order (4A): its five choices open in a menu of their own
             rows.push_back({kSort, m.so_sort, SortLabel(m, m_ui.console_sort), true, 0, false, kIconList});
@@ -298,6 +355,7 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             if (!items.empty()) {
                 rows.push_back({kMarkAll, m.ac_mark_all, {}, marked < int(items.size()), 0, false, kIconTick});
                 if (marked) rows.push_back({kUnmarkAll, m.ac_unmark, {}, true, 0, false, kIconBox});
+                rows.push_back({kInvert, m.ac_invert, {}, true, 0, false, kIconInvert});
                 rows.push_back({kButton, tt.cd_hint, {}, true, HidNpadButton_A, false, kIconInfo});
             }
             if (orphan) rows.push_back({kRemoveMarked, m.og_remove, draw::Size(found->Bytes()), true, 0, true, kIconBin});
@@ -341,6 +399,7 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 title = m_shops[size_t(m_shop_focus)].name;
                 rows.push_back({kButton, m.open, {}, true, HidNpadButton_A, false, kIconOpen});
                 rows.push_back({kButton, m.sh_edit, {}, true, HidNpadButton_Y, false, kIconEdit});
+                rows.push_back({kUpdateShop, m.uh_row, {}, true, 0, false, kIconAgain}); // 15A
             }
             rows.push_back({kButton, m.sh_add, {}, true, HidNpadButton_X, false, kIconPlus});
             if (m_shop_focus < int(m_shops.size())) rows.push_back({kShopRemove, m.sh_remove, {}, true, 0, true, kIconBin});
@@ -361,6 +420,7 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             rows.push_back({kButton, m.ac_mark, {}, true, HidNpadButton_Y, false, on ? kIconTick : kIconBox});
             rows.push_back({kMarkAll, m.ac_mark_all, {}, marked < int(m_pick_marks.size()), 0, false, kIconTick});
             rows.push_back({kUnmarkAll, m.ac_unmark, {}, marked > 0, 0, false, kIconBox});
+            rows.push_back({kInvert, m.ac_invert, {}, true, 0, false, kIconInvert});
             rows.push_back({kButton, m.archive_go, {}, marked > 0, HidNpadButton_X, false, kIconList});
             break;
         }
@@ -385,6 +445,26 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                                 i == m_ui.console_sort ? kIconTick : kIconBox});
             }
             break;
+        case ActScreen::Viewer: {
+            // the text viewer (20A): wrap, the end, the top, close
+            const auto& s2 = Tr();
+            title = m_text_name;
+            rows.push_back({kViewWrap, m.tv_wrap, m_ui.text_wrap ? s2.yes_word : s2.no_word, true, 0, false, kIconWrap});
+            rows.push_back({kViewEnd, m.tv_end, {}, true, 0, false, kIconEnd});
+            rows.push_back({kViewTop, m.tv_top, {}, true, 0, false, kIconTop});
+            rows.push_back({kViewClose, s2.close, {}, true, HidNpadButton_B, false, kIconCross});
+            break;
+        }
+        case ActScreen::Arrival: {
+            // MTP and NS-USBloader: where it goes, USB 3.0 once the cable is in (USB A), stop
+            const bool mtp = m_more == MoreScreen::Mtp;
+            title = mtp ? m.t_mtp : m.t_usb;
+            if (mtp) rows.push_back({kButton, MtpSnapshot().nand_allowed ? m.mtp_sd_only : m.allow_nand, {}, true, HidNpadButton_X, false, kIconCard});
+            else rows.push_back({kButton, m.dc_switch, m_files_nand ? s.internal : s.sd_card, true, HidNpadButton_ZR, false, kIconCard});
+            if (Usb3ChipKind() != kU3None) rows.push_back({kUsb3, tt.u3_row, Usb3RowText(), true, 0, Usb3ChipKind() == kU3Pending, kIconInfo});
+            rows.push_back({kButton, m.stop_back, {}, true, HidNpadButton_B, false, kIconCross});
+            break;
+        }
         case ActScreen::Tickets: {
             // the tickets of More › Space (6A)
             int marked = 0, orphans = 0, orphans_marked = 0;
@@ -402,6 +482,7 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             if (!m_tickets.empty()) {
                 rows.push_back({kMarkAll, m.ac_mark_all, {}, marked < int(m_tickets.size()), 0, false, kIconTick});
                 rows.push_back({kUnmarkAll, m.ac_unmark, {}, marked > 0, 0, false, kIconBox});
+                rows.push_back({kInvert, m.ac_invert, {}, true, 0, false, kIconInvert});
             }
             break;
         }
@@ -447,6 +528,8 @@ void App::ActPress(u64 button) {
         case ActScreen::Shops: UpdateShops(button, 0); break;
         case ActScreen::SpacePick:
         case ActScreen::Compress: UpdateSpace(button, 0); break;
+        case ActScreen::Viewer: UpdateViewer(button, 0); break;
+        case ActScreen::Arrival: UpdateArrival(button, 0); break;
         default: break;
     }
 }
@@ -478,6 +561,38 @@ void App::ActDo(const ActRow& row) {
             else if (m_act_screen == ActScreen::SpacePick) std::fill(m_pick_marks.begin(), m_pick_marks.end(), false);
             else if (m_act_screen == ActScreen::Tickets) std::fill(m_ticket_marks.begin(), m_ticket_marks.end(), 0);
             break;
+        case kInvert: {
+            // what was marked is not, and the rest is (16A)
+            int on = 0;
+            if (m_act_screen == ActScreen::ConsoleList) {
+                std::vector<unsigned long long> can;
+                for (const auto& a : ConsoleView(m_space->Snapshot()).apps) {
+                    if (!a.archived && !a.contents.empty()) can.push_back(a.app_id);
+                }
+                on = InvertMarks(m_console_picked, can);
+            } else if (m_act_screen == ActScreen::ConsoleGame) {
+                on = InvertMarks(m_console_marks);
+            } else if (m_act_screen == ActScreen::SpacePick) {
+                on = InvertMarks(m_pick_marks);
+            } else if (m_act_screen == ActScreen::Tickets) {
+                on = InvertMarks(m_ticket_marks);
+            }
+            char text[160];
+            std::snprintf(text, sizeof(text), TrM().ac_inverted_fmt, on);
+            Notice(text);
+            break;
+        }
+        case kRandom: RollRandom(); break; // 21A
+        case kUpdateShop: UpdateFromShop(m_shop_focus); break; // 15A
+        case kUsb3: OpenUsb3(); break;                         // USB A
+        case kViewWrap:
+            m_ui.text_wrap = !m_ui.text_wrap;
+            m_ui.Save();
+            m_text_cols = 0; // the rows made again
+            break;
+        case kViewEnd: m_text_top = 1 << 30; break; // clamped when drawn
+        case kViewTop: m_text_top = 0; break;
+        case kViewClose: m_more = MoreScreen::Files; break;
         case kOrphans:
             // only the updates and DLC without their game (5C)
             m_console_orphans = !m_console_orphans;

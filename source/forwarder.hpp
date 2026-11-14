@@ -10,6 +10,7 @@
 #include <switch.h>
 
 #include <string>
+#include <vector>
 
 namespace nxdock::forwarder {
 
@@ -34,5 +35,8 @@ Result Install();
 
 // Takes the shortcut off the HOME menu. Not while NXDock runs from it.
 Result Remove();
+
+// The icon (a JPEG) and the NACP of a .nro, from its assets; false when it has none.
+bool NroAssets(const std::string& path, std::vector<u8>& icon, NacpStruct& nacp);
 
 } // namespace nxdock::forwarder

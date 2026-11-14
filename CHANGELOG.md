@@ -4,10 +4,11 @@
 
 These changes have not been tested in depth yet, so some bugs may remain.
 
-- + opens the menu of actions on every screen: Installed, the queue, the shops, the page of a game, Space and dumps
+- + opens the menu of actions on every screen: In the console, the queue, the shops, the page of a game, Space and dumps
   and Compress games. − opens it too. Each row shows the button that does the same.
 - Mark all and Clear the marks wherever there are boxes to tick.
-- Deleting a game from Installed can copy its saves first, to the library or to the SD card.
+- Deleting a game from In the console can copy its saves first, to the library or to the SD card, as Settings › Saves
+  says.
 - The copy of the saves before an update, a repair, a removal or going back now goes to the SD card when no library is
   linked, and takes the console's and BCAT saves too, not only each user's.
 - A restore that fails half way puts the save back as it was.
@@ -17,7 +18,7 @@ These changes have not been tested in depth yet, so some bugs may remain.
 - In the console: + sorts the list by name, size, last played, play time or where it is; the page shows the title ID.
 - In the console: updates and DLC without their game show in the list, with a filter, and their page can install the game.
 - Space › Tickets: every ticket with its game; those without a game can be deleted, saved to the SD card first.
-  Clean leftovers takes personal tickets without a game too, saved the same way.
+  Clean leftovers also takes the tickets without a game, common and personal, each .tik saved to the SD card first.
 - Deleting a game from In the console can also remove its mods and its ticket.
 - Install over USB from DBI's dbibackend too, besides NS-USBloader: NXDock finds which one is on the computer.
 - NSZ files made with a long window (up to 128 MiB) also install when NXDock is opened from the Album, and lack of
@@ -25,6 +26,27 @@ These changes have not been tested in depth yet, so some bugs may remain.
 - Content made for Switch 2 is refused before anything of it is installed.
 - Installs write to the SD card in larger pieces when NXDock runs as an applet.
 - The install log notes the memory NXDock has at the start and at the end of each job.
+- MTP: each game in Installed games has a Mods & Cheats folder, its folder in atmosphere/contents, to copy mods
+  into, rename and delete.
+- MTP: a save zip dropped back on its game in Saves restores it; the save it replaces is copied to the SD card first.
+- MTP: files over 4 GB copied to a FAT32 SD card are kept in parts, so the console reads them as one file.
+- When an install does not fit on the SD card, a line under the destination offers the internal memory for that
+  install only.
+- The file explorer shows which games are installed, which updates and DLC are for installed games, and which files
+  are older than what is installed.
+- Game card: a tile in More while a card is inserted installs its game, update and DLC.
+- Update installed games from here, in the + menu of a folder and of a shop: the newer updates and DLC found there,
+  all ticked, go to the queue.
+- Invert marks in the + menu of every list with boxes to tick.
+- Text files (.txt, .log, .ini, .json, .cfg, .md) open read only in the explorer, up to 4 MB.
+- In the console: + plays a random game.
+- A .nro opens from the explorer after a question; what the queue had can carry on when NXDock opens again.
+- The text viewer keeps Wrap lines for the next time.
+- MTP and NS-USBloader: once the cable is in, a chip shows its speed. At USB 2.0 it offers USB 3.0: the line goes in
+  system_settings.ini with a copy kept first, and the console reboots when nothing is installing.
+- Settings: the copy of the saves and the automatic copies have a group of their own, Saves.
+- Settings: the panel on the right says what the row in focus does and its value now; the rows of the network keep
+  the speed test.
 
 ## 0.9.0-beta.3
 

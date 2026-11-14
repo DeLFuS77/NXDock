@@ -150,6 +150,12 @@ struct More {
     const char *og_tag, *og_chip_fmt, *og_sub, *og_filter, *og_not_here, *og_cannot, *og_in_lib, *og_not_lib, *og_install, *og_remove;
     const char *tk_tile, *tk_sub_fmt, *tk_common, *tk_personal, *tk_no_game, *tk_no_name, *tk_mark_orphans, *tk_delete, *tk_del_title_fmt, *tk_del_body, *tk_del_go, *tk_done_fmt, *tk_kept_fmt, *tk_marked_fmt, *tk_none, *tk_failed, *tk_deleting, *cl_tickets_fmt;
     const char *rx_title, *rx_mods_fmt, *rx_mods_one, *rx_ticket_common, *rx_ticket_personal, *rx_tickets_fmt;
+    // groups 3 and 4 (14/11): the SD card full (12A), the explorer next to the console (13A), the game card (14A)
+    const char *nr_missing_fmt, *nr_ask_fmt, *nr_use, *nr_neither, *fs_installed_fmt, *fs_update, *fs_dlc, *fs_older_fmt, *fs_comparing, *gc_tile, *gc_inserted, *gc_inserted_fmt, *gc_from, *gc_newer, *gc_note, *gc_reading, *gc_pulled, *gc_gone, *gc_failed;
+    // updating from a folder or a shop (15A), inverting the marks (16A)
+    const char *uh_row, *uh_looking, *uh_found_fmt, *uh_left_fmt, *uh_add_fmt, *uh_added_fmt, *uh_none, *uh_where_fmt, *uh_new, *ac_invert, *ac_inverted_fmt;
+    // the text viewer (20A), a game at random (21A), opening a .nro (22A)
+    const char *tv_view, *tv_read_only, *tv_line_fmt, *tv_scroll, *tv_wrap, *tv_end, *tv_top, *tv_cut_fmt, *tv_failed, *rg_row, *rg_choosing, *rg_title_fmt, *rg_another, *rg_none, *nro_close, *nro_queue_fmt, *nro_go_on, *nro_lost, *nro_locked, *nro_sd_only, *nro_opening_fmt, *rs_left_title;
 };
 
 const More& TrM();

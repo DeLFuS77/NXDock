@@ -113,15 +113,16 @@ bool DeleteTree(const std::string& path, Progress& p, int depth) {
     return true;
 }
 
-// A file opened to be written with `size` bytes. On the SD card a file of 4 GB or more is made
-// first as a big file, which the console keeps as a folder of parts when the card is FAT32 and
-// reads as one file.
-FILE* OpenOut(const std::string& path, unsigned long long size) {
+} // namespace
+
+FILE* OpenOut(const std::string& path, unsigned long long size, bool plain_first) {
 #ifdef __SWITCH__
-    if (size > kFat32Max && Lower(path).rfind("sdmc:/", 0) == 0) {
+    if (NeedsParts(size) && Lower(path).rfind("sdmc:/", 0) == 0) {
         if (FsFileSystem* fs = fsdevGetDeviceFileSystem("sdmc")) {
             char inner[FS_MAX_PATH] = {};
             std::snprintf(inner, sizeof(inner), "%s", path.c_str() + 5); // after "sdmc:"
+            // an exFAT card takes it as one file; FAT32 refuses a file that big, and gets parts
+            if (plain_first && R_SUCCEEDED(fsFsCreateFile(fs, inner, s64(size), 0))) return std::fopen(path.c_str(), "r+b");
             if (R_SUCCEEDED(fsFsCreateFile(fs, inner, s64(size), FsCreateOption_BigFile))) {
                 return std::fopen(path.c_str(), "r+b");
             }
@@ -129,9 +130,12 @@ FILE* OpenOut(const std::string& path, unsigned long long size) {
     }
 #else
     (void)size;
+    (void)plain_first;
 #endif
     return std::fopen(path.c_str(), "wb");
 }
+
+namespace {
 
 constexpr size_t kBuffer = 4u << 20;
 
