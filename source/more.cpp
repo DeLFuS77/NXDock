@@ -1022,7 +1022,7 @@ void App::DrawArrival(NVGcontext* vg) {
     ui::Text(vg, rx + 26, py + 36, 22, t.text, m.arriving);
     ui::Text(vg, rx + 26, py + 66, 15, connected ? t.ok : t.muted, connected ? m.connected_usb : m.not_connected);
     // the job of the queue that comes from here, if any
-    const auto jobs = m_queue ? m_queue->Jobs() : std::vector<InstallJob>{};
+    const auto& jobs = QueueJobs();
     const auto origin = mtp ? InstallJob::Origin::Mtp : InstallJob::Origin::Usb;
     const InstallJob* current = nullptr;
     int done = 0, failed = 0;

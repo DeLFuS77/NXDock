@@ -229,7 +229,7 @@ App::ActScreen App::CurrentActScreen() {
     }
     switch (m_tab) {
         case Tab::Queue:
-            return m_queue && !m_queue->Jobs().empty() ? ActScreen::Queue : ActScreen::None;
+            return m_queue && !QueueJobs().empty() ? ActScreen::Queue : ActScreen::None;
         case Tab::Installed:
             if (m_installed_view == 1) return m_queue ? ActScreen::Session : ActScreen::None;
             if (m_installed_view == 2) return ActScreen::History;

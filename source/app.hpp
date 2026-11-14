@@ -488,6 +488,14 @@ private:
     void ActivatePairRow(int row, const Link::View& v);
     void DrawQueue(NVGcontext* vg);
     void UpdateQueue(u64 down, u64 held);
+    // The jobs of the queue as the screens see them this frame, read again only when they changed
+    // (SeeQueue, twice a frame: before the input and before drawing); QueueRows in the order of
+    // the queue screen. They stay the same until the next SeeQueue.
+    void SeeQueue();
+    const std::vector<InstallJob>& QueueJobs() const { return m_seen_jobs; }
+    const std::vector<InstallJob>& QueueRows() const { return m_seen_rows; }
+    std::vector<InstallJob> m_seen_jobs, m_seen_rows;
+    unsigned m_seen_rev = ~0u;
     // The marked files of the page of a game go to the queue; to the internal memory, only after
     // the question (1A).
     void EnqueuePicked();

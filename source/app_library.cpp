@@ -1016,7 +1016,7 @@ void App::DrawQueuePill(NVGcontext* vg, float x, float y, float w) {
     AddHit(x, y, w, h, HitKind::QueueStrip);
 
     const auto live = m_queue->GetLive();
-    const auto jobs = m_queue->Jobs();
+    const auto& jobs = QueueJobs();
     const auto it = std::find_if(jobs.begin(), jobs.end(), [&](const InstallJob& j) { return j.id == live.job; });
     const float frac = live.running ? JobFraction(live) : 0.f;
     const NVGcolor bar = live.merging ? t.violet : t.work;

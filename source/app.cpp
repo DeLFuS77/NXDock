@@ -570,6 +570,7 @@ bool App::Frame() {
         m_list_fling = 0;
     }
     GridSize(m_ui.library_size, m_ui.focus_view == 1);
+    SeeQueue();
     { perf::Timer t_("frame: Update"); Update(down, held); }
     { perf::Timer t_("frame: FollowPreflight"); FollowPreflight(); }
     // the game card coming and going (14A), the updates looked for in a folder or a shop (15A)
@@ -664,6 +665,7 @@ bool App::Frame() {
     perf::Lap(perf::kUpdate);
     NVGcontext* vg = m_gfx.BeginFrame();
     perf::Lap(perf::kAcquire);
+    SeeQueue(); // what Update changed in the queue, drawn in this frame
     perf::Count(m_covers.Upload(vg));
     perf::Lap(perf::kUpload);
     Draw(vg);

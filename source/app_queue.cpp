@@ -689,8 +689,13 @@ void App::FollowQueue() {
     m_sd_checked = -100;
 }
 
+void App::SeeQueue() {
+    if (!m_queue) return;
+    if (m_queue->JobsIfChanged(m_seen_rev, m_seen_jobs)) m_seen_rows = QueueOrder(m_seen_jobs);
+}
+
 void App::UpdateQueue(u64 down, u64 held) {
-    const auto rows = QueueOrder(m_queue->Jobs());
+    const auto& rows = QueueRows();
     const int count = int(rows.size());
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_queue_focus > 0) m_queue_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_queue_focus < count - 1) m_queue_focus++;
@@ -725,7 +730,7 @@ void App::UpdateQueue(u64 down, u64 held) {
 void App::DrawQueue(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
-    const auto rows = QueueOrder(m_queue->Jobs());
+    const auto& rows = QueueRows();
     if (rows.empty()) {
         ui::Text(vg, kWidth / 2, 320, 22, t.text, s.queue_empty, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         ui::Text(vg, kWidth / 2, 356, 16, t.muted, s.queue_empty_hint, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);

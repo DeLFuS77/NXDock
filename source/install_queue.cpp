@@ -247,6 +247,7 @@ bool InstallQueue::Add(InstallJob job) {
         job.id = m_next_id++;
         job.state = InstallJob::State::Waiting;
         m_jobs.push_back(std::move(job));
+        m_jobs_rev++;
     }
     m_cv.notify_all();
     return true;
@@ -267,6 +268,7 @@ void InstallQueue::Remove(int id) {
             }
         } else {
             m_jobs.erase(it);
+            m_jobs_rev++;
         }
         return;
     }
@@ -436,6 +438,7 @@ void InstallQueue::Retry(int id) {
         again.state = InstallJob::State::Waiting;
         again.error.clear();
         m_jobs.push_back(std::move(again));
+        m_jobs_rev++;
     }
     m_cv.notify_all();
 }
@@ -445,6 +448,18 @@ void InstallQueue::Clear() {
     std::erase_if(m_jobs, [](const InstallJob& j) {
         return j.state != InstallJob::State::Waiting && j.state != InstallJob::State::Running;
     });
+    m_jobs_rev++;
+}
+
+bool InstallQueue::JobsIfChanged(unsigned& seen, std::vector<InstallJob>& out) {
+    std::lock_guard lock(m_mutex);
+    if (seen == m_jobs_rev) return false;
+    seen = m_jobs_rev;
+    out = m_jobs;
+    for (auto& j : out) {
+        j.key.clear(); // the key stays here
+    }
+    return true;
 }
 
 std::vector<InstallJob> InstallQueue::Jobs() {
@@ -755,6 +770,7 @@ void InstallQueue::Run() {
             continue;
         }
         it->state = InstallJob::State::Running;
+        m_jobs_rev++;
         InstallJob job = *it;
         lock.unlock();
         {
@@ -775,6 +791,7 @@ void InstallQueue::Run() {
                 j.merge_error = job.merge_error;
             }
         }
+        m_jobs_rev++;
         m_version++;
     }
 }
