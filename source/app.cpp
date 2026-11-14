@@ -456,12 +456,12 @@ bool App::Init() {
         if (risk.exefs) what += std::string("\xE2\x80\xA2 ") + m.mr_exefs + "\n";
         return what;
     });
-    // the saves to the library before an update, a repair or a removal (18A), when it is on and
-    // a library is linked; on the queue's thread
+    // the saves before an update, a repair, a removal or going back (18A), when it is on: to the
+    // library, or to the SD card when none is linked; on the queue's thread
     m_queue->SetSaveCopy([this](u64 app, int why, u32 to, u32 current, std::function<void(u64, u64)> progress) -> std::string {
         if (!m_ui.save_copy) return {};
-        const Config c = m_link.CurrentConfig();
-        if (!c.Linked()) return {};
+        Config c = m_link.CurrentConfig();
+        if (!c.Linked()) c.url.clear(); // CopySavesBefore copies to the SD card
         const More& m = TrM();
         char note[160];
         switch (why) {

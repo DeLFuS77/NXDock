@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The copy of the saves before an update, a repair, a removal or going back now goes to the SD card when no library is
+  linked, and takes the console's and BCAT saves too, not only each user's.
+- A restore that fails half way puts the save back as it was.
+
 ## 0.9.0-beta.3
 
 These changes have not been tested in depth yet, so some bugs may remain.
