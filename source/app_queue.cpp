@@ -247,14 +247,15 @@ void App::FollowQueueWeb() {
     const Config c = m_link.CurrentConfig();
     if (!c.Linked()) return;
     m_report->SetLink(c.url, c.key);
-    const auto jobs = m_queue->Jobs();
+    // the jobs are copied only when they are needed below, not every frame
     bool busy = false;
-    for (const auto& j : jobs) {
+    m_queue->AnyJob([&](const InstallJob& j) {
         if (j.state == InstallJob::State::Waiting || j.state == InstallJob::State::Running) {
             busy = true;
             if (std::find(m_report_jobs.begin(), m_report_jobs.end(), j.id) == m_report_jobs.end()) m_report_jobs.push_back(j.id);
         }
-    }
+        return false;
+    });
     // what the queue does, every two seconds while it works, and once when it stops
     if ((busy && m_time - m_report_at >= 2) || (!busy && m_report_busy)) {
         m_report_at = m_time;
@@ -263,7 +264,7 @@ void App::FollowQueueWeb() {
     if (!busy && m_report_busy) {
         // the end of the queue: what went well and what failed, for the phone (21A)
         std::string items;
-        for (const auto& j : jobs) {
+        for (const auto& j : m_queue->Jobs()) {
             if (std::find(m_report_jobs.begin(), m_report_jobs.end(), j.id) == m_report_jobs.end()) continue;
             if (j.state != InstallJob::State::Done && j.state != InstallJob::State::Failed) continue;
             if (!items.empty()) items += ",";
@@ -293,6 +294,7 @@ void App::FollowQueueWeb() {
     if (!m_web_cancels.empty() && m_dialog.kind == DialogKind::None && !m_wizard) {
         const QueueCommand cmd = m_web_cancels.front();
         m_web_cancels.erase(m_web_cancels.begin());
+        const auto jobs = m_queue->Jobs();
         const auto it = std::find_if(jobs.begin(), jobs.end(), [&cmd](const InstallJob& j) { return j.id == cmd.job; });
         if (it != jobs.end() && (it->state == InstallJob::State::Waiting || it->state == InstallJob::State::Running)) {
             m_dialog = Dialog{};

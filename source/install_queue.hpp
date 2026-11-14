@@ -140,6 +140,14 @@ public:
     bool Paused();
 
     std::vector<InstallJob> Jobs();
+    // Whether a job is so, without copying the jobs (for what is asked every frame).
+    template <class F> bool AnyJob(F&& is) {
+        std::lock_guard lock(m_mutex);
+        for (const auto& j : m_jobs) {
+            if (is(j)) return true;
+        }
+        return false;
+    }
     Live GetLive();
     bool Busy();
     int Waiting();

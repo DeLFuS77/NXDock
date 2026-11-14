@@ -54,13 +54,9 @@ void App::FollowCard() {
         }
     }
     // a card put in or taken out, looked at now and then while More is open or it installs
-    bool card_jobs = false;
-    if (m_queue) {
-        for (const auto& j : m_queue->Jobs()) {
-            card_jobs = card_jobs || (j.origin == InstallJob::Origin::Card &&
-                                      (j.state == InstallJob::State::Running || j.state == InstallJob::State::Waiting));
-        }
-    }
+    const bool card_jobs = m_queue && m_queue->AnyJob([](const InstallJob& j) {
+        return j.origin == InstallJob::Origin::Card && (j.state == InstallJob::State::Running || j.state == InstallJob::State::Waiting);
+    });
     if ((m_tab != Tab::More && !card_jobs) || m_time - m_card_polled < 1.5) return;
     m_card_polled = m_time;
     const bool in = GameCardInserted();

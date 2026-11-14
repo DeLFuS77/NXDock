@@ -231,7 +231,7 @@ std::vector<App::WizGroup> App::WizardGroups() {
             break;
         }
         case 1:
-            if (m_link.Snapshot().state == Link::State::Connected) {
+            if (m_link.CurrentState() == Link::State::Connected) {
                 groups.push_back({s.wiz_share_q, {{s.share_yes, "", m_prefs.share_installed == 1, WizKind::Choice},
                                                   {s.no_word, "", m_prefs.share_installed == 0, WizKind::Choice}}, 2});
             }
@@ -376,7 +376,7 @@ void App::UpdateWizard(u64 down, u64 held) {
         return;
     }
     // the library, not connected yet: the pairing screen as it always is
-    if (m_wiz_step == 1 && m_link.Snapshot().state != Link::State::Connected) {
+    if (m_wiz_step == 1 && m_link.CurrentState() != Link::State::Connected) {
         UpdatePairing(down, held, m_link.Snapshot());
         return;
     }

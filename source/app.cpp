@@ -742,7 +742,7 @@ void App::Draw(NVGcontext* vg) {
     // the light of the game in focus (1A), behind the library and the page of a game; paused, as
     // the aurora, while installing on little battery
     if (!m_wizard && GridTab() && !low) {
-        const bool shown = m_tab == Tab::Shops ? m_shop_active : m_link.Snapshot().state == Link::State::Connected;
+        const bool shown = m_tab == Tab::Shops ? m_shop_active : m_link.CurrentState() == Link::State::Connected;
         if (shown && m_detail && m_detail_game >= 0 && m_detail_game < int(m_games.size())) {
             perf::Timer t_("draw: backdrop");
             DrawBackdrop(vg, m_games[m_detail_game], true);
