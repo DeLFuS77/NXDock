@@ -7,6 +7,10 @@ These changes have not been tested in depth yet, so some bugs may remain.
 - Installing an optimized game over its own update no longer leaves it unable to start: the files it shares with
   that update stay when the update is removed.
 - Installing an optimized game with its update under it no longer asks whether to install it again.
+- + opens the menu of actions of each screen, and no longer closes NXDock: the HOME button does that.
+- Every tab of the top menu shows its icon and its name when they fit.
+- The first action of a file or folder says only Install.
+- A game the library sends without a name or a cover no longer shows only a question mark.
 
 ## 0.9.0-beta.2
 
