@@ -47,6 +47,16 @@ These changes have not been tested in depth yet, so some bugs may remain.
 - Settings: the copy of the saves and the automatic copies have a group of their own, Saves.
 - Settings: the panel on the right says what the row in focus does and its value now; the rows of the network keep
   the speed test.
+- Compress games is no longer experimental: it is always on and has its own tile in More.
+- Compress games no longer measures every game first: the list is ready in seconds, and what a game saves shows when
+  it is compressed. Its DLC are compressed with it when they take less room.
+- Compressing a game is much faster: it is compressed once instead of twice, and a part is written while the next one
+  is compressed.
+- In the console: the + menu of a game compresses it, and that of the list opens Compress games.
+- More shows its tools in three rows of tiles of the same size; the game card, while one is in, comes at the end of
+  Your console.
+- With the screen off in handheld mode, NXDock no longer draws what cannot be seen, and the queue is no longer copied
+  every frame: more of the CPU is left for installing.
 
 ## 0.9.0-beta.3
 
