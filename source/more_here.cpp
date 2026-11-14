@@ -61,8 +61,7 @@ void App::UpdateFromFolder(const std::string& folder) {
     std::snprintf(where, sizeof(where), TrM().uh_where_fmt, int(files.size()));
     m_here_where = where;
     m_here_waiting = true;
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::UpdateHere;
+    OpenDialog(DialogKind::UpdateHere);
     m_has_polled = -100;
     FollowUpdateHere();
 }
@@ -94,8 +93,7 @@ void App::FollowUpdateHere() {
         }
         m_here_where = m_shop_name;
         m_here_waiting = true;
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::UpdateHere;
+        OpenDialog(DialogKind::UpdateHere);
         m_has_polled = -100;
     }
     if (!m_here_waiting) return;

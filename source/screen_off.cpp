@@ -74,6 +74,25 @@ bool App::FollowScreenOff(u64& down, bool new_touch) {
     return false;
 }
 
+bool App::ScreenDark() const {
+    // the backlight off on the console's own screen (on a TV the screen goes on), or no backlight
+    // service, when the screen is drawn black over everything
+    if (!m_screen_off || (m_lbl && appletGetOperationMode() != AppletOperationMode_Handheld)) return false;
+    // only where drawing does nothing else: More, the shops, In the console, the wizard, a dialog or
+    // a menu follow their work while they draw, so they are drawn as always
+    if (m_wizard || m_dialog.kind != DialogKind::None || m_menu || m_act || m_quick >= 0) return false;
+    return m_tab == Tab::Library || m_tab == Tab::Queue || m_tab == Tab::Settings;
+}
+
+void App::DrawDark(NVGcontext* vg) {
+    // what Draw shows then: black, and the opening of a game over it
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 1));
+    nvgFill(vg);
+    DrawLaunch(vg);
+}
+
 void App::DrawScreenOff(NVGcontext* vg) {
     if (m_screen_off) {
         // without the backlight service, black is the next best

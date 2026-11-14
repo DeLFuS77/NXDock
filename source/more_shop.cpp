@@ -47,13 +47,6 @@ std::string Host(const std::string& url) {
 
 } // namespace
 
-void App::OpenShops() {
-    m_shops = LoadShops(ShopsPath());
-    m_shop_focus = std::clamp(m_shop_focus, 0, std::max(0, int(m_shops.size()) - 1));
-    if (!m_shop_loader) m_shop_loader = std::make_unique<ShopLoader>();
-    m_more = MoreScreen::Shops;
-}
-
 bool App::EditShop(ShopConfig& shop, bool fresh) {
     const More& m = TrM();
     std::string url = fresh ? "http://" : shop.url;
@@ -93,8 +86,7 @@ void App::FollowShop() {
             case ShopError::KeyChanged: e = {m.e_shop_key_t, m.e_shop_key_w, m.e_shop_key_d, {}}; break;
             default: e = {m.e_shop_bad_t, m.e_shop_bad_w, m.e_shop_bad_d, {}}; break;
         }
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::VaultError;
+        OpenDialog(DialogKind::VaultError);
         m_dialog.single = true;
         m_dialog.from = PackError(e);
         m_dialog.text = m.t_shops;

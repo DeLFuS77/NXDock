@@ -125,8 +125,7 @@ void App::FollowVault() {
         }
     } else {
         // the card of the error, as in the queue
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::VaultError;
+        OpenDialog(DialogKind::VaultError);
         m_dialog.single = true;
         m_dialog.from = v.error;
     }
@@ -370,8 +369,7 @@ void App::VaultMenuDo(int row) {
     m_tool.title = text;
     m_tool.body = TrT().sv_del_body;
     m_tool.primary = TrT().sv_del_go;
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::SaveDelete;
+    OpenDialog(DialogKind::SaveDelete);
     m_dialog.ids = {sv.app_id, version(sv.app_id)};
 }
 
@@ -453,8 +451,7 @@ void App::UpdateVault(u64 down, u64 held) {
         if (m_vault_copy >= int(rows.size())) return;
         const auto& r = rows[size_t(m_vault_copy)];
         // always with its question, Cancel in focus; a copy of the SD card says its path
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::VaultRestore;
+        OpenDialog(DialogKind::VaultRestore);
         if (r.sd) {
             m_dialog.save.note = r.copy.note;
             m_dialog.save.when = r.copy.when;

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 //
-// Compress games (24A of the visual test of phase 24), experimental, from Space and dumps. Off
-// until the user turns it on, after a window that says what it means (the focus on Cancel). On
-// the left, what it does, and whether the console can start a compressed game (firmware 12,
-// sigpatches); on the right, the installed games, each with what it would save, from a sample of
-// its data. A game is compressed only after another window with everything that changes; one
-// compressed by NXDock can be undone (installed again from the library).
+// Compress games (24A of the visual test of phase 24), from Space and dumps. On the left, what it
+// does, and whether the console can start a compressed game (firmware 12, sigpatches); on the
+// right, the installed games, each checked from the header of its program: what it saves is not
+// measured before, the user chooses and sees it when it ends (14/11). A game is compressed only
+// after a window with everything that changes; one compressed by NXDock can be undone (installed
+// again from the library).
 #include "app.hpp"
 
 #include "draw.hpp"
@@ -42,12 +42,6 @@ unsigned long long DlcSaved(const std::vector<CompressedGame>& marks, unsigned l
 } // namespace
 
 void App::OpenCompress() {
-    if (!m_ui.compress_on) {
-        // the first time: what it is, the focus on Cancel
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressIntro;
-        return;
-    }
     if (!m_compress) m_compress = std::make_unique<Compressor>();
     m_sigpatches = FindSigpatches("sdmc:");
     m_prodkeys = false;
@@ -60,10 +54,34 @@ void App::OpenCompress() {
     m_compress_opened = m_time;
     m_compress_focus = 0;
     m_space_mode = 3;
-    // every game is checked from the header of its program (fast), then only those that can be
-    // compressed are measured; the list fills as it goes
+    // every game is checked from the header of its program (fast); the list fills as it goes
     m_compressed_marks = Compressor::Marks();
     m_compress_started = false;
+    m_compress_ask = 0;
+    m_compress_return = false;
+    m_compress_to_tiles = false;
+}
+
+bool App::CanCompress(const InstalledApp& a) const {
+    // a game, with its game installed, as the list of Compress games takes them (CompressRows)
+    if (a.archived || (a.app_id >> 56) != 0x01 || a.Bytes() < (100ull << 20)) return false;
+    return std::any_of(a.contents.begin(), a.contents.end(), [](const InstalledApp::Content& c) { return c.type == NcmContentMetaType_Application; });
+}
+
+void App::CompressFromConsole(unsigned long long app) {
+    // app 0: the whole list, from the menu of + of In the console
+    const MoreScreen back = m_more;
+    m_tab = Tab::More;
+    if (!m_space) m_space = std::make_unique<Space>();
+    m_more = MoreScreen::Space;
+    OpenCompress();
+    if (app) {
+        m_compress_app = app;
+        m_compress_all = true; // in sight whatever it is
+    }
+    m_compress_ask = app;
+    m_compress_return = true;
+    m_compress_back_more = back;
 }
 
 // The rows of the list: only those that can be compressed (or are being checked), or every game.
@@ -130,13 +148,7 @@ void App::DrawCompress(NVGcontext* vg) {
     nvgSave(vg);
     nvgTranslate(vg, -24 * (1 - in), 0);
     nvgGlobalAlpha(vg, in);
-    const float tw = ui::Text(vg, lx, 116, 26, t.text, m.cz_title) - lx;
-    {
-        // the tag that says it is experimental, in the orange of things to mind
-        const float w = ui::TextWidth(vg, 13, m.cz_tag) + 16;
-        ui::StrokeRound(vg, lx + tw + 12, 104, w, 24, 6, t.orange, 1.2f);
-        ui::Text(vg, lx + tw + 12 + w / 2, 116, 13, t.orange, m.cz_tag, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    }
+    ui::Text(vg, lx, 116, 26, t.text, m.cz_title);
     float y = 146;
     y += draw::Box(vg, lx, y, lw, 15, t.muted, m.cz_explain) + 18;
     const bool fw = hosversionAtLeast(12, 0, 0);
@@ -183,7 +195,8 @@ void App::DrawCompress(NVGcontext* vg) {
     if (!m_compress_told && !c.analyzing && v.scanned && m_compress_started) {
         for (const auto& [app, e] : c.games) {
             if (!e.merge || !e.merged ||
-                (e.state != GameEstimate::State::Worth && e.state != GameEstimate::State::Low && e.why != GameEstimate::Why::Redo)) {
+                (e.state != GameEstimate::State::Possible && e.state != GameEstimate::State::Worth && e.state != GameEstimate::State::Low &&
+                 e.why != GameEstimate::Why::Redo)) {
                 continue;
             }
             for (const auto& a : v.apps) {
@@ -210,13 +223,10 @@ void App::DrawCompress(NVGcontext* vg) {
             }
         }
         if (c.analyzing) {
-            const bool measuring = c.check_done >= c.check_total && c.measure_total > 0;
-            std::snprintf(text, sizeof(text), measuring ? m.cz_measuring_fmt : m.cz_checking_fmt, measuring ? c.measure_done : c.check_done,
-                          measuring ? c.measure_total : c.check_total);
+            std::snprintf(text, sizeof(text), m.cz_checking_fmt, c.check_done, c.check_total);
             ui::Spinner(vg, rx + 30, 114, 8, t.work, m_time);
             ui::Text(vg, rx + 46, 114, 14, t.muted, text);
-            const float frac = measuring ? float(c.measure_done) / float(std::max(1, c.measure_total))
-                                         : float(c.check_done) / float(std::max(1, c.check_total));
+            const float frac = float(c.check_done) / float(std::max(1, c.check_total));
             ui::Progress(vg, t, rx + 22, 132, rw - 44, 6, frac, t.work, m_time);
         } else {
             std::snprintf(text, sizeof(text), m.cz_counts_fmt, can, already, cannot);
@@ -277,7 +287,8 @@ void App::DrawCompress(NVGcontext* vg) {
         const bool redo = e.why == GameEstimate::Why::Redo;
         // an official update over it: it does not start
         const bool stops = e.why == GameEstimate::Why::Stops;
-        const bool waiting = e.merge && e.merged && (e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low || redo);
+        const bool waiting = e.merge && e.merged &&
+                             (e.state == GameEstimate::State::Possible || e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low || redo);
         nvgSave(vg);
         nvgScissor(vg, rx + 24, ry, rw * 0.56f, rh);
         ui::Text(vg, rx + 24, ry + 18, 16, t.text, a.name.c_str());
@@ -320,8 +331,13 @@ void App::DrawCompress(NVGcontext* vg) {
         switch (e.state) {
             case GameEstimate::State::Pending: std::snprintf(text, sizeof(text), "%s", m.cz_pending); break;
             case GameEstimate::State::Possible:
-                std::snprintf(text, sizeof(text), "%s", m.cz_possible);
-                col = t.work;
+                if (waiting) {
+                    std::snprintf(text, sizeof(text), "%s", m.cz_update_wait);
+                    col = t.orange;
+                } else {
+                    std::snprintf(text, sizeof(text), "%s", m.cz_possible);
+                    col = t.work;
+                }
                 break;
             case GameEstimate::State::Worth:
                 if (waiting) {
@@ -368,7 +384,7 @@ void App::DrawCompress(NVGcontext* vg) {
                                                                  : m.cz_unsupported);
                 break;
         }
-        const bool spin = known && (e.state == GameEstimate::State::Pending || e.state == GameEstimate::State::Possible) && c.analyzing;
+        const bool spin = known && e.state == GameEstimate::State::Pending && c.analyzing;
         if (spin) ui::Spinner(vg, rx + rw - 30, ry + 25, 8, t.muted, m_time);
         ui::Text(vg, rx + rw - (spin ? 48 : 24), ry + 25, 15, col, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         // the share it saves, as a small bar under the name
@@ -428,8 +444,7 @@ void App::FollowCompress(const Compressor::View& c) {
         }
     }
     if (!c.error.empty()) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::VaultError;
+        OpenDialog(DialogKind::VaultError);
         m_dialog.single = true;
         m_dialog.from = c.error;
         m_dialog.text = m.cz_title;
@@ -474,7 +489,30 @@ void App::UpdateCompress(u64 down, u64 held) {
     }
     if (down & HidNpadButton_B) {
         m_space_mode = 0; // a compression that runs goes on
+        m_compress_ask = 0;
+        if (m_compress_to_tiles) {
+            m_compress_to_tiles = false;
+            m_more = MoreScreen::Tiles;
+        }
+        if (m_compress_return) {
+            // opened from In the console: back there, as it was
+            m_compress_return = false;
+            m_tab = Tab::Installed;
+            m_more = m_compress_back_more;
+        }
         return;
+    }
+    if (m_compress_ask && m_dialog.kind == DialogKind::None && !c.running) {
+        // opened from the menu of + of a game: its question, once the check knows it
+        const auto it = c.games.find(m_compress_ask);
+        const bool known = it != c.games.end() && it->second.state != GameEstimate::State::Pending;
+        const bool listed = std::any_of(rows.begin(), rows.end(), [&](int r) { return v.apps[size_t(r)].app_id == m_compress_ask; });
+        if (known && listed && m_compress_app == m_compress_ask) {
+            m_compress_ask = 0;
+            down |= HidNpadButton_A;
+        } else if (v.scanned && m_compress_started && !c.analyzing && (!listed || !known)) {
+            m_compress_ask = 0; // nothing to ask: the row says why
+        }
     }
     if (c.running) {
         if (down & HidNpadButton_X) m_compress->Stop();
@@ -512,24 +550,23 @@ void App::UpdateCompress(u64 down, u64 held) {
             known = true;
         }
     }
-    if (!known || e.state == GameEstimate::State::Pending || e.state == GameEstimate::State::Possible) {
+    if (!known || e.state == GameEstimate::State::Pending) {
         // still being checked: it says so
         if (!c.analyzing && !m_compress->StartAnalysis({a.app_id})) Notice(m.cz_pending);
         else Notice(m.cz_pending);
         return;
     }
     if (e.state == GameEstimate::State::Ours || e.why == GameEstimate::Why::Redo) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressUndo;
+        OpenDialog(DialogKind::CompressUndo);
         m_dialog.ids = {a.app_id};
         m_dialog.text = a.name;
         return;
     }
+    // what can be compressed is compressed when chosen: what it saves shows when it ends
     const bool waiting = e.merge && e.merged && e.state == GameEstimate::State::Low;
-    if (e.state != GameEstimate::State::Worth && !waiting) return;
+    if (e.state != GameEstimate::State::Possible && e.state != GameEstimate::State::Worth && !waiting) return;
     if (!hosversionAtLeast(12, 0, 0)) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressInfo;
+        OpenDialog(DialogKind::CompressInfo);
         m_dialog.single = true;
         m_dialog.text = m.cz_fw_title;
         m_dialog.from = m.cz_fw_body;
@@ -537,8 +574,7 @@ void App::UpdateCompress(u64 down, u64 held) {
     }
     if (!m_sigpatches.found) {
         // never without them: the game would not start
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressInfo;
+        OpenDialog(DialogKind::CompressInfo);
         m_dialog.single = true;
         m_dialog.text = m.cz_nosig_title;
         m_dialog.from = m.cz_nosig_body;
@@ -548,8 +584,7 @@ void App::UpdateCompress(u64 down, u64 held) {
         Notice(m.cz_busy);
         return;
     }
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::CompressGo;
+    OpenDialog(DialogKind::CompressGo);
     m_dialog.ids = {a.app_id};
     m_dialog.text = a.name;
     m_dialog.size = e.saved;
@@ -560,10 +595,6 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
     const More& m = TrM();
     char text[400];
     switch (m_dialog.kind) {
-        case DialogKind::CompressIntro:
-            title = m.cz_intro_title;
-            body = m.cz_intro_body;
-            primary = m.cz_turn_on;
             break;
         case DialogKind::CompressGo: {
             GameEstimate e;
@@ -574,20 +605,19 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
             }
             std::string dlc;
             if (!e.dlcs.empty()) {
-                std::snprintf(text, sizeof(text), m.cz_go_dlc_fmt, int(e.dlcs.size()), draw::Size(e.dlc_saved).c_str());
+                std::snprintf(text, sizeof(text), m.cz_go_dlc_fmt, int(e.dlcs.size()));
                 dlc = std::string(text) + "\n";
             }
             if (e.merge) {
                 std::snprintf(text, sizeof(text), m.cz_go_merge_title_fmt, m_dialog.text.c_str());
                 title = text;
-                std::snprintf(text, sizeof(text), m.cz_go_merge_body_fmt, e.patch, draw::Size(m_dialog.size).c_str());
+                std::snprintf(text, sizeof(text), m.cz_go_merge_body_fmt, e.patch);
                 body = std::string(text) + "\n" + m.cz_merge_risks + "\n" + dlc + m.cz_risks;
                 primary = m.cz_merge_go;
             } else {
                 std::snprintf(text, sizeof(text), m.cz_go_title_fmt, m_dialog.text.c_str());
                 title = text;
-                std::snprintf(text, sizeof(text), m.cz_go_body_fmt, draw::Size(m_dialog.size).c_str());
-                body = std::string(text) + "\n" + dlc + m.cz_risks;
+                body = std::string(m.cz_go_body) + "\n" + dlc + m.cz_risks;
                 primary = m.cz_go;
             }
             break;
@@ -624,12 +654,6 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
 void App::ConfirmCompressDialog() {
     const More& m = TrM();
     switch (m_dialog.kind) {
-        case DialogKind::CompressIntro:
-            m_ui.compress_on = true;
-            m_ui.Save();
-            m_dialog.kind = DialogKind::None;
-            OpenCompress();
-            break;
         case DialogKind::CompressGo:
             if (m_compress && !m_dialog.ids.empty()) m_compress->StartCompress(m_dialog.ids[0]);
             break;

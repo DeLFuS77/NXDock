@@ -87,6 +87,11 @@ Link::View Link::Snapshot() {
     return v;
 }
 
+Link::State Link::CurrentState() {
+    std::lock_guard lock(m_mutex);
+    return m_view.state;
+}
+
 Config Link::CurrentConfig() {
     std::lock_guard lock(m_mutex);
     Config c = m_session;

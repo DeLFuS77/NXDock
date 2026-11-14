@@ -140,6 +140,17 @@ public:
     bool Paused();
 
     std::vector<InstallJob> Jobs();
+    // Whether a job is so, without copying the jobs (for what is asked every frame).
+    template <class F> bool AnyJob(F&& is) {
+        std::lock_guard lock(m_mutex);
+        for (const auto& j : m_jobs) {
+            if (is(j)) return true;
+        }
+        return false;
+    }
+    // A copy of the jobs into `out` only when they changed since `seen` (then `seen` is moved on):
+    // what the screens show every frame is copied only when something in it changed.
+    bool JobsIfChanged(unsigned& seen, std::vector<InstallJob>& out);
     Live GetLive();
     bool Busy();
     int Waiting();
@@ -208,6 +219,7 @@ private:
     bool m_download_test = false;
     bool m_paused = false;
     std::atomic<unsigned> m_version{0};
+    unsigned m_jobs_rev = 0; // each change of m_jobs, under m_mutex
     std::atomic<bool> m_reading{false};
     std::thread m_read_thread;
     std::map<u64, InstalledState> m_installed;

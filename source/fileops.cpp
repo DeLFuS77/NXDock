@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "fileops.hpp"
+#include "ascii.hpp"
 
 #include "file_source.hpp"
 
@@ -19,11 +20,6 @@
 
 namespace nxdock::fileops {
 namespace {
-
-std::string Lower(std::string s) {
-    for (auto& c : s) c = char(std::tolower((unsigned char)c));
-    return s;
-}
 
 // The path without its last slash, as stat and rename want it ("sdmc:/a/" -> "sdmc:/a"); a root
 // keeps it ("sdmc:/").
@@ -60,7 +56,7 @@ std::vector<std::string> Children(const std::string& folder) {
 
 // The path after "sdmc:/", lower case, without slashes at its ends: "atmosphere/contents".
 bool SdRelative(const std::string& path, std::string& rel) {
-    const std::string p = Lower(path);
+    const std::string p = AsciiLower(path);
     if (p.rfind("sdmc:/", 0) != 0) return false;
     rel = p.substr(6);
     while (!rel.empty() && rel.back() == '/') rel.pop_back();
@@ -117,7 +113,7 @@ bool DeleteTree(const std::string& path, Progress& p, int depth) {
 
 FILE* OpenOut(const std::string& path, unsigned long long size, bool plain_first) {
 #ifdef __SWITCH__
-    if (NeedsParts(size) && Lower(path).rfind("sdmc:/", 0) == 0) {
+    if (NeedsParts(size) && AsciiLower(path).rfind("sdmc:/", 0) == 0) {
         if (FsFileSystem* fs = fsdevGetDeviceFileSystem("sdmc")) {
             char inner[FS_MAX_PATH] = {};
             std::snprintf(inner, sizeof(inner), "%s", path.c_str() + 5); // after "sdmc:"
@@ -287,7 +283,7 @@ Guard GuardOfAll(const std::vector<std::string>& paths) {
 
 bool Junk(const std::string& name) {
     if (name.empty() || name[0] == '.') return true; // hidden, ._* of macOS, .Trashes, .Spotlight…
-    const std::string l = Lower(name);
+    const std::string l = AsciiLower(name);
     return l == "$recycle.bin" || l == "system volume information" || l == "thumbs.db" || l == "desktop.ini";
 }
 
@@ -329,7 +325,7 @@ bool DeleteAll(const std::vector<std::string>& paths, Progress& p) {
 }
 
 bool Within(const std::string& inside, const std::string& folder) {
-    const std::string a = Lower(Bare(inside)) + "/", b = Lower(Bare(folder)) + "/";
+    const std::string a = AsciiLower(Bare(inside)) + "/", b = AsciiLower(Bare(folder)) + "/";
     return a.rfind(b, 0) == 0;
 }
 
@@ -411,7 +407,7 @@ bool MakeFolder(const std::string& folder, const std::string& name) {
 bool Rename(const std::string& path, const std::string& name) {
     if (!ValidName(name)) return false;
     const std::string to = Join(Parent(path), name);
-    if (Lower(Bare(to)) != Lower(Bare(path)) && Exists(to)) return false;
+    if (AsciiLower(Bare(to)) != AsciiLower(Bare(path)) && Exists(to)) return false;
     return std::rename(Bare(path).c_str(), to.c_str()) == 0;
 }
 

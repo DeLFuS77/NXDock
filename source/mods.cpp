@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "mods.hpp"
+#include "ascii.hpp"
 
 #include "zip.hpp"
 
@@ -26,11 +27,6 @@ bool IsHex16(const std::string& s) {
     return s.size() == 16 && std::all_of(s.begin(), s.end(), [](char c) { return std::isxdigit((unsigned char)c); });
 }
 
-std::string Upper(std::string s) {
-    for (auto& c : s) c = char(std::toupper((unsigned char)c));
-    return s;
-}
-
 std::vector<std::string> Split(const std::string& path) {
     std::vector<std::string> parts;
     size_t start = 0;
@@ -44,7 +40,7 @@ std::vector<std::string> Split(const std::string& path) {
 }
 
 bool Known(const std::string& part) {
-    const std::string l = Upper(part);
+    const std::string l = AsciiUpper(part);
     return l == "ROMFS" || l == "EXEFS" || l == "CHEATS";
 }
 
@@ -171,17 +167,17 @@ std::string ContentsDir(unsigned long long title_id) {
 std::string ModTarget(const std::string& entry, unsigned long long title_id) {
     if (!zip::SafeName(entry) || entry.back() == '/') return {};
     auto parts = Split(entry);
-    if (!parts.empty() && Upper(parts[0]) == "ATMOSPHERE") parts.erase(parts.begin());
-    if (!parts.empty() && Upper(parts[0]) == "CONTENTS") parts.erase(parts.begin());
+    if (!parts.empty() && AsciiUpper(parts[0]) == "ATMOSPHERE") parts.erase(parts.begin());
+    if (!parts.empty() && AsciiUpper(parts[0]) == "CONTENTS") parts.erase(parts.begin());
     if (!parts.empty() && IsHex16(parts[0])) {
-        if (Upper(parts[0]) != Hex(title_id)) return {}; // for another game
+        if (AsciiUpper(parts[0]) != Hex(title_id)) return {}; // for another game
         parts.erase(parts.begin());
     } else if (parts.size() > 1 && !Known(parts[0]) && Known(parts[1])) {
         parts.erase(parts.begin()); // the folder of the mod's name
     }
     if (parts.size() < 2 || !Known(parts[0])) return {};
     std::string out;
-    for (size_t i = 0; i < parts.size(); i++) out += (i ? "/" : "") + (i == 0 ? std::string(Upper(parts[0]) == "CHEATS" ? "cheats" : Upper(parts[0]) == "ROMFS" ? "romfs" : "exefs") : parts[i]);
+    for (size_t i = 0; i < parts.size(); i++) out += (i ? "/" : "") + (i == 0 ? std::string(AsciiUpper(parts[0]) == "CHEATS" ? "cheats" : AsciiUpper(parts[0]) == "ROMFS" ? "romfs" : "exefs") : parts[i]);
     return out;
 }
 
@@ -193,7 +189,7 @@ std::vector<ModPackage> ModPackages(const std::string& mods_dir, const std::stri
         std::vector<std::string> names;
         while (const dirent* e = readdir(d)) {
             const std::string n = e->d_name;
-            if (n.size() > 4 && Upper(n.substr(n.size() - 4)) == ".ZIP") names.push_back(n);
+            if (n.size() > 4 && AsciiUpper(n.substr(n.size() - 4)) == ".ZIP") names.push_back(n);
         }
         closedir(d);
         std::sort(names.begin(), names.end());

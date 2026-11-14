@@ -62,6 +62,8 @@ public:
     void Stop();
 
     View Snapshot();
+    // Only the state, without copying the rest of the view (asked every frame).
+    State CurrentState();
     Config CurrentConfig();
     void SaveTheme(bool light);
 

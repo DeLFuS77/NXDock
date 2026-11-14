@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "shop.hpp"
+#include "ascii.hpp"
 
 #include <yyjson.h>
 #include <zlib.h>
@@ -75,11 +76,6 @@ std::string PlainName(std::string name) {
     while (!out.empty() && (out.back() == ' ' || out.back() == '-' || out.back() == '_')) out.pop_back();
     while (!out.empty() && out.front() == ' ') out.erase(out.begin());
     return out;
-}
-
-std::string Lower(std::string s) {
-    for (auto& c : s) c = char(std::tolower((unsigned char)c));
-    return s;
 }
 
 } // namespace
@@ -237,7 +233,7 @@ std::vector<ShopFile> ParseIndex(const std::string& json, const std::string& bas
         yyjson_val* size = yyjson_obj_get(item, "size");
         f.size = yyjson_is_uint(size) ? yyjson_get_uint(size) : yyjson_is_sint(size) ? (unsigned long long)std::max<long long>(0, yyjson_get_sint(size)) : 0;
         ReadTags(f.name, f.title_id, f.version);
-        const std::string ext = Lower(f.name.substr(f.name.find_last_of('.') + 1));
+        const std::string ext = AsciiLower(f.name.substr(f.name.find_last_of('.') + 1));
         if (ext != "nsp" && ext != "nsz" && ext != "xci" && ext != "xcz") continue;
         out.push_back(std::move(f));
     }
@@ -263,7 +259,7 @@ std::vector<Game> ShopGames(const std::vector<ShopFile>& files) {
         c.size = f.size;
         c.title_id = f.title_id;
         c.version = f.version;
-        c.format = Lower(f.name.substr(f.name.find_last_of('.') + 1));
+        c.format = AsciiLower(f.name.substr(f.name.find_last_of('.') + 1));
         unsigned long long base = f.title_id;
         if (!f.title_id) {
             base = untagged++; // without a title id: a game of its own
@@ -292,7 +288,7 @@ std::vector<Game> ShopGames(const std::vector<ShopFile>& files) {
         if (g.name.empty()) g.name = g.key;
         out.push_back(std::move(g));
     }
-    std::sort(out.begin(), out.end(), [](const Game& a, const Game& b) { return Lower(a.name) < Lower(b.name); });
+    std::sort(out.begin(), out.end(), [](const Game& a, const Game& b) { return AsciiLower(a.name) < AsciiLower(b.name); });
     return out;
 }
 

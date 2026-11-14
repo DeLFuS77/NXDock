@@ -243,7 +243,6 @@ private:
     std::string m_fwork_to, m_fwork_place;
     bool m_fwork_split = false;
     double m_fwork_at = 0;
-    std::string m_files_refocus;       // the name to keep in focus when the folder is read again
     double m_touch_at = 0;             // when the finger came down, for a long press (m_long_fired is shared with the covers)
     void OpenFilesMenu();
     std::vector<fileops::GameFile> m_files_found; // the games under what is chosen, read when the menu opens
@@ -339,6 +338,14 @@ private:
     std::vector<int> CompressRows(const Space::View& v) const;
     void DrawCompress(NVGcontext* vg);
     void UpdateCompress(u64 down, u64 held);
+    // From the menu of + of a game In the console (14/11): the screen of Compress games with that
+    // game in focus and its question open; B goes back to In the console.
+    bool CanCompress(const InstalledApp& a) const;
+    void CompressFromConsole(unsigned long long app);
+    unsigned long long m_compress_ask = 0; // the game whose question opens once it is checked
+    bool m_compress_return = false;        // B goes back to In the console
+    bool m_compress_to_tiles = false;      // opened from its tile of More: B goes back to the tiles
+    MoreScreen m_compress_back_more = MoreScreen::Tiles;
     void FollowCompress(const Compressor::View& c);
     void CompressDialogText(std::string& title, std::string& body, std::string& note, std::string& primary);
     void ConfirmCompressDialog();
@@ -360,7 +367,6 @@ private:
     void SortPickRows(const Space::View& v); // by name, the focus kept on its row, as names arrive
     std::string m_plan_head;
     // shops of the kind of Tinfoil and Ownfoil (9A, more_shop.cpp)
-    void OpenShops();
     bool EditShop(ShopConfig& shop, bool fresh);
     void FollowShop();
     void LeaveShop();
@@ -404,6 +410,9 @@ private:
     void ScreenOn();
     bool FollowScreenOff(u64& down, bool new_touch);
     void DrawScreenOff(NVGcontext* vg);
+    // The screen off can show nothing: only black is drawn then, not the whole interface.
+    bool ScreenDark() const;
+    void DrawDark(NVGcontext* vg);
     double m_screen_off_at = -100; // the countdown started
     // the animation pass: when the dialog, the notice, a list or a screen of More appeared
     double m_dialog_at = -100, m_notice_at = -100, m_more_at = -100, m_list_at = -100;
@@ -490,8 +499,14 @@ private:
     void ActivatePairRow(int row, const Link::View& v);
     void DrawQueue(NVGcontext* vg);
     void UpdateQueue(u64 down, u64 held);
-    void DrawQueueStrip(NVGcontext* vg, float y);
-    float StripKey(NVGcontext* vg, float qy);
+    // The jobs of the queue as the screens see them this frame, read again only when they changed
+    // (SeeQueue, twice a frame: before the input and before drawing); QueueRows in the order of
+    // the queue screen. They stay the same until the next SeeQueue.
+    void SeeQueue();
+    const std::vector<InstallJob>& QueueJobs() const { return m_seen_jobs; }
+    const std::vector<InstallJob>& QueueRows() const { return m_seen_rows; }
+    std::vector<InstallJob> m_seen_jobs, m_seen_rows;
+    unsigned m_seen_rev = ~0u;
     // The marked files of the page of a game go to the queue; to the internal memory, only after
     // the question (1A).
     void EnqueuePicked();
@@ -539,6 +554,36 @@ private:
     void AskUndo(std::vector<int> jobs);
     // A question over everything, with Cancel in focus first.
     void DrawDialog(NVGcontext* vg);
+public:
+    // What a dialog shows (app_dialog_text.cpp fills it, DrawDialog draws it): its title, body,
+    // rows, note, error, the bar of space and its buttons.
+    struct DialogLine {
+        std::string text, tag, right;
+        NVGcolor color;
+        int mark = 0; // 1: fine, 2: a warning (the check before installing)
+        bool focus = false; // the row in focus (the versions of a game, 20A)
+        int hit = -1;       // a row that answers to touch
+        int tick = -1;      // a box to tick before it: 0 off, 1 on (15A of groups 3 and 4)
+    };
+private:
+    struct DialogContent {
+        std::string title, body, note, primary, error;
+        std::vector<DialogLine> lines;
+        bool can = true, bar = false;
+        bool verify_bar = false, verify_running = false;
+        bool tick = false;  // ConsoleRemove: the box of the saves (3A)
+        bool tick2 = false; // ConsoleRemove: the box of its mods and its tickets (7A)
+        std::string cancel_label;
+        float verify_frac = 0;
+        std::string verify_text;
+        u64 size = 0;
+    };
+    // Not this area's dialog, filled, or nothing to draw (the dialog closed itself).
+    enum class Fill { NotMine, Draw, Stop };
+    Fill DialogInstallText(DialogContent& dc);
+    Fill DialogConsoleText(DialogContent& dc);
+    Fill DialogMoreText(DialogContent& dc);
+    Fill DialogAppText(DialogContent& dc);
     void UpdateDialog(u64 down, u64 held);
     void ConfirmDialog();
     // A third button some questions have between Cancel and the action (-1 none), and its use.
@@ -700,7 +745,6 @@ private:
     std::unique_ptr<InstallQueue> m_queue;
     unsigned m_queue_version = 0;
     int m_queue_focus = 0;          // row in focus on the queue screen
-    double m_quit_asked = -100;     // + while installing asks first
     // the Installed tab
     int m_installed_view = 0;       // 0: in the console, 1: this session, 2: the history
     // In the console: every game installed, and the page of one with what it has
@@ -764,7 +808,7 @@ private:
     void DrawCardTile(NVGcontext* vg, float x, float y, float w, float h);
     std::future<GameCard> m_card_read;
     GameCard m_card;
-    bool m_card_in = false, m_card_nand = false, m_card_jobs = false;
+    bool m_card_in = false, m_card_nand = false;
     double m_card_polled = -100, m_card_at = -100;
     std::vector<char> m_card_pick;
     bool m_card_matched = false; // marked as the console has it, once it was read
@@ -817,7 +861,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
                             UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
                             Usb3, Usb3Reboot };
@@ -875,6 +919,11 @@ private:
     bool m_risk_ok = false;
     std::string m_update_hint;
     Dialog m_dialog;
+    // A dialog of this kind, with nothing left of the one before.
+    void OpenDialog(DialogKind kind) {
+        m_dialog = Dialog{};
+        m_dialog.kind = kind;
+    }
     DialogKind m_dialog_drawn = DialogKind::None; // to start its entrance
     double m_time = 0;
     double m_next_repeat = 0;

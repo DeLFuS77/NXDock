@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "usb30_ini.hpp"
+#include "ascii.hpp"
 
 #include <cctype>
 #include <cstdlib>
@@ -41,18 +42,13 @@ std::string Trim(const std::string& s) {
     return s.substr(a, b - a);
 }
 
-std::string Lower(std::string s) {
-    for (auto& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
 // The name of the section a line opens ("usb" for "[usb]"), or empty when it opens none.
 std::string SectionOf(const std::string& line) {
     const std::string t = Trim(line);
     if (t.size() < 2 || t.front() != '[') return {};
     const size_t close = t.find(']');
     if (close == std::string::npos) return {};
-    return Lower(Trim(t.substr(1, close - 1)));
+    return AsciiLower(Trim(t.substr(1, close - 1)));
 }
 
 // The line sets the key: 0 no, 1 yes, 2 yes but commented out (";" or "#"). `value` is what
@@ -65,7 +61,7 @@ int KeyLine(const std::string& line, std::string& value) {
         t = Trim(t.substr(1));
     }
     const std::string key = kKey;
-    if (Lower(t.substr(0, key.size())) != key) return 0;
+    if (AsciiLower(t.substr(0, key.size())) != key) return 0;
     const std::string rest = Trim(t.substr(key.size()));
     if (rest.empty() || rest.front() != '=') return 0;
     value = Trim(rest.substr(1));

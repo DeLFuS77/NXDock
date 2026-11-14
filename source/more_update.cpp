@@ -68,8 +68,7 @@ void App::AskSelfUpdate() {
     m_update_silent = false;
     const auto stage = m_updater->Snapshot().stage;
     if (stage != Updater::Stage::Newer && stage != Updater::Stage::Downloading && stage != Updater::Stage::Done) m_updater->Check();
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::SelfUpdate;
+    OpenDialog(DialogKind::SelfUpdate);
     m_dialog.focus = 1;
 }
 

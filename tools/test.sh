@@ -65,6 +65,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   gcc -O1 -c -Ibuild/_deps/nanovg-src/include -Ibuild/_deps/nanovg-src/include/nanovg -Ibuild/_deps/stb_nanovg-src -o /tmp/nanovg.o build/_deps/nanovg-src/source/nanovg.c
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -Ibuild/_deps/nanovg-src/include -o /tmp/style_test tests/style_test.cpp source/i18n_more.cpp /tmp/nanovg.o -lm
   /tmp/style_test
+  # the texts of every language: none empty, the same % fields as the English one
+  g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -o /tmp/texts_test tests/texts_test.cpp source/i18n.cpp source/i18n_more.cpp source/i18n_tools.cpp
+  /tmp/texts_test
   # the sounds, with the synth the console runs
   g++ -std=c++20 -Wall -Wextra -O2 -Isource -o /tmp/sound_test tests/sound_test.cpp source/synth.cpp && /tmp/sound_test
   # game card images, which container a file is, and the install history
