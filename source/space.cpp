@@ -13,8 +13,10 @@
 #include "install_queue.hpp"
 #include "resume.hpp"
 #include "uninstall.hpp"
+#include "console_order.hpp"
 
 #include <switch.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <cctype>
@@ -282,7 +284,122 @@ std::string Upload(const std::string& url, const std::string& key, const std::st
     }
 }
 
+// The system partition as SYSTEM:, where es reads the personal tickets and the certificates from;
+// mounted only while it is needed, and only when nothing else mounted it (an install does).
+class SystemMount {
+public:
+    SystemMount() {
+        if (fsdevGetDeviceFileSystem("SYSTEM")) return;
+        FsFileSystem fs;
+        if (R_SUCCEEDED(fsOpenBisFileSystem(&fs, FsBisPartitionId_System, ""))) {
+            m_mine = fsdevMountDevice("SYSTEM", fs) >= 0;
+            if (!m_mine) fsFsClose(&fs);
+        }
+    }
+    ~SystemMount() {
+        if (m_mine) fsdevUnmountDevice("SYSTEM");
+    }
+
+private:
+    bool m_mine = false;
+};
+
+bool WriteFile(const std::string& path, const std::vector<u8>& data) {
+    if (data.empty()) return false;
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    const bool ok = std::fwrite(data.data(), 1, data.size(), f) == data.size();
+    return (std::fclose(f) == 0) && ok;
+}
+
+// A ticket and its certificate to the SD card; es must be open. False when its .tik is not written.
+bool SaveTicket(const TicketId& t) {
+    FsRightsId rid{};
+    std::memcpy(rid.c, t.rights, sizeof(rid.c));
+    std::vector<u8> tik, cert;
+    const Result rc = t.personal ? esx::GetPersonalisedTicketAndCertificate(rid, tik, cert) : esx::GetCommonTicketAndCertificate(rid, tik, cert);
+    if (R_FAILED(rc) || tik.empty()) return false;
+    mkdir("sdmc:/switch", 0777);
+    mkdir("sdmc:/switch/NXDock", 0777);
+    mkdir(kTicketsDir, 0777);
+    const std::string base = std::string(kTicketsDir) + "/";
+    if (!WriteFile(base + TicketFileName(t.rights, ".tik"), tik)) return false;
+    if (!cert.empty()) WriteFile(base + TicketFileName(t.rights, ".cert"), cert);
+    return true;
+}
+
+// The tickets of titles that are on the console in no way: neither installed nor in the records.
+std::vector<TicketId> TicketsWithoutGame(const std::vector<TicketId>& all, const std::set<u64>& installed, const std::set<u64>& records) {
+    std::vector<TicketId> out;
+    for (const auto& t : all) {
+        const u64 tid = TitleOfRights(t.rights);
+        if (!installed.count(tid) && !records.count(AppOf(tid))) out.push_back(t);
+    }
+    return out;
+}
+
 } // namespace
+
+bool ListTickets(std::vector<TicketId>& out) {
+    out.clear();
+    if (R_FAILED(esx::Initialize())) return false;
+    std::vector<FsRightsId> common, personal;
+    const bool ok = R_SUCCEEDED(esx::GetCommonTickets(common)) && R_SUCCEEDED(esx::GetPersonalisedTickets(personal));
+    esx::Exit();
+    for (const auto* list : {&common, &personal}) {
+        for (const auto& r : *list) {
+            TicketId t;
+            std::memcpy(t.rights, r.c, sizeof(t.rights));
+            t.personal = list == &personal;
+            out.push_back(t);
+        }
+    }
+    return ok;
+}
+
+std::set<unsigned long long> AppRecords() {
+    std::set<unsigned long long> out;
+    if (R_FAILED(nsInitialize())) return out;
+    for (const u64 app : RecordApps()) out.insert(app);
+    nsExit();
+    return out;
+}
+
+std::vector<TicketId> TicketsOf(unsigned long long app) {
+    std::vector<TicketId> all, out;
+    ListTickets(all);
+    for (const auto& t : all) {
+        if (AppOf(TitleOfRights(t.rights)) == app) out.push_back(t);
+    }
+    return out;
+}
+
+int SaveAndDeleteTickets(const std::vector<TicketId>& tickets, int* kept) {
+    if (kept) *kept = 0;
+    if (tickets.empty()) return 0;
+    SystemMount system; // before es, so the personal ones and the certificates can be read
+    if (R_FAILED(esx::Initialize())) {
+        if (kept) *kept = int(tickets.size());
+        return 0;
+    }
+    std::vector<FsRightsId> saved;
+    for (const auto& t : tickets) {
+        if (!SaveTicket(t)) {
+            if (kept) (*kept)++;
+            continue;
+        }
+        FsRightsId rid{};
+        std::memcpy(rid.c, t.rights, sizeof(rid.c));
+        saved.push_back(rid);
+    }
+    const Result rc = DeleteTickets(saved);
+    esx::Exit();
+    if (R_FAILED(rc)) {
+        if (kept) *kept = int(tickets.size());
+        return 0;
+    }
+    return int(saved.size());
+}
 
 Space::~Space() {
     m_cancel = true;
@@ -389,6 +506,7 @@ void Space::ScanNow() {
     std::vector<InstalledApp> apps;
     std::map<u64, size_t> by_app;
     Leftovers left;
+    int tickets_all = -1;
     Storage st;
     std::set<u64> installed_ids;
     if (R_SUCCEEDED(ncmInitialize())) {
@@ -520,6 +638,13 @@ void Space::ScanNow() {
                     }
                 }
             }
+            // how long each was played and how many times it was opened (3A), read once per scan
+            for (auto& a : apps) {
+                PdmPlayStatistics stats{};
+                if (R_FAILED(pdmqryQueryPlayStatisticsByApplicationId(a.app_id, false, &stats))) continue;
+                a.play_minutes = (long long)(stats.playtime / 60'000'000'000ull);
+                a.launches = int(stats.total_launches);
+            }
             pdmqryExit();
         }
         // the names known already; the others come after, on their own thread (NameLater)
@@ -549,15 +674,12 @@ void Space::ScanNow() {
             left.addons += int(a.contents.size());
             left.bytes += a.Bytes();
         }
-        if (R_SUCCEEDED(esx::Initialize())) {
-            std::vector<FsRightsId> ids;
-            esx::GetCommonTickets(ids);
-            for (const auto& r : ids) {
-                u64 tid = 0;
-                for (int i = 0; i < 8; i++) tid = tid << 8 | r.c[i];
-                if (!installed_ids.count(tid) && !records.count(AppOf(tid))) left.tickets++;
-            }
-            esx::Exit();
+        // the personal ones too (6A); they are saved to the SD card before they go
+        std::vector<TicketId> tickets;
+        if (ListTickets(tickets)) tickets_all = int(tickets.size());
+        for (const auto& t : TicketsWithoutGame(tickets, installed_ids, records)) {
+            left.tickets++;
+            left.personal += t.personal;
         }
         nsExit();
     }
@@ -575,6 +697,7 @@ void Space::ScanNow() {
     m_view.storage = st;
     m_view.scanned = true;
     m_view.card = card;
+    m_view.tickets_all = tickets_all;
 }
 
 bool Space::StartScan() {
@@ -659,18 +782,10 @@ bool Space::StartClean() {
         if (R_SUCCEEDED(nsInitialize())) {
             const std::set<u64> records = RecordApps();
             nsExit();
-            if (R_SUCCEEDED(esx::Initialize())) {
-                std::vector<FsRightsId> ids, drop;
-                esx::GetCommonTickets(ids);
-                for (const auto& r : ids) {
-                    u64 tid = 0;
-                    for (int i = 0; i < 8; i++) tid = tid << 8 | r.c[i];
-                    if (!installed_ids.count(tid) && !records.count(AppOf(tid))) drop.push_back(r);
-                }
-                rc = DeleteTickets(drop);
-                esx::Exit();
-                if (R_FAILED(rc)) return Packed(m.e_storage_t, m.e_storage_d, rc);
-            }
+            // the tickets of titles that are not on the console, common and personal (6A), each
+            // saved to the SD card first; one that cannot be saved stays
+            std::vector<TicketId> tickets;
+            if (ListTickets(tickets)) SaveAndDeleteTickets(TicketsWithoutGame(tickets, installed_ids, records));
         }
         return {};
     });
@@ -697,13 +812,13 @@ bool Space::StartArchive(std::vector<unsigned long long> apps) {
 }
 
 bool Space::StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items,
-                        std::function<std::string(unsigned long long)> before) {
+                        std::function<std::string(unsigned long long)> before, std::function<void(unsigned long long)> after) {
     if (items.empty()) return false;
-    return StartRemove({{app, std::move(items)}}, std::move(before));
+    return StartRemove({{app, std::move(items)}}, std::move(before), std::move(after));
 }
 
 bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games,
-                        std::function<std::string(unsigned long long)> before) {
+                        std::function<std::string(unsigned long long)> before, std::function<void(unsigned long long)> after) {
     if (Busy() || games.empty()) return false;
     u64 total = 0;
     for (auto& [app, items] : games) {
@@ -713,7 +828,7 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
         });
         total += items.size();
     }
-    Run(Task::Remove, [this, games, total, before]() -> std::string {
+    Run(Task::Remove, [this, games, total, before, after]() -> std::string {
         const More& m = TrM();
         std::lock_guard titles(TitlesLock());
         Result rc = 0;
@@ -741,11 +856,27 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
             // the marks of a game NXDock merged or compressed go with it
             if (base) ForgetMerged(app);
             if (R_FAILED(rc)) break;
+            // then its mods and its tickets, when asked (7A)
+            if (base && after) after(app);
         }
         if (R_FAILED(rc)) {
             if (rc == Result_GameRunning) return Packed(m.ic_rm_running_t, m.ic_rm_running_d, rc);
             return Packed(m.ic_rm_failed_t, m.ic_rm_failed_d, rc);
         }
+        return {};
+    });
+    return true;
+}
+
+bool Space::StartDeleteTickets(std::vector<TicketId> tickets) {
+    if (Busy() || tickets.empty()) return false;
+    Run(Task::Tickets, [this, tickets]() -> std::string {
+        Progress(0, tickets.size());
+        int kept = 0;
+        const int done = SaveAndDeleteTickets(tickets, &kept);
+        std::lock_guard lock(m_mutex);
+        m_view.tickets_done = done;
+        m_view.tickets_kept = kept;
         return {};
     });
     return true;

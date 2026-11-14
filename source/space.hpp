@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -21,6 +22,8 @@ struct InstalledApp {
     unsigned long long sd_bytes = 0, nand_bytes = 0;
     bool archived = false; // a record without content: archived from the HOME menu or here
     long long idle_minutes = -1; // since it was last played (-1: never, or unknown)
+    long long play_minutes = -1; // how long it was played, all told (-1: unknown)
+    int launches = -1;           // how many times it was opened (-1: unknown)
     struct Content {
         unsigned long long id = 0;
         unsigned version = 0;
@@ -47,9 +50,28 @@ struct Leftovers {
     int contents = 0, tickets = 0;
     int placeholders = 0; // unfinished installs of other installers (24A); never those NXDock can go on with
     int addons = 0;       // updates and DLC whose game is not on the console, nor in its records
+    int personal = 0;     // of the tickets, those personal (bought with an account); saved to the SD card first
     unsigned long long bytes = 0; // all of it
     bool Any() const { return contents || tickets || placeholders || addons; }
 };
+
+// A ticket of the console (6A): its rights id, and whether it is personal (else common).
+struct TicketId {
+    unsigned char rights[16] = {};
+    bool personal = false;
+};
+// Where the tickets are saved before they are deleted: sdmc:/switch/NXDock/tickets/<rights id>.tik
+// (and .cert when the console gives its certificate).
+constexpr const char* kTicketsDir = "sdmc:/switch/NXDock/tickets";
+// Every ticket of the console, common and personal; false when it could not be read.
+bool ListTickets(std::vector<TicketId>& out);
+// The tickets of a game, its updates and its DLC (7A).
+std::vector<TicketId> TicketsOf(unsigned long long app);
+// Saves each ticket to kTicketsDir, then deletes those saved; one whose copy fails stays. How many
+// went; `kept` says how many stayed.
+int SaveAndDeleteTickets(const std::vector<TicketId>& tickets, int* kept = nullptr);
+// The games the console has a record of (installed or archived); empty when ns does not answer.
+std::set<unsigned long long> AppRecords();
 
 // The free space of the SD card and the internal memory, and their size.
 struct Storage {
@@ -63,7 +85,7 @@ std::vector<int> PlanArchive(const std::vector<InstalledApp>& apps, unsigned lon
 
 class Space {
 public:
-    enum class Task { None, Scan, Clean, Archive, Move, Dump, Remove };
+    enum class Task { None, Scan, Clean, Archive, Move, Dump, Remove, Tickets };
     struct View {
         Task task = Task::None;
         bool scanned = false;
@@ -79,6 +101,8 @@ public:
         int names_done = 0, names_total = 0; // the names read after the scan (NameLater)
         std::string card_name;
         unsigned long long card_bytes = 0;
+        int tickets_all = -1; // every ticket of the console, at the last scan (6A)
+        int tickets_done = 0, tickets_kept = 0; // the last Tickets task: deleted, and kept as their copy failed
     };
 
     ~Space();
@@ -91,12 +115,15 @@ public:
     bool StartMove(unsigned long long app, bool to_nand);
     // Takes contents of a game off the console (In the console, of the Installed tab): its updates
     // and DLC first, the game last; the saves stay. The game too means all of it goes.
-    // `before`, when given, runs before a game itself goes (its saves copied, 3A); an error stops there
+    // `before`, when given, runs before a game itself goes (its saves copied, 3A); an error stops there.
+    // `after`, when given, runs once a game itself is gone (its mods and its tickets, 7A).
     bool StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items,
-                     std::function<std::string(unsigned long long)> before = {});
+                     std::function<std::string(unsigned long long)> before = {}, std::function<void(unsigned long long)> after = {});
     // Several games (In the console, marked with X): each with what of it goes.
     bool StartRemove(std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games,
-                     std::function<std::string(unsigned long long)> before = {});
+                     std::function<std::string(unsigned long long)> before = {}, std::function<void(unsigned long long)> after = {});
+    // Deletes tickets (6A), each saved to the SD card first; one whose copy fails stays.
+    bool StartDeleteTickets(std::vector<TicketId> tickets);
     // A dump to the library app (PUT /install/upload/{name}): an installed content, or the game
     // card (its secure partition), as an NSP.
     bool StartDump(const std::string& url, const std::string& key, unsigned long long content_id, unsigned version, unsigned char type,

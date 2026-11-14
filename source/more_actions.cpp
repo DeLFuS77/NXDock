@@ -9,6 +9,8 @@
 // shortcuts are learnt from it. Deleting is always the first row and always asks first.
 #include "app.hpp"
 
+#include "console_order.hpp"
+
 #include "draw.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
@@ -29,7 +31,8 @@ namespace {
 constexpr float kActW = 470, kActRow = 56;
 
 // What a row does when it has no button of its own (kButton: as its button)
-enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory };
+enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
+             kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
@@ -149,6 +152,16 @@ void Icon(NVGcontext* vg, NVGcolor c, int icon, float x, float cy) {
     }
 }
 
+const char* SortLabel(const More& m, int sort) {
+    switch (sort) {
+        case kSortSize: return m.so_size;
+        case kSortLast: return m.so_last;
+        case kSortTime: return m.so_time;
+        case kSortWhere: return m.so_where;
+        default: return m.so_name;
+    }
+}
+
 const char* GlyphOf(u64 button) {
     switch (button) {
         case HidNpadButton_A: return ui::glyph::A;
@@ -180,6 +193,7 @@ App::ActScreen App::CurrentActScreen() {
             if (m_more == MoreScreen::Shops) return ActScreen::Shops;
             if (m_more == MoreScreen::Space && m_space) {
                 if (m_space_mode == 1 && m_pick_kind == 0) return ActScreen::SpacePick;
+                if (m_space_mode == 4) return ActScreen::Tickets;
                 if (m_space_mode == 3 && m_compress && !m_compress->Snapshot().running) return ActScreen::Compress;
             }
             return ActScreen::None;
@@ -227,6 +241,18 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 rows.push_back({kUnmarkAll, m.ac_unmark, {}, !m_console_picked.empty(), 0, false, kIconBox});
             }
             rows.push_back({kMissing, m_console_missing ? tt.ms_hint_all : tt.ms_hint_filter, {}, true, 0, false, kIconFunnel});
+            // those without their game (5C), when there are some
+            {
+                const auto all = m_space->Snapshot();
+                const int orphans = int(std::count_if(all.apps.begin(), all.apps.end(), WithoutGame));
+                if (orphans || m_console_orphans) {
+                    std::snprintf(text, sizeof(text), "%d", orphans);
+                    rows.push_back({kOrphans, m_console_orphans ? tt.ms_hint_all : m.og_filter, m_console_orphans ? std::string{} : text, true, 0, false,
+                                    kIconFunnel});
+                }
+            }
+            // the order (4A): its five choices open in a menu of their own
+            rows.push_back({kSort, m.so_sort, SortLabel(m, m_ui.console_sort), true, 0, false, kIconList});
             const char* sizes[] = {m.ic_size_list, m.ic_size_mid, m.ic_size_big};
             rows.push_back({kSize, m.ic_size, sizes[std::clamp(int(m_ui.console_size), 0, 2)], true, 0, false, kIconGrid});
             break;
@@ -248,15 +274,34 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 marked++;
                 bytes += items[i].bytes;
             }
-            rows.push_back({kRemoveMarked, m.ic_remove_marked, marked ? draw::Size(bytes) : std::string{}, marked > 0, 0, true, kIconBin});
-            if (!items.empty()) {
-                const bool on = m_console_marks[size_t(std::clamp(m_console_item, 0, int(items.size()) - 1))];
-                rows.push_back({kButton, m.ac_mark, {}, true, HidNpadButton_Y, false, on ? kIconTick : kIconBox});
-                rows.push_back({kMarkAll, m.ac_mark_all, {}, marked < int(items.size()), 0, false, kIconTick});
-                rows.push_back({kUnmarkAll, m.ac_unmark, {}, marked > 0, 0, false, kIconBox});
+            const bool orphan = WithoutGame(*found);
+            // play, check and repair first (1A, 2A), deleting last, as the visual test shows
+            if (ConsoleCanPlay(*found)) rows.push_back({kPlay, m.pl_play, {}, true, 0, false, kIconPlay});
+            if (!orphan && !found->archived) {
+                const bool running = m_queue && m_queue->GetVerify().running;
+                rows.push_back({kCheck, m.ck_check, draw::Size(found->Bytes()), !running, 0, false, kIconShield});
+                const char* block = ConsoleRepairBlock(m_console_app);
+                bool bad = false;
+                if (m_queue && m_console_check == m_console_app) {
+                    const auto cv = m_queue->GetVerify();
+                    if (cv.done) {
+                        for (const auto& c : cv.result) bad = bad || !c.bad.empty();
+                    }
+                }
+                rows.push_back({kRepair, m.ck_repair, block ? block : std::string{}, !block && bad, 0, false, kIconAgain});
             }
-            if (LibraryGame(m_console_app)) rows.push_back({kButton, m.ic_from_library, {}, true, HidNpadButton_X, false, kIconInstall});
-            if (!items.empty()) rows.push_back({kButton, tt.cd_hint, {}, true, HidNpadButton_A, false, kIconInfo});
+            if (orphan) {
+                rows.push_back({kInstallBase, m.og_install, {}, LibraryBase(m_console_app), HidNpadButton_X, false, kIconInstall});
+            } else if (LibraryGame(m_console_app)) {
+                rows.push_back({kButton, m.ic_from_library, {}, true, HidNpadButton_X, false, kIconInstall});
+            }
+            if (!items.empty()) {
+                rows.push_back({kMarkAll, m.ac_mark_all, {}, marked < int(items.size()), 0, false, kIconTick});
+                if (marked) rows.push_back({kUnmarkAll, m.ac_unmark, {}, true, 0, false, kIconBox});
+                rows.push_back({kButton, tt.cd_hint, {}, true, HidNpadButton_A, false, kIconInfo});
+            }
+            if (orphan) rows.push_back({kRemoveMarked, m.og_remove, draw::Size(found->Bytes()), true, 0, true, kIconBin});
+            else rows.push_back({kRemoveMarked, m.ic_remove_marked, marked ? draw::Size(bytes) : std::string{}, marked > 0, 0, true, kIconBin});
             break;
         }
         case ActScreen::Session: {
@@ -332,6 +377,34 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             rows.push_back({kButton, m_compress_all ? m.cz_only_some : m.cz_show_all, {}, true, HidNpadButton_Y, false, kIconFunnel});
             break;
         }
+        case ActScreen::ConsoleSort:
+            // the five orders, the one in use with "now" (4A)
+            title = m.so_title;
+            for (int i = 0; i < kSortCount; i++) {
+                rows.push_back({kSortBase + i, SortLabel(m, i), i == m_ui.console_sort ? std::string(m.so_now) : std::string{}, true, 0, false,
+                                i == m_ui.console_sort ? kIconTick : kIconBox});
+            }
+            break;
+        case ActScreen::Tickets: {
+            // the tickets of More › Space (6A)
+            int marked = 0, orphans = 0, orphans_marked = 0;
+            for (size_t i = 0; i < m_tickets.size(); i++) {
+                marked += m_ticket_marks[i] != 0;
+                orphans += m_tickets[i].orphan;
+                orphans_marked += m_tickets[i].orphan && m_ticket_marks[i];
+            }
+            std::snprintf(text, sizeof(text), m.tk_sub_fmt, int(m_tickets.size()), orphans);
+            title = text;
+            std::snprintf(text, sizeof(text), "%d", marked);
+            rows.push_back({kTicketsDelete, m.tk_delete, marked ? std::string(text) : std::string{}, marked > 0, 0, true, kIconBin});
+            std::snprintf(text, sizeof(text), "%d", orphans);
+            rows.push_back({kTicketsOrphans, m.tk_mark_orphans, text, orphans > orphans_marked, 0, false, kIconTick});
+            if (!m_tickets.empty()) {
+                rows.push_back({kMarkAll, m.ac_mark_all, {}, marked < int(m_tickets.size()), 0, false, kIconTick});
+                rows.push_back({kUnmarkAll, m.ac_unmark, {}, marked > 0, 0, false, kIconBox});
+            }
+            break;
+        }
         default: break;
     }
     return rows;
@@ -395,17 +468,40 @@ void App::ActDo(const ActRow& row) {
                 std::fill(m_console_marks.begin(), m_console_marks.end(), 1);
             } else if (m_act_screen == ActScreen::SpacePick) {
                 std::fill(m_pick_marks.begin(), m_pick_marks.end(), true);
+            } else if (m_act_screen == ActScreen::Tickets) {
+                std::fill(m_ticket_marks.begin(), m_ticket_marks.end(), 1);
             }
             break;
         case kUnmarkAll:
             if (m_act_screen == ActScreen::ConsoleList) m_console_picked.clear();
             else if (m_act_screen == ActScreen::ConsoleGame) std::fill(m_console_marks.begin(), m_console_marks.end(), 0);
             else if (m_act_screen == ActScreen::SpacePick) std::fill(m_pick_marks.begin(), m_pick_marks.end(), false);
+            else if (m_act_screen == ActScreen::Tickets) std::fill(m_ticket_marks.begin(), m_ticket_marks.end(), 0);
+            break;
+        case kOrphans:
+            // only the updates and DLC without their game (5C)
+            m_console_orphans = !m_console_orphans;
+            m_console_missing = false;
+            m_console_focus = 0;
+            m_console_list_at = m_time;
+            break;
+        case kSort: OpenActions(ActScreen::ConsoleSort); break;
+        case kPlay: PlayConsoleGame(false); break;
+        case kCheck: CheckConsoleGame(); break;
+        case kRepair: RepairConsoleGame(); break;
+        case kInstallBase: InstallConsoleBase(); break;
+        case kTicketsDelete: AskDeleteTickets(); break;
+        case kTicketsOrphans:
+            for (size_t i = 0; i < m_tickets.size(); i++) {
+                if (m_tickets[i].orphan) m_ticket_marks[i] = 1;
+            }
             break;
         case kMissing:
             // the filter of what is missing (6A)
             m_console_missing = !m_console_missing;
+            m_console_orphans = false;
             m_console_focus = 0;
+            m_console_list_at = m_time;
             break;
         case kSize:
             // the size: list, medium covers, large covers; kept for the next time
@@ -423,7 +519,15 @@ void App::ActDo(const ActRow& row) {
             m_dialog = Dialog{};
             m_dialog.kind = DialogKind::ClearHistory;
             break;
-        default: break;
+        default:
+            if (row.id >= kSortBase && row.id < int(kSortBase) + int(kSortCount)) {
+                // a new order: kept for the next time, and the rows come in again (4A)
+                m_ui.console_sort = row.id - kSortBase;
+                m_ui.Save();
+                m_console_focus = 0;
+                m_console_list_at = m_time;
+            }
+            break;
     }
 }
 

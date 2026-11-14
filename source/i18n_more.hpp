@@ -140,6 +140,15 @@ struct More {
     const char *st_focus_row, *st_focus_band, *st_focus_panel, *st_touch_rumble, *fv_open, *tap_open, *qm_install_sd, *qm_page, *pr_done_fmt;
     // + no longer leaves: the HOME button does
     const char *home_exit;
+    // In the console, group 2 (14/11): check and repair (1A), play (2A), play time (3A), the order (4A),
+    // without the game (5C), the tickets (6A), its mods and tickets when a game goes (7A)
+    const char *ck_check, *ck_repair, *ck_checking_fmt, *ck_wait, *ck_ok, *ck_bad, *ck_bad_fmt, *ck_all_ok_fmt, *ck_repair_go, *ck_repair_note, *ck_no_lib, *ck_not_lib, *ck_cannot, *ck_queued, *ck_error, *ck_stop;
+    const char *pl_play, *pl_title_fmt, *pl_body, *pl_opening_fmt, *pl_failed_fmt;
+    const char *ps_h_min_fmt, *ps_h_fmt, *ps_min_fmt, *ps_stats_fmt, *ps_stats_once_fmt, *ps_never, *ps_today, *ps_yesterday, *ps_days_fmt, *ps_weeks_fmt, *ps_months_fmt;
+    const char *so_sort, *so_title, *so_name, *so_size, *so_last, *so_time, *so_where, *so_now, *so_head_fmt;
+    const char *og_tag, *og_chip_fmt, *og_sub, *og_filter, *og_not_here, *og_cannot, *og_in_lib, *og_not_lib, *og_install, *og_remove;
+    const char *tk_tile, *tk_sub_fmt, *tk_common, *tk_personal, *tk_no_game, *tk_no_name, *tk_mark_orphans, *tk_delete, *tk_del_title_fmt, *tk_del_body, *tk_del_go, *tk_done_fmt, *tk_kept_fmt, *tk_marked_fmt, *tk_none, *tk_failed, *tk_deleting, *cl_tickets_fmt;
+    const char *rx_title, *rx_mods_fmt, *rx_mods_one, *rx_ticket_common, *rx_ticket_personal, *rx_tickets_fmt;
 };
 
 const More& TrM();

@@ -6,6 +6,8 @@
 // of what is installed; every action asks first, the internal memory always.
 #include "app.hpp"
 
+#include "console_order.hpp"
+
 #include "draw.hpp"
 #include "history.hpp"
 #include "i18n.hpp"
@@ -15,7 +17,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <ctime>
+#include <map>
+#include <set>
 
 namespace nxdock {
 namespace {
@@ -211,6 +216,23 @@ void App::FollowSpace() {
         case Space::Task::Archive: NoticeOk(m.done_archive); break;
         case Space::Task::Move: NoticeOk(m.done_move); break;
         case Space::Task::Dump: NoticeOk(m.done_dump); break;
+        case Space::Task::Tickets: {
+            // how many went, and where their copies are (6A); the list is read again
+            char text[300];
+            std::snprintf(text, sizeof(text), m.tk_done_fmt, v.tickets_done);
+            std::string said = text;
+            if (v.tickets_kept) {
+                std::snprintf(text, sizeof(text), m.tk_kept_fmt, v.tickets_kept);
+                said += std::string(" \xC2\xB7 ") + text;
+            }
+            if (v.tickets_kept) Notice(said);
+            else NoticeOk(said);
+            if (m_space_mode == 4) {
+                OpenTickets();
+                return;
+            }
+            break;
+        }
         case Space::Task::Remove: {
             NoticeOk(m_console_done_text.empty() ? std::string(m.ic_done_remove) : m_console_done_text);
             // a line "Removed" for each in the history
@@ -249,6 +271,10 @@ void App::DrawSpace(NVGcontext* vg) {
         DrawCompress(vg);
         return;
     }
+    if (m_space_mode == 4) {
+        DrawTickets(vg);
+        return;
+    }
     const float lx = 48, rx = 664, cw = 568;
     char line[200];
     std::snprintf(line, sizeof(line), m.sp_sd_fmt, v.storage.sd_free >= 0 ? draw::Size(u64(v.storage.sd_free)).c_str() : m.pc_unknown,
@@ -262,7 +288,7 @@ void App::DrawSpace(NVGcontext* vg) {
 
     // the six actions, each with what it frees or needs
     const unsigned long long need = QueueNeedsOnSd();
-    std::string sub[8], right[8];
+    std::string sub[9], right[9];
     char text[200];
     // what deleted games left, and the installs left half done
     std::snprintf(text, sizeof(text), m.cl_sub_fmt, v.leftovers.contents + v.leftovers.addons + v.leftovers.tickets, v.leftovers.placeholders);
@@ -291,9 +317,16 @@ void App::DrawSpace(NVGcontext* vg) {
     }
     sub[7] = m.cz_action_sub;
     right[7] = m.cz_tag;
-    const char* titles[8] = {m.a_clean, m.a_archive, m.a_move, m.a_plan, m.a_card, m.a_dump, m.sd_action, m.cz_action};
+    // the tickets (6A): how many, and how many without their game
+    if (v.scanned && v.tickets_all >= 0) {
+        std::snprintf(text, sizeof(text), m.tk_sub_fmt, v.tickets_all, v.leftovers.tickets);
+        sub[8] = text;
+    } else {
+        sub[8] = v.scanned ? "" : m.scanning;
+    }
+    const char* titles[9] = {m.a_clean, m.a_archive, m.a_move, m.a_plan, m.a_card, m.a_dump, m.sd_action, m.cz_action, m.tk_tile};
     // Space: six actions, three on each side; the dumps (their own tile): two, on the left
-    const std::vector<int> shown = m_space_dumps ? std::vector<int>{4, 5} : std::vector<int>{0, 1, 2, 3, 6, 7};
+    const std::vector<int> shown = m_space_dumps ? std::vector<int>{4, 5} : std::vector<int>{0, 1, 2, 3, 6, 7, 8};
     if (std::find(shown.begin(), shown.end(), m_space_focus) == shown.end()) m_space_focus = shown.front();
     for (int k = 0; k < int(shown.size()); k++) {
         const int i = shown[size_t(k)];
@@ -304,11 +337,12 @@ void App::DrawSpace(NVGcontext* vg) {
         AddHit(x, y, cw, 66, HitKind::SpaceAction, i);
         const bool off = (i == 4 && !v.card) || (i == 0 && v.scanned && !v.leftovers.Any());
         nvgGlobalAlpha(vg, off ? 0.5f : 1.f);
-        DrawTileIcon(vg, i == 0 ? 6 : i == 1 ? 4 : i == 2 ? 5 : i == 3 ? 5 : i == 4 ? 0 : i == 5 ? 1 : i == 6 ? 0 : 5, x + 18, y + 33);
+        DrawTileIcon(vg, i == 0 ? 6 : i == 1 ? 4 : i == 2 ? 5 : i == 3 ? 5 : i == 4 ? 0 : i == 5 ? 1 : i == 6 ? 0 : i == 8 ? 6 : 5, x + 18, y + 33);
         ui::Text(vg, x + 70, y + 24, 17, t.text, titles[i]);
         nvgSave(vg);
         nvgScissor(vg, x + 70, y + 34, cw - 190, 30);
-        ui::Text(vg, x + 70, y + 46, 14, t.muted, sub[i].c_str());
+        // tickets without their game in orange (6A)
+        ui::Text(vg, x + 70, y + 46, 14, i == 8 && v.leftovers.tickets > 0 ? t.orange : t.muted, sub[i].c_str());
         nvgRestore(vg);
         ui::Text(vg, x + cw - 18, y + 33, 15, t.muted, right[i].c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         nvgGlobalAlpha(vg, 1.f);
@@ -331,6 +365,7 @@ void App::DrawSpace(NVGcontext* vg) {
         const char* what = v.task == Space::Task::Clean     ? m.st_cleaning
                            : v.task == Space::Task::Archive ? m.st_archiving
                            : v.task == Space::Task::Move    ? m.st_moving
+                           : v.task == Space::Task::Tickets ? m.tk_deleting
                                                             : m.st_dumping;
         draw::Panel(vg, t, lx, 548, kWidth - 96, 104, 12);
         ui::Text(vg, lx + 22, 570, 17, t.text, what);
@@ -495,13 +530,17 @@ void App::UpdateSpace(u64 down, u64 held) {
         UpdateCompress(down, held);
         return;
     }
-    // the actions: Space has three on the left (0, 1, 2) and three on the right (3, 6, 7); the
-    // dumps two, one under the other (4, 5)
+    if (m_space_mode == 4) {
+        UpdateTickets(down, held);
+        return;
+    }
+    // the actions: Space has three on the left (0, 1, 2) and four on the right (3, 6, 7 and the
+    // tickets, 8); the dumps two, one under the other (4, 5)
     {
-        static constexpr int kLeft[] = {0, 1, 2}, kRight[] = {3, 6, 7}, kDumps[] = {4, 5};
+        static constexpr int kLeft[] = {0, 1, 2}, kRight[] = {3, 6, 7, 8}, kDumps[] = {4, 5};
         const bool right_col = !m_space_dumps && std::find(std::begin(kRight), std::end(kRight), m_space_focus) != std::end(kRight);
         const int* col = m_space_dumps ? kDumps : right_col ? kRight : kLeft;
-        const int rows = m_space_dumps ? 2 : 3;
+        const int rows = m_space_dumps ? 2 : right_col ? 4 : 3;
         if (std::find(col, col + rows, m_space_focus) == col + rows) m_space_focus = col[0]; // one this screen does not show
         int row = 0;
         for (int k = 0; k < rows; k++) {
@@ -509,7 +548,7 @@ void App::UpdateSpace(u64 down, u64 held) {
         }
         if (Repeat(down, held, HidNpadButton_AnyUp) && row > 0) m_space_focus = col[row - 1];
         if (Repeat(down, held, HidNpadButton_AnyDown) && row < rows - 1) m_space_focus = col[row + 1];
-        if (!m_space_dumps && Repeat(down, held, HidNpadButton_AnyLeft) && right_col) m_space_focus = kLeft[row];
+        if (!m_space_dumps && Repeat(down, held, HidNpadButton_AnyLeft) && right_col) m_space_focus = kLeft[std::min(row, 2)];
         if (!m_space_dumps && Repeat(down, held, HidNpadButton_AnyRight) && !right_col) m_space_focus = kRight[row];
     }
     if (down & HidNpadButton_B) {
@@ -526,6 +565,10 @@ void App::UpdateSpace(u64 down, u64 held) {
     }
     if ((down & HidNpadButton_A) && m_space_focus == 7) {
         OpenCompress(); // it opens at once; the list comes when the scan ends
+        return;
+    }
+    if ((down & HidNpadButton_A) && m_space_focus == 8) {
+        OpenTickets();
         return;
     }
     if ((down & HidNpadButton_A) && !v.scanned) {
@@ -578,6 +621,11 @@ void App::SpaceDialogText(std::string& title, std::string& body, std::string& pr
             std::snprintf(text, sizeof(text), m.cl_body_fmt, draw::Size(v.leftovers.bytes).c_str(), v.leftovers.contents, v.leftovers.placeholders,
                           v.leftovers.addons, v.leftovers.tickets);
             body = text;
+            if (v.leftovers.tickets > 0) {
+                // the personal tickets go too now (6A); every ticket is saved to the SD card first
+                std::snprintf(text, sizeof(text), m.cl_tickets_fmt, v.leftovers.tickets - v.leftovers.personal, v.leftovers.personal);
+                body += std::string("\n\n") + text;
+            }
             primary = m.clean_go;
             break;
         case DialogKind::SpaceArchive:
@@ -647,6 +695,162 @@ void App::ConfirmSpaceDialog() {
             break;
         default: break;
     }
+}
+
+// ---- the tickets of the console (6A) ----
+
+namespace {
+
+// A small outlined tag after a text, as on the page of a game; where the next one goes.
+float TicketTag(NVGcontext* vg, float x, float cy, const char* text, NVGcolor color) {
+    const float w = ui::TextWidth(vg, 12, text) + 14;
+    ui::StrokeRound(vg, x, cy - 9, w, 18, 9, color, 1.f);
+    ui::Text(vg, x + w / 2, cy, 12, color, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    return x + w + 8;
+}
+
+} // namespace
+
+void App::OpenTickets() {
+    // read now: es answers at once; the names from what the console has and the library
+    std::vector<TicketId> ids;
+    m_tickets_ok = ListTickets(ids);
+    const auto v = m_space ? m_space->Snapshot() : Space::View{};
+    std::set<unsigned long long> installed;
+    std::map<unsigned long long, std::string> names;
+    for (const auto& a : v.apps) {
+        names[a.app_id] = a.name;
+        for (const auto& c : a.contents) installed.insert(c.id);
+    }
+    const auto records = AppRecords();
+    std::vector<TicketRow> rows;
+    for (const auto& id : ids) {
+        TicketRow r;
+        r.id = id;
+        r.title = TitleOfRights(id.rights);
+        const unsigned long long app = AppOfTitle(r.title);
+        // as Clean leftovers tells them: neither installed nor in the records of the console
+        r.orphan = !installed.count(r.title) && !records.count(app);
+        const auto it = names.find(app);
+        char hex[20];
+        std::snprintf(hex, sizeof(hex), "%016llX", app);
+        if (it != names.end() && it->second != hex) r.name = it->second;
+        else if (const Game* g = LibraryGame(app)) r.name = g->name;
+        rows.push_back(r);
+    }
+    // those without their game first, then by name
+    std::stable_sort(rows.begin(), rows.end(), [](const TicketRow& a, const TicketRow& b) {
+        if (a.orphan != b.orphan) return a.orphan;
+        if (a.name.empty() != b.name.empty()) return b.name.empty();
+        return NameBefore(a.name, b.name);
+    });
+    m_tickets = std::move(rows);
+    m_ticket_marks.assign(m_tickets.size(), 0);
+    m_ticket_focus = std::clamp(m_ticket_focus, 0, std::max(0, int(m_tickets.size()) - 1));
+    m_ticket_first = 0;
+    m_list_at = m_time; // its rows come in
+    m_space_mode = 4;
+}
+
+void App::DrawTickets(NVGcontext* vg) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    const More& m = TrM();
+    const auto v = m_space ? m_space->Snapshot() : Space::View{};
+    // it slides in from the right
+    const float slide = ui::EaseOut(ui::Appear(m_list_at, 0.35f));
+    nvgSave(vg);
+    nvgTranslate(vg, (1 - slide) * 80, 0);
+    nvgGlobalAlpha(vg, slide);
+    const float tx = ui::Text(vg, 48, 104, 22, t.text, m.tk_tile) + 14;
+    ui::Text(vg, tx, 105, 15, t.muted, m.t_space);
+    nvgRestore(vg);
+    int orphans = 0, marked = 0;
+    for (size_t i = 0; i < m_tickets.size(); i++) {
+        orphans += m_tickets[i].orphan;
+        marked += m_ticket_marks[i] != 0;
+    }
+    char text[200];
+    std::snprintf(text, sizeof(text), m.tk_sub_fmt, int(m_tickets.size()), orphans);
+    ui::Text(vg, kWidth - 48, 104, 15, orphans ? t.orange : t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    if (m_tickets.empty()) {
+        ui::Text(vg, kWidth / 2, 340, 18, m_tickets_ok ? t.muted : t.err, m_tickets_ok ? m.tk_none : m.tk_failed, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
+    const float top = 136, pitch = 62;
+    const int rows = 8;
+    m_ticket_focus = std::clamp(m_ticket_focus, 0, std::max(0, int(m_tickets.size()) - 1));
+    if (m_ticket_focus < m_ticket_first) m_ticket_first = m_ticket_focus;
+    if (m_ticket_focus >= m_ticket_first + rows) m_ticket_first = m_ticket_focus - rows + 1;
+    ListArea(48, top, kWidth - 96, rows * pitch, pitch);
+    for (int r = 0; r < rows && m_ticket_first + r < int(m_tickets.size()); r++) {
+        const int i = m_ticket_first + r;
+        const TicketRow& row = m_tickets[size_t(i)];
+        const float y = top + r * pitch, cy = y + 28, x = 48, w = kWidth - 96;
+        // the rows come in one after another
+        const float in = ui::EaseOut(ui::Appear(m_list_at + 0.04 * r, 0.3f));
+        nvgSave(vg);
+        nvgTranslate(vg, -(1 - in) * 24, 0);
+        nvgGlobalAlpha(vg, in);
+        if (i == m_ticket_focus) {
+            ui::FillRound(vg, x, y, w, 56, 12, t.panel2);
+            ui::Focus(vg, t, x, y, w, 56, 12, m_time);
+        } else {
+            NVGcolor bg = row.orphan ? t.orange : t.panel;
+            if (row.orphan) bg.a = t.dark ? 0.08f : 0.10f;
+            ui::FillRound(vg, x, y, w, 56, 12, bg);
+        }
+        if (row.orphan) ui::FillRound(vg, x, y + 10, 4, 36, 2, t.orange);
+        AddHit(x, y, w, 56, HitKind::TicketRow, i);
+        draw::TickBox(vg, t, x + 18, cy, m_ticket_marks[size_t(i)] != 0, "ticket:" + TicketFileName(row.id.rights, row.id.personal ? "p" : "c"));
+        nvgSave(vg);
+        nvgScissor(vg, x + 54, y, w - 54 - 230, 56);
+        float nx = ui::Text(vg, x + 54, cy, 17, row.name.empty() ? t.muted : t.text, row.name.empty() ? m.tk_no_name : row.name.c_str()) + 12;
+        nx = TicketTag(vg, nx, cy, row.id.personal ? m.tk_personal : m.tk_common, row.id.personal ? t.violet : t.work);
+        if (row.orphan) TicketTag(vg, nx, cy, m.tk_no_game, t.orange);
+        nvgRestore(vg);
+        std::snprintf(text, sizeof(text), "%016llX", row.title);
+        ui::Text(vg, x + w - 16, cy, 14, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
+    }
+    char left[96] = "";
+    if (v.task == Space::Task::Tickets) std::snprintf(left, sizeof(left), "%s", m.tk_deleting);
+    else if (marked) std::snprintf(left, sizeof(left), m.tk_marked_fmt, marked);
+    std::vector<ui::Hint> hints;
+    if (!m_tickets.empty()) hints.push_back({ui::glyph::Y, m.mark, HidNpadButton_Y});
+    hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus});
+    hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
+    ui::HintBar(vg, t, left[0] ? left : nullptr, hints, m_hint_rects);
+}
+
+void App::UpdateTickets(u64 down, u64 held) {
+    if (down & HidNpadButton_B) {
+        m_space_mode = 0;
+        return;
+    }
+    const int n = int(m_tickets.size());
+    if (n == 0) return;
+    if (Repeat(down, held, HidNpadButton_AnyUp) && m_ticket_focus > 0) m_ticket_focus--;
+    if (Repeat(down, held, HidNpadButton_AnyDown) && m_ticket_focus < n - 1) m_ticket_focus++;
+    m_ticket_focus = std::clamp(m_ticket_focus, 0, n - 1);
+    if (down & (HidNpadButton_Y | HidNpadButton_A)) m_ticket_marks[size_t(m_ticket_focus)] = !m_ticket_marks[size_t(m_ticket_focus)];
+}
+
+void App::AskDeleteTickets() {
+    m_ticket_delete.clear();
+    for (size_t i = 0; i < m_tickets.size(); i++) {
+        if (m_ticket_marks[i]) m_ticket_delete.push_back(m_tickets[i].id);
+    }
+    if (m_ticket_delete.empty()) {
+        Notice(Tr().nothing_picked);
+        return;
+    }
+    if (!m_space || m_space->Busy() || (m_queue && (m_queue->Busy() || m_queue->Undoing()))) {
+        Notice(TrM().cz_busy);
+        return;
+    }
+    // it asks first; each .tik is saved to the SD card before it goes
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::TicketsDelete;
 }
 
 } // namespace nxdock
