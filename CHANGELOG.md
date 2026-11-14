@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Install over USB from DBI's dbibackend too, besides NS-USBloader: NXDock finds which one is on the computer.
+- NSZ files made with a long window (up to 128 MiB) also install when NXDock is opened from the Album, and lack of
+  memory is shown as such.
 - Content made for Switch 2 is refused before anything of it is installed.
 - Installs write to the SD card in larger pieces when NXDock runs as an applet.
 - The install log notes the memory NXDock has at the start and at the end of each job.

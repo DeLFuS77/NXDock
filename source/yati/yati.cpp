@@ -27,7 +27,9 @@
 #include "lz4nintendo.h"
 #include "merged_updates.hpp"
 #include "update_over_game.hpp"
+#include "heap_lend.hpp"
 
+#define ZSTD_STATIC_LINKING_ONLY // ZSTD_createDCtx_advanced, for the allocator of heap_lend.hpp
 #include <zstd.h>
 #include <algorithm>
 #include <atomic>
@@ -821,7 +823,9 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
     ON_SCOPE_EXIT( t->decompress_running = false; );
 
     // only used for ncz files.
-    auto dctx = ZSTD_createDCtx();
+    // NXDock: the window of a long-window NSZ (up to 128 MiB) may be lent past the heap.
+    auto dctx = ZSTD_createDCtx_advanced(ZSTD_customMem{nxdock::heap::Alloc, nxdock::heap::Free, nullptr});
+    R_UNLESS(dctx, Result_OutOfMemory);
     ON_SCOPE_EXIT(ZSTD_freeDCtx(dctx));
     const auto chunk_size = ZSTD_DStreamOutSize();
     const ncz::Section* ncz_section{};
@@ -1184,6 +1188,8 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                         if (ZSTD_isError(res)) {
                             log_write("[NCZ] ZSTD_decompressStream() pos: %zu size: %zu res: %zd msg: %s\n", input.pos, input.size, res, ZSTD_getErrorName(res));
                         }
+                        // NXDock: no room for the window is said as such, not as a damaged NCZ
+                        R_UNLESS(!ZSTD_isError(res) || ZSTD_getErrorCode(res) != ZSTD_error_memory_allocation, Result_OutOfMemory);
                         R_UNLESS(!ZSTD_isError(res), Result_YatiInvalidNczZstdError);
                         more = output.pos == output.size;
 
