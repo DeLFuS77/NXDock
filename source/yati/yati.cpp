@@ -1951,9 +1951,22 @@ Result Yati::RemoveInstalledNcas(const CnmtCollection& cnmt) {
 // storages, with its NCAs. A newer update stays, as the console would run it.
 Result Yati::RemoveMergedUpdates(const CnmtCollection& cnmt) {
     const auto app_id = ncm::GetAppId(cnmt.key);
+    // the NCAs of the game just installed: an update made from the same version shares some of
+    // them (its control NCA), which stay on the storage the game went to
+    std::vector<nxdock::ContentId> in_game;
+    const auto keep = [&](const NcmContentId& id) {
+        nxdock::ContentId bytes{};
+        std::memcpy(bytes.data(), id.c, bytes.size());
+        in_game.push_back(bytes);
+    };
+    keep(cnmt.content_id);
+    for (const auto& info : cnmt.infos) {
+        keep(info.info.content_id);
+    }
     for (size_t i = 0; i < std::size(NCM_STORAGE_IDS); i++) {
         auto& cs = ncm_cs[i];
         auto& db = ncm_db[i];
+        const bool game_storage = NCM_STORAGE_IDS[i] == storage_id;
         s32 total = 0, count = 0;
         std::vector<NcmContentMetaKey> keys(8);
         R_TRY(ncmContentMetaDatabaseList(std::addressof(db), std::addressof(total), std::addressof(count), keys.data(), s32(keys.size()), NcmContentMetaType_Patch, app_id, 0, UINT64_MAX, NcmContentInstallType_Full));
@@ -1974,6 +1987,10 @@ Result Yati::RemoveMergedUpdates(const CnmtCollection& cnmt) {
             R_TRY(ncmContentMetaDatabaseListContentInfo(std::addressof(db), std::addressof(read), infos.data(), s32(infos.size()), std::addressof(key), 0));
             R_UNLESS(read == s32(infos.size()), Result_YatiNcmDbCorruptInfos);
             for (const auto& info : infos) {
+                if (game_storage && nxdock::ContentInGame(in_game, info.content_id.c)) {
+                    log_write("[NXDock] an NCA of the update is in the game too: kept\n");
+                    continue;
+                }
                 bool has{};
                 if (R_SUCCEEDED(ncmContentStorageHas(std::addressof(cs), std::addressof(has), std::addressof(info.content_id))) && has) {
                     R_TRY(ncm::Delete(std::addressof(cs), std::addressof(info.content_id)));
