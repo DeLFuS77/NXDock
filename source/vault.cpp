@@ -450,7 +450,29 @@ std::string RestoreFailed(const unsigned char uid[16], unsigned long long app_id
     return VaultError(m.v_restore_failed, m.v_restore_failed_d, rc);
 }
 
+// A zip of the SD card over a save: the save it replaces goes to the SD card first, and back over
+// the save if the restore fails half way.
+std::string RestoreFromSd(const Vault::User& user, int kind, unsigned long long app_id, const std::string& zip, const std::string& before_note,
+                          const std::function<void(unsigned long long, unsigned long long)>& copying,
+                          const std::function<void(unsigned long long, unsigned long long)>& restoring) {
+    const More& m = TrM();
+    std::string before;
+    Result rc = BackupToSd(user, kind, app_id, 0, before_note, false, copying, &before);
+    if (R_FAILED(rc)) return VaultError(m.v_no_save, m.v_no_save_d, rc);
+    rc = ZipToSave(user.uid, app_id, zip, restoring, kind);
+    return R_SUCCEEDED(rc) ? std::string{} : RestoreFailed(user.uid, app_id, kind, before, rc);
+}
+
 } // namespace
+
+std::string RestoreSdZip(const unsigned char uid[16], const std::string& who, int kind, unsigned long long app_id, const std::string& zip,
+                         const std::string& before_note) {
+    Vault::User user{};
+    std::memcpy(user.uid, uid, sizeof(user.uid));
+    user.name = who;
+    const auto none = [](unsigned long long, unsigned long long) {};
+    return RestoreFromSd(user, kind, app_id, zip, before_note, none, none);
+}
 
 std::string CopySavesBefore(const std::string& url, const std::string& key, unsigned long long app_id, unsigned current,
                             const std::string& note, const std::function<void(unsigned long long, unsigned long long)>& progress) {
@@ -623,18 +645,11 @@ bool Vault::StartDelete(const std::string& url, const std::string& key, const Us
 bool Vault::StartRestoreSd(const User& user, int kind, unsigned long long app_id, const std::string& zip, const std::string& before_note) {
     if (Busy()) return false;
     Run([this, user, kind, app_id, zip, before_note] {
-        const More& m = TrM();
-        // 1. the save it replaces, to the SD card first
+        // the save it replaces, to the SD card first; if the copy fails half way, it goes back
         Progress(0, 0, Stage::Copying);
-        std::string before;
-        Result rc = BackupToSd(user, kind, app_id, 0, before_note, false, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); }, &before);
-        if (R_FAILED(rc)) {
-            Done(VaultError(m.v_no_save, m.v_no_save_d, rc), true);
-            return;
-        }
-        // 2. the copy over the save; if it fails half way, the save from before goes back
-        rc = ZipToSave(user.uid, app_id, zip, [this](u64 d, u64 t) { Progress(d, t, Stage::Restoring); }, kind);
-        Done(R_SUCCEEDED(rc) ? std::string{} : RestoreFailed(user.uid, app_id, kind, before, rc), true);
+        Done(RestoreFromSd(user, kind, app_id, zip, before_note, [this](u64 d, u64 t) { Progress(d, t, Stage::Copying); },
+                           [this](u64 d, u64 t) { Progress(d, t, Stage::Restoring); }),
+             true);
     });
     return true;
 }

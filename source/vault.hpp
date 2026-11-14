@@ -39,6 +39,13 @@ std::string CopySavesBefore(const std::string& url, const std::string& key, unsi
 // could not be written.
 bool SaveZipTo(const unsigned char uid[16], unsigned long long app_id, int kind, const std::string& zip_path);
 
+// A zip of the SD card over the save of a game (MTP 18), on the caller's thread, as StartRestoreSd
+// does it: the save it replaces goes to the SD card first (`who` and `before_note` beside it), and
+// back over the save if the restore fails half way. Empty when it went well; else the error,
+// packed (errors.hpp).
+std::string RestoreSdZip(const unsigned char uid[16], const std::string& who, int kind, unsigned long long app_id, const std::string& zip,
+                         const std::string& before_note);
+
 // The vault of saves (6A): the saves of a user of the console, copied to the library app as a
 // zip with a note, and a copy brought back. Restoring always asks first and sends a copy of the
 // save it replaces to the library before.

@@ -126,7 +126,13 @@ std::unique_ptr<Sink> FolderStorage::Create(const std::string& path, uint64_t si
     Space(total, free);
     if (total && size > free) return nullptr;
     const std::string full = Full(path);
-    FILE* f = std::fopen((full + ".part").c_str(), "wb");
+    FILE* f;
+    if (m_open_out) {
+        std::remove((full + ".part").c_str()); // one left by a copy that broke off
+        f = m_open_out(full + ".part", size);
+    } else {
+        f = std::fopen((full + ".part").c_str(), "wb");
+    }
     return f ? std::make_unique<FileSink>(f, full) : nullptr;
 }
 
@@ -140,6 +146,55 @@ bool FolderStorage::Remove(const std::string& path, bool dir) {
 
 bool FolderStorage::Rename(const std::string& from, const std::string& to) {
     return std::rename(Full(from).c_str(), Full(to).c_str()) == 0;
+}
+
+std::string CleanName(const std::string& name) {
+    static const std::string bad = "/\\:*?\"<>|";
+    std::string out;
+    for (const char c : name) out += bad.find(c) == std::string::npos && (unsigned char)c >= 0x20 ? c : '_';
+    while (!out.empty() && (out.back() == ' ' || out.back() == '.')) out.pop_back();
+    return out.empty() ? "_" : out;
+}
+
+bool SafePath(const std::string& path) {
+    if (path.empty() || path.find('\\') != std::string::npos || path.find(':') != std::string::npos) return false;
+    size_t at = 0;
+    while (true) {
+        const size_t slash = path.find('/', at);
+        const std::string part = path.substr(at, slash == std::string::npos ? std::string::npos : slash - at);
+        if (part.empty() || part == "." || part == "..") return false;
+        for (const char c : part) {
+            if ((unsigned char)c < 0x20) return false;
+        }
+        if (slash == std::string::npos) return true;
+        at = slash + 1;
+    }
+}
+
+ModsPath SplitModsPath(const std::string& path, std::string& game, std::string& inner) {
+    game.clear();
+    inner.clear();
+    const auto slash = path.find('/');
+    if (slash == std::string::npos) return ModsPath::No;
+    const std::string rest = path.substr(slash + 1);
+    const std::string mods = kModsFolder;
+    if (rest != mods && rest.rfind(mods + "/", 0) != 0) return ModsPath::No;
+    game = path.substr(0, slash);
+    if (rest == mods) return ModsPath::Root;
+    inner = rest.substr(mods.size() + 1);
+    return SafePath(inner) ? ModsPath::Inside : ModsPath::Bad;
+}
+
+std::string SaveZipName(const std::string& game, const std::string& who) {
+    return CleanName(game + " \xC2\xB7 " + who) + ".zip";
+}
+
+bool SaveDrop(const std::string& path, std::string& game, std::string& file) {
+    const auto slash = path.find('/');
+    if (slash == std::string::npos || slash == 0 || path.find('/', slash + 1) != std::string::npos) return false;
+    game = path.substr(0, slash);
+    file = path.substr(slash + 1);
+    return SafePath(path) && file.size() > 4 && file.compare(file.size() - 4, 4, ".zip") == 0;
 }
 
 } // namespace nxdock::mtp

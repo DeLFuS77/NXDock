@@ -25,6 +25,10 @@ These changes have not been tested in depth yet, so some bugs may remain.
 - Content made for Switch 2 is refused before anything of it is installed.
 - Installs write to the SD card in larger pieces when NXDock runs as an applet.
 - The install log notes the memory NXDock has at the start and at the end of each job.
+- MTP: each game in Installed games has a Mods & Cheats folder, its folder in atmosphere/contents, to copy mods
+  into, rename and delete.
+- MTP: a save zip dropped back on its game in Saves restores it; the save it replaces is copied to the SD card first.
+- MTP: files over 4 GB copied to a FAT32 SD card are kept in parts, so the console reads them as one file.
 
 ## 0.9.0-beta.3
 

@@ -4,7 +4,10 @@
 // NXDock's MTP responder on the computer, with a fake cable: what a computer asks when it opens
 // the console in its file explorer, copies a file in both ways (in one transfer with its header,
 // and in many), announces a file over 4 GB the MTP way, renames, makes a folder and deletes; and
-// that data phases filling whole packets are closed with a transfer of no bytes.
+// that data phases filling whole packets are closed with a transfer of no bytes. And the paths of
+// the folders written to from the computer: the mods of a game, a save dropped back, a file over
+// 4 GB on the SD card.
+#include "fileops.hpp"
 #include "mtp_proto.hpp"
 #include "mtp_storage.hpp"
 
@@ -334,6 +337,60 @@ int main(int argc, char** argv) {
     // the cable gone: Serve ends
     cable.in.clear();
     CHECK(!r.Serve());
+
+    // the folder of mods of a game (17): only what stays inside it
+    {
+        std::string game, inner;
+        CHECK(SplitModsPath("Game", game, inner) == ModsPath::No);
+        CHECK(SplitModsPath("Game/Game [0100000000010000][v0].nsp", game, inner) == ModsPath::No);
+        CHECK(SplitModsPath("Game/Mods & Cheats.txt", game, inner) == ModsPath::No);
+        CHECK(SplitModsPath("Game/Mods & Cheats", game, inner) == ModsPath::Root && game == "Game" && inner.empty());
+        CHECK(SplitModsPath("Game/Mods & Cheats/romfs/a.bin", game, inner) == ModsPath::Inside && game == "Game" && inner == "romfs/a.bin");
+        CHECK(SplitModsPath("Game/Mods & Cheats/cheats", game, inner) == ModsPath::Inside && inner == "cheats");
+        CHECK(SplitModsPath("Game/Mods & Cheats/../../x", game, inner) == ModsPath::Bad);
+        CHECK(SplitModsPath("Game/Mods & Cheats/romfs/../../x", game, inner) == ModsPath::Bad);
+        CHECK(SplitModsPath("Game/Mods & Cheats/./a", game, inner) == ModsPath::Bad);
+        CHECK(SplitModsPath("Game/Mods & Cheats//a", game, inner) == ModsPath::Bad);
+        CHECK(SplitModsPath("Game/Mods & Cheats/", game, inner) == ModsPath::Bad);
+        CHECK(SplitModsPath("Game/Mods & Cheats/a\\..\\b", game, inner) == ModsPath::Bad);
+        CHECK(SplitModsPath("Game/Mods & Cheats/sdmc:/x", game, inner) == ModsPath::Bad);
+        CHECK(SafePath("romfs/a b.bin") && !SafePath("") && !SafePath("/abs") && !SafePath("a/") && !SafePath("..") && !SafePath("a/\x01"));
+    }
+
+    // the zips of the saves (18): the name a drop must have, one level down
+    {
+        CHECK(SaveZipName("Game", "Ana") == "Game \xC2\xB7 Ana.zip");
+        CHECK(SaveZipName("A: B?", "Ana.") == "A_ B_ \xC2\xB7 Ana.zip");
+        // the name NXDock shows is the name it takes back
+        const std::string shown = SaveZipName(CleanName("Odd/Name*"), "User");
+        CHECK(CleanName(shown) == shown);
+        std::string game, file;
+        CHECK(SaveDrop("Game/Game \xC2\xB7 Ana.zip", game, file) && game == "Game" && file == "Game \xC2\xB7 Ana.zip");
+        CHECK(!SaveDrop("Game \xC2\xB7 Ana.zip", game, file));     // at the root
+        CHECK(!SaveDrop("Game/sub/x.zip", game, file));            // deeper
+        CHECK(!SaveDrop("Game/x.txt", game, file));                // not a zip
+        CHECK(!SaveDrop("Game/.zip", game, file));
+        CHECK(!SaveDrop("../x.zip", game, file) && !SaveDrop("/x.zip", game, file));
+    }
+
+    // the SD card (19): a file over 4 GB - 1 is kept in parts on FAT32; the storage opens each new
+    // file with its size through what it is given
+    {
+        CHECK(!nxdock::fileops::NeedsParts(0xFFFFFFFFull) && nxdock::fileops::NeedsParts(0x100000000ull));
+        std::string opened;
+        uint64_t asked = 0;
+        FolderStorage sized(root, "SD card", [&](const std::string& path, uint64_t size) {
+            opened = path;
+            asked = size;
+            return std::fopen(path.c_str(), "wb");
+        });
+        Write(root + "/sized.bin.part", "old"); // left by a copy that broke off
+        bool busy = true;
+        auto sink = sized.Create("sized.bin", 3, busy);
+        CHECK(sink && !busy && asked == 3 && opened == root + "/sized.bin.part");
+        CHECK(sink && sink->Write("abc", 3) && sink->Close(true));
+        CHECK(ReadFile(root + "/sized.bin") == "abc" && ReadFile(root + "/sized.bin.part") == "<none>");
+    }
 
     if (failures) {
         std::printf("mtp_test: %d failures\n", failures);
