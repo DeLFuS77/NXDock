@@ -6,6 +6,7 @@
 #pragma once
 
 #include "app.hpp"
+#include "ascii.hpp"
 
 #include "file_match.hpp"
 #include "perf.hpp"
@@ -46,18 +47,11 @@ inline std::string SizeText(u64 bytes) {
     return text;
 }
 
-inline std::string Upper(std::string text) {
-    for (auto& c : text) {
-        if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
-    }
-    return text;
-}
-
 // The format shown on a cover: that of the game, or of what there is.
 inline std::string FormatOf(const Game& game) {
     const CatalogFile* base = game.Base();
-    if (base) return Upper(base->format);
-    return game.files.empty() ? "" : Upper(game.files.front().format);
+    if (base) return AsciiUpper(base->format);
+    return game.files.empty() ? "" : AsciiUpper(game.files.front().format);
 }
 
 // Library grid layout: the size of the covers is chosen in Options (large, medium, small), so
@@ -112,9 +106,7 @@ inline double Now() {
     return armTicksToNs(armGetSystemTick()) / 1e9;
 }
 
-inline void Panel(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
-    ui::Glass(vg, t, x, y, w, h, r); // glass, with a soft shadow (12A)
-}
+using draw::Panel; // glass, with a soft shadow (12A)
 
 // Text over several lines inside a width.
 inline void TextBox(NVGcontext* vg, float x, float y, float w, float size, NVGcolor color, const char* str) {
@@ -193,15 +185,7 @@ inline std::string WhenText(long long when) {
 }
 
 // The height of text over several lines inside a width.
-inline float TextBoxHeight(NVGcontext* vg, float w, float size, const char* str) {
-    nvgFontFace(vg, "ui");
-    nvgFontSize(vg, size);
-    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgTextLineHeight(vg, 1.3f);
-    float b[4];
-    nvgTextBoxBounds(vg, 0, 0, w, str, nullptr, b);
-    return b[3] - b[1];
-}
+using draw::BoxHeight;
 
 // The title of a packed error (errors.hpp), or the whole line of an older one.
 inline std::string ErrorTitle(const std::string& packed) {
@@ -218,10 +202,10 @@ inline float ErrorCard(NVGcontext* vg, const Theme& t, float x, float y, float w
     float h = pad;
     const float title_y = y + h + 12;
     h += e.title.empty() ? 0 : 34;
-    const float what_h = e.what.empty() ? 0 : TextBoxHeight(vg, iw, 16, e.what.c_str());
+    const float what_h = e.what.empty() ? 0 : BoxHeight(vg, iw, 16, e.what.c_str());
     const float what_y = y + h;
     h += e.what.empty() ? 0 : 18 + what_h + 10;
-    const float todo_h = e.todo.empty() ? 0 : TextBoxHeight(vg, iw, 16, e.todo.c_str());
+    const float todo_h = e.todo.empty() ? 0 : BoxHeight(vg, iw, 16, e.todo.c_str());
     const float todo_y = y + h;
     h += e.todo.empty() ? 0 : 18 + todo_h + 10;
     const float code_y = y + h + 8;
@@ -244,11 +228,11 @@ inline float ErrorCard(NVGcontext* vg, const Theme& t, float x, float y, float w
         nvgRestore(vg);
     }
     if (!e.what.empty()) {
-        ui::Text(vg, x + pad, what_y + 8, 13, t.muted, Upper(m.what_happened).c_str());
+        ui::Text(vg, x + pad, what_y + 8, 13, t.muted, AsciiUpper(m.what_happened).c_str());
         TextBox(vg, x + pad, what_y + 18, iw, 16, t.text, e.what.c_str());
     }
     if (!e.todo.empty()) {
-        ui::Text(vg, x + pad, todo_y + 8, 13, t.muted, Upper(m.what_to_do).c_str());
+        ui::Text(vg, x + pad, todo_y + 8, 13, t.muted, AsciiUpper(m.what_to_do).c_str());
         TextBox(vg, x + pad, todo_y + 18, iw, 16, t.text, e.todo.c_str());
     }
     if (!e.code.empty()) {

@@ -441,7 +441,7 @@ void App::DrawDetail(NVGcontext* vg) {
             ui::StrokeRound(vg, tx, y + 10, tagw, 22, 6, color, 1);
             ui::Text(vg, tx + tagw / 2, y + 21, 12, color, tag, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         }
-        ui::Text(vg, rx + rw - 18, y + 21, 15, t.muted, (Upper(f.format) + " · " + SizeText(f.size)).c_str(),
+        ui::Text(vg, rx + rw - 18, y + 21, 15, t.muted, (AsciiUpper(f.format) + " · " + SizeText(f.size)).c_str(),
                  NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     }
     nvgRestore(vg);

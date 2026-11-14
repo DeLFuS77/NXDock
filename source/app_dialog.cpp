@@ -46,7 +46,7 @@ void App::DrawDialog(NVGcontext* vg) {
             body = s.nand_body;
             for (const auto& j : m_dialog.jobs) {
                 size += j.size;
-                lines.push_back({j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+                lines.push_back({j.label, "", AsciiUpper(j.format) + " · " + SizeText(j.size), t.text});
             }
             primary = s.nand_confirm;
             bar = m_nand_total_bytes > 0 && m_nand_free_bytes >= 0; // unknown: no bar
@@ -142,7 +142,7 @@ void App::DrawDialog(NVGcontext* vg) {
         case DialogKind::Push: {
             for (const auto& j : m_dialog.jobs) {
                 size += j.size;
-                lines.push_back({j.game + " · " + j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+                lines.push_back({j.game + " · " + j.label, "", AsciiUpper(j.format) + " · " + SizeText(j.size), t.text});
             }
             char text[160];
             std::snprintf(text, sizeof(text), s.push_title, int(m_dialog.jobs.size()));
@@ -242,7 +242,7 @@ void App::DrawDialog(NVGcontext* vg) {
             for (const auto& j : m_dialog.jobs) {
                 if (j.reinstall_ok) continue;
                 count++;
-                lines.push_back({j.game + " · " + j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+                lines.push_back({j.game + " · " + j.label, "", AsciiUpper(j.format) + " · " + SizeText(j.size), t.text});
             }
             char text[200];
             std::snprintf(text, sizeof(text), count == 1 ? m.ri_title_one : m.ri_title_fmt, count);
@@ -340,7 +340,7 @@ void App::DrawDialog(NVGcontext* vg) {
             }
             for (int r = first; r < n && r < first + 5; r++) {
                 const InstallJob& j = m_dialog.jobs[size_t(r)];
-                Line l{j.game, m.uh_new, Upper(j.format) + " \xC2\xB7 " + SizeText(j.size), t.text};
+                Line l{j.game, m.uh_new, AsciiUpper(j.format) + " \xC2\xB7 " + SizeText(j.size), t.text};
                 l.focus = r == m_dialog.entry;
                 l.hit = r;
                 l.tick = m_dialog.marks[size_t(r)] ? 1 : 0;
@@ -436,7 +436,7 @@ void App::DrawDialog(NVGcontext* vg) {
                 const CatalogFile& f = g.files[rows[r]];
                 const bool here = f.version == g.installed.patch;
                 Line l{VersionText(f.version), here ? s.installed_tag : "",
-                       Upper(f.format) + " \xC2\xB7 " + SizeText(f.size), t.text};
+                       AsciiUpper(f.format) + " \xC2\xB7 " + SizeText(f.size), t.text};
                 l.focus = r == m_dialog.entry;
                 l.hit = r;
                 lines.push_back(l);
@@ -605,7 +605,7 @@ void App::DrawDialog(NVGcontext* vg) {
             body = s.where_body;
             for (const auto& j : m_dialog.jobs) {
                 size += j.size;
-                lines.push_back({j.label, "", Upper(j.format) + " · " + SizeText(j.size), t.text});
+                lines.push_back({j.label, "", AsciiUpper(j.format) + " · " + SizeText(j.size), t.text});
             }
             primary = s.sd_card;
             break;
@@ -621,7 +621,7 @@ void App::DrawDialog(NVGcontext* vg) {
             }
             const HistoryEntry& e = m_history[m_dialog.entry];
             title = e.game;
-            lines.push_back({e.label + " · " + Upper(e.format), "", e.nand ? s.internal : s.sd_card, t.text});
+            lines.push_back({e.label + " · " + AsciiUpper(e.format), "", e.nand ? s.internal : s.sd_card, t.text});
             lines.push_back({s.col_date, "", WhenText(e.when), t.text});
             lines.push_back({s.col_size, "", SizeText(e.size), t.text});
             if (e.written) lines.push_back({s.col_written, "", SizeText(e.written), t.text});
@@ -676,8 +676,8 @@ void App::DrawDialog(NVGcontext* vg) {
     // rows a finger chooses are 48 px high; the others 40
     const float lp = std::any_of(lines.begin(), lines.end(), [](const Line& l) { return l.hit >= 0; }) ? 48.f : 40.f;
     float h = pad + 40;
-    const float body_h = body.empty() ? 0 : TextBoxHeight(vg, iw, 17, body.c_str()) + 16;
-    const float note_h = note.empty() ? 0 : TextBoxHeight(vg, iw, 15, note.c_str()) + 14;
+    const float body_h = body.empty() ? 0 : BoxHeight(vg, iw, 17, body.c_str()) + 16;
+    const float note_h = note.empty() ? 0 : BoxHeight(vg, iw, 15, note.c_str()) + 14;
     const float list_h = lines.empty() ? 0 : shown * lp + (more ? 30 : 0) + 12 + 16;
     const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
     h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + tick_h + 60 + pad - 8;

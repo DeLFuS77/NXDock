@@ -11,6 +11,7 @@
 //  5. saver mode, and the speed test if wanted;
 //  6. done, and a walk of ten seconds through Library, Queue and Installed.
 #include "app.hpp"
+#include "draw.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -32,18 +33,6 @@ constexpr double kTourStop = 3.3;                  // each tab of the tour, in s
 void Panel(NVGcontext* vg, const Theme& t, float x, float y, float w, float h, float r) {
     ui::FillRound(vg, x, y, w, h, r, t.panel);
     ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, r, t.line, 1);
-}
-
-float TextBox(NVGcontext* vg, float x, float y, float w, float size, NVGcolor color, const char* str) {
-    nvgFontFace(vg, "ui");
-    nvgFontSize(vg, size);
-    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgTextLineHeight(vg, 1.3f);
-    nvgFillColor(vg, color);
-    float b[4];
-    nvgTextBoxBounds(vg, x, y, w, str, nullptr, b);
-    nvgTextBox(vg, x, y, w, str, nullptr);
-    return b[3] - b[1];
 }
 
 // The pictures of the steps, drawn: a sparkle, a link, an SD card, a bell, a moon, a tick.
@@ -473,7 +462,7 @@ void App::DrawWizard(NVGcontext* vg) {
                 ui::StrokeRound(vg, nx, ny, nw, 50, 10, edge, 1.2f);
                 nvgSave(vg);
                 nvgScissor(vg, nx + 8, ny + 4, nw - 16, 42);
-                TextBox(vg, nx + 14, ny + 7, nw - 28, 13, t.muted, TrM().wiz_no_app);
+                draw::Box(vg, nx + 14, ny + 7, nw - 28, 13, t.muted, TrM().wiz_no_app);
                 nvgRestore(vg);
             }
         }
@@ -536,7 +525,7 @@ void App::DrawWizard(NVGcontext* vg) {
     ui::Text(vg, kBodyX + slide, y, 32, t.text, titles[m_wiz_step]);
     nvgRestore(vg);
     y += 30;
-    y += TextBox(vg, kBodyX + slide, y, kBodyW, 17, t.muted, bodies[m_wiz_step]) + 18;
+    y += draw::Box(vg, kBodyX + slide, y, kBodyW, 17, t.muted, bodies[m_wiz_step]) + 18;
     if (m_wiz_step == 1) {
         // connected: to which library, with a tick
         const Config c = m_link.CurrentConfig();
@@ -566,7 +555,7 @@ void App::DrawWizard(NVGcontext* vg) {
                 ui::Text(vg, kBodyX + 18, y + kTileH / 2, 16, t.muted, g.title.c_str());
                 gx = kBodyX + 18 + ui::TextWidth(vg, 16, g.title.c_str()) + 18;
             } else {
-                y += TextBox(vg, kBodyX, y, kBodyW, 15, t.muted, g.title.c_str()) + 10;
+                y += draw::Box(vg, kBodyX, y, kBodyW, 15, t.muted, g.title.c_str()) + 10;
             }
         }
         const bool toggles = !g.items.empty() && (g.items[0].kind == WizKind::Toggle || g.items[0].kind == WizKind::Action);
@@ -621,18 +610,18 @@ void App::DrawWizard(NVGcontext* vg) {
     nvgGlobalAlpha(vg, in);
     if (m_wiz_step == 3) {
         // fixed, only said: what the web sends always asks first
-        y += TextBox(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.muted, s.wiz_push_info) + 8;
+        y += draw::Box(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.muted, s.wiz_push_info) + 8;
     } else if (m_wiz_step == 4) {
         const SpeedTest::View v = m_speed.Snapshot();
         if (!m_link.CurrentConfig().Linked()) {
-            TextBox(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.muted, s.wiz_speed_need);
+            draw::Box(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.muted, s.wiz_speed_need);
         } else if (m_speed.Running()) {
             ui::Progress(vg, t, kBodyX, y + 10, kBodyW, 8, v.progress, t.work, m_time);
         } else if (v.stage == SpeedTest::Stage::Done) {
             char text[200];
             std::snprintf(text, sizeof(text), "%s %.1f MB/s  ·  %s %.1f  ·  %s %.1f  ·  %s %.1f MB/s", s.conn1, v.net[0], s.conn2, v.net[1],
                           s.conn4, v.net[2], s.sd_write, v.sd);
-            TextBox(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.text, text);
+            draw::Box(vg, kBodyX + 4, y + 4, kBodyW - 8, 15, t.text, text);
         } else if (v.stage == SpeedTest::Stage::Failed) {
             CompactError(vg, t, kBodyX + 4, y + 4, kBodyW - 8, v.error, t.err, TrM().sp_todo);
         }
@@ -743,7 +732,7 @@ void App::DrawTour(NVGcontext* vg) {
     nvgGlobalAlpha(vg, float(std::min(1.0, in_stop / 0.2)));
     Panel(vg, t, bx, by, bw, bh, 14);
     ui::StrokeRound(vg, bx + .5f, by + .5f, bw - 1, bh - 1, 14, t.work, 1.5f);
-    TextBox(vg, bx + 20, by + 18, bw - 40, 17, t.text, texts[stop]);
+    draw::Box(vg, bx + 20, by + 18, bw - 40, 17, t.text, texts[stop]);
     ui::Text(vg, bx + 20, by + bh - 22, 14, t.muted, count);
     // how long this stop lasts
     ui::FillRound(vg, bx + 14, by + bh - 6, (bw - 28) * float(std::min(1.0, in_stop / kTourStop)), 3, 1.5f, t.work);

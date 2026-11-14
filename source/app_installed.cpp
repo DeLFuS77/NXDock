@@ -130,7 +130,7 @@ void App::DrawSession(NVGcontext* vg) {
         if (i.state == SessionItem::State::Failed && !i.error.empty()) {
             ui::Text(vg, 134, y + 47, 14, t.err, ErrorTitle(i.error).c_str()); // why it could not be removed
         } else {
-            ui::Text(vg, 134, y + 47, 14, t.muted, (i.label + " · " + Upper(i.format)).c_str());
+            ui::Text(vg, 134, y + 47, 14, t.muted, (i.label + " · " + AsciiUpper(i.format)).c_str());
         }
         nvgRestore(vg);
         ui::Text(vg, 690, y + 33, 16, t.muted, WhereText(i.nand));
@@ -273,7 +273,7 @@ void App::DrawHistory(NVGcontext* vg) {
         if (e.result == HistoryEntry::Result::Failed && !e.error.empty()) {
             ui::Text(vg, c_name, cy + 12, 13, t.err, ErrorTitle(e.error).c_str());
         } else {
-            ui::Text(vg, c_name, cy + 12, 13, t.muted, (e.label + " · " + Upper(e.format)).c_str());
+            ui::Text(vg, c_name, cy + 12, 13, t.muted, (e.label + " · " + AsciiUpper(e.format)).c_str());
         }
         nvgRestore(vg);
         ui::Text(vg, c_where, cy, 15, t.muted, e.nand ? s.internal_short : "SD");

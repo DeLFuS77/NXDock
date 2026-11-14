@@ -10,13 +10,6 @@ using namespace appui;
 
 namespace {
 
-std::string Lower(std::string text) {
-    for (auto& c : text) {
-        if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
-    }
-    return text;
-}
-
 // Where a name goes in the A-Z bar: 0 for what starts with no Latin letter (digits, signs, other
 // scripts), 1-26 for A-Z; an accented Latin letter goes with its letter.
 int LetterSlot(const std::string& name) {
@@ -154,7 +147,7 @@ void App::RebuildView() {
         m_lower_names.resize(m_games.size());
         m_letter_slots.resize(m_games.size());
         for (size_t i = 0; i < m_games.size(); i++) {
-            m_lower_names[i] = Lower(m_games[i].name);
+            m_lower_names[i] = AsciiLower(m_games[i].name);
             m_letter_slots[i] = static_cast<unsigned char>(LetterSlot(m_games[i].name));
         }
         // A-Z once for this list (equal names keep their order, as the stable sorts below did)
@@ -170,7 +163,7 @@ void App::RebuildView() {
     const std::string keep = !m_keep_key.empty() ? m_keep_key : FocusedKey();
     m_keep_key.clear();
     m_view.clear();
-    const std::string search = Lower(m_search);
+    const std::string search = AsciiLower(m_search);
     for (int i = 0; i < int(m_games.size()); i++) {
         const Game& g = m_games[i];
         bool keep = true;

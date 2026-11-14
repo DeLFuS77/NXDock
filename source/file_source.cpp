@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "file_source.hpp"
+#include "ascii.hpp"
 
 #include "defines.hpp"
 #include "fileops.hpp"
@@ -12,11 +13,6 @@
 
 namespace nxdock {
 namespace {
-
-std::string LowerCase(std::string s) {
-    for (auto& c : s) c = char(std::tolower((unsigned char)c));
-    return s;
-}
 
 bool IsDir(const std::string& path, unsigned long long* size = nullptr) {
     struct stat st{};
@@ -111,7 +107,7 @@ Result FileSource::Read(void* buf, s64 off, s64 size, u64* bytes_read) {
 std::string GameFormat(const std::string& name) {
     const auto dot = name.find_last_of('.');
     if (dot == std::string::npos) return {};
-    const std::string ext = LowerCase(name.substr(dot + 1));
+    const std::string ext = AsciiLower(name.substr(dot + 1));
     return ext == "nsp" || ext == "nsz" || ext == "xci" || ext == "xcz" ? ext : std::string{};
 }
 

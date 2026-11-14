@@ -715,7 +715,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
         const size_t scheme = chosen_url.find("://");
         const std::string host = chosen_url.substr(scheme == std::string::npos ? 0 : scheme + 3);
         TextBox(vg, tx, qy + 18, tw, 15, t.muted, s.qr_scan);
-        const float h1 = TextBoxHeight(vg, tw, 15, s.qr_scan);
+        const float h1 = BoxHeight(vg, tw, 15, s.qr_scan);
         nvgSave(vg);
         nvgScissor(vg, tx, qy, tw, qs);
         ui::Text(vg, tx, qy + 18 + h1 + 16, 18, t.text, host.c_str());

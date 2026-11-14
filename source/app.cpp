@@ -79,11 +79,11 @@ float CompactError(NVGcontext* vg, const Theme& t, float x, float y, float w, co
     float h = 0;
     if (!head.empty()) {
         TextBox(vg, x, y, w, 15, color, head.c_str());
-        h += TextBoxHeight(vg, w, 15, head.c_str()) + 2;
+        h += BoxHeight(vg, w, 15, head.c_str()) + 2;
     }
     if (!next.empty()) {
         TextBox(vg, x, y + h, w, 14, t.muted, next.c_str());
-        h += TextBoxHeight(vg, w, 14, next.c_str()) + 2;
+        h += BoxHeight(vg, w, 14, next.c_str()) + 2;
     }
     if (!e.code.empty()) {
         char line[96];

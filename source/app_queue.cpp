@@ -834,7 +834,7 @@ void App::DrawQueue(NVGcontext* vg) {
         const float cx = px + 168;
         nvgSave(vg);
         nvgScissor(vg, cx, py + 16, pw - 168 - 140, 48);
-        const std::string sub = j.label + " · " + Upper(j.format) + " · " + (j.nand ? s.internal : "SD") +
+        const std::string sub = j.label + " · " + AsciiUpper(j.format) + " · " + (j.nand ? s.internal : "SD") +
                                 (live.merging ? std::string(" · ") + TrM().qm_tag : std::string());
         // a long name glides to be read whole; what it is keeps its room after it
         const float room = pw - 168 - 140, sub_w = std::min(ui::TextWidth(vg, 16, sub.c_str()), room * 0.45f);
@@ -1014,7 +1014,7 @@ void App::DrawQueue(NVGcontext* vg) {
         nvgScissor(vg, 122, y, 600, 44);
         ui::Marquee(vg, 122, y + 22, 590, 17, t.text, FileLabel(j).c_str(), m_time);
         nvgRestore(vg);
-        std::string info = Upper(j.format) + " · " + SizeText(j.size) + " · " + (j.nand ? s.internal_short : "SD");
+        std::string info = AsciiUpper(j.format) + " · " + SizeText(j.size) + " · " + (j.nand ? s.internal_short : "SD");
         if (j.state == InstallJob::State::Done) info += " · " + Duration(j.seconds);
         if (j.state == InstallJob::State::Done && j.saved > 0) {
             char saved[64];
