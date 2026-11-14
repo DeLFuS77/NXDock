@@ -591,6 +591,16 @@ void App::CheckBattery() {
 }
 
 // A cover still on its way (as chosen, A): a small blue circle turning at its corner, over the placeholder.
+int App::CoverOf(const Game& g) {
+    const int image = m_covers.Get(g.cover);
+    if (image || !g.installed.base || !g.title_id || !m_covers.Missing(g.cover)) return image;
+    // the library has no cover for it (or not yet one it could fetch): the icon the game has on
+    // the console, rather than only its first letter
+    char path[24];
+    std::snprintf(path, sizeof(path), "ns:%016llX", static_cast<unsigned long long>(g.title_id));
+    return m_covers.Get(path);
+}
+
 void App::CoverLoading(NVGcontext* vg, float x, float y, float size, const std::string& path) {
     if (size < 30 || !m_covers.Loading(path)) return;
     const float r = std::clamp(size * 0.06f, 5.f, 11.f);
@@ -2082,7 +2092,7 @@ void App::DrawTransitions(NVGcontext* vg) {
     nvgFillPaint(vg, nvgBoxGradient(vg, x + 6, y + 12, s - 12, s, 14, 30, nvgRGBAf(0, 0, 0, 0.4f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
     ui::Cover(vg, m_theme, x, y, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10 + 4 * k,
-              m_covers.Get(g.cover));
+              CoverOf(g));
     CoverLoading(vg, x, y, s, g.cover);
 }
 
@@ -3093,7 +3103,7 @@ void App::DrawLibrary(NVGcontext* vg) {
             nvgGlobalAlpha(vg, std::min(1.f, in * 1.25f));
         }
         // no format on the covers: it is in the band of the game in focus (5A)
-        ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, m_covers.Get(g.cover));
+        ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, CoverOf(g));
         CoverLoading(vg, cx, cy, g_cover, g.cover);
         InstalledBadge(vg, g, cx, cy, g_cover);
         nvgRestore(vg);
@@ -3389,7 +3399,7 @@ void App::DrawFocusPanel(NVGcontext* vg, const Game& g, bool pill) {
     nvgRect(vg, cx - 20, cy - 10, cs + 40, cs + 40);
     nvgFillPaint(vg, nvgBoxGradient(vg, cx + 4, cy + 10, cs - 8, cs, 12, 22, nvgRGBAf(0, 0, 0, t.dark ? 0.45f : 0.2f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
-    ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 12, m_covers.Get(g.cover));
+    ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 12, CoverOf(g));
     CoverLoading(vg, cx, cy, cs, g.cover);
     const float ny = cy + cs + 26;
     nvgSave(vg);
@@ -3799,7 +3809,7 @@ void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float
     nvgScale(vg, scale, scale * squash);
     nvgTranslate(vg, -s / 2, -s / 2);
     ui::Focus(vg, t, 0, 0, s, s, 10, m_time);
-    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, m_covers.Get(g.cover));
+    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, CoverOf(g));
     CoverLoading(vg, 0, 0, s, g.cover);
     InstalledBadge(vg, g, 0, 0, s);
     // a light that passes once over it
@@ -3845,11 +3855,11 @@ void App::DrawDetail(NVGcontext* vg) {
         nvgRoundedRect(vg, cx + 4, cy + 14, cs - 8, cs, 14);
         nvgFillPaint(vg, nvgBoxGradient(vg, cx, cy + 14, cs, cs, 14, 30, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
         nvgFill(vg);
-        ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, m_covers.Get(g.cover));
+        ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, CoverOf(g));
         CoverLoading(vg, cx, cy, cs, g.cover);
         // its reflection on the floor, fading away in thin bands (6A)
         const float ry = cy + cs + 10, rh = 120, band = 10;
-        const int image = m_covers.Get(g.cover);
+        const int image = CoverOf(g);
         for (int b = 0; b < int(rh / band); b++) {
             nvgSave(vg);
             nvgIntersectScissor(vg, cx, ry + b * band, cs, band);

@@ -584,6 +584,8 @@ private:
     double m_battery_checked = -100;
     // the WiFi in the top bar (1A): its coverage read every few seconds; a tap or the right stick
     // opens a card with the network, the coverage and the addresses
+    // the image of a game's cover; for one the library has none of, its icon on the console
+    int CoverOf(const Game& g);
     void CoverLoading(NVGcontext* vg, float x, float y, float size, const std::string& path);
     void CheckWifi();
     void DrawWifiCard(NVGcontext* vg);

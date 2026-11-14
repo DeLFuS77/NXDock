@@ -31,6 +31,36 @@ std::string Str(yyjson_val* obj, const char* key) {
     return s ? s : "";
 }
 
+// A name for a game the app sends without one (only its update or DLC, a title titledb does not
+// know): the name of its DLC, or of its file without the tags [ID][vN] and the extension; with
+// nothing else, its title ID. Without it the cover showed only a "?".
+std::string NameFromFiles(const std::vector<CatalogFile>& files, u64 title_id) {
+    const auto trim = [](std::string s) {
+        const auto a = s.find_first_not_of(" 	._-");
+        const auto b = s.find_last_not_of(" 	._-");
+        return a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
+    };
+    for (const auto& f : files) {
+        if (const std::string d = trim(f.dlc_name); !d.empty()) return d;
+    }
+    for (const auto& f : files) {
+        std::string n = f.name;
+        if (const auto dot = n.rfind('.'); dot != std::string::npos && n.size() - dot <= 5) n.erase(dot);
+        std::string out;
+        int depth = 0;
+        for (const char c : n) {
+            if (c == '[') depth++;
+            else if (c == ']' && depth > 0) depth--;
+            else if (depth == 0) out += c;
+        }
+        if (const std::string t = trim(out); !t.empty()) return t;
+    }
+    if (!title_id) return "";
+    char id[20];
+    std::snprintf(id, sizeof(id), "%016llX", static_cast<unsigned long long>(title_id));
+    return id;
+}
+
 // The application a title belongs to: its updates end in 800, its DLC are one block above.
 u64 ApplicationOf(u64 title_id, CatalogFile::Kind kind) {
     switch (kind) {
@@ -143,6 +173,7 @@ bool ParseCatalog(const std::string& json, std::vector<Game>& out) {
                 }
             }
         }
+        if (game.name.find_first_not_of(" 	") == std::string::npos) game.name = NameFromFiles(game.files, game.title_id);
         if (!game.files.empty()) {
             out.push_back(std::move(game));
         }
