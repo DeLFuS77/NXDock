@@ -149,6 +149,13 @@ target_link_libraries(yati PUBLIC ${zstd_lib} ${mbedcrypto_lib})
 add_executable(nxdock
     source/main.cpp
     source/app.cpp
+    source/app_detail.cpp
+    source/app_dialog.cpp
+    source/app_installed.cpp
+    source/app_library.cpp
+    source/app_queue.cpp
+    source/app_settings.cpp
+    source/app_touch.cpp
     source/catalog.cpp
     source/config.cpp
     source/covers.cpp
