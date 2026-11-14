@@ -255,6 +255,16 @@ void CtrAt(const nca::FsHeader& fh, u64 offset, u8 ctr[16]) {
 Result ReadPlain(NcmContentStorage& cs, const NcmContentId& id, const u8 key[16], const nca::FsHeader& fh, u64 offset, u8* out, size_t size,
                  std::vector<u8>& work) {
     const u64 from = offset & ~u64(15);
+    if (from == offset) {
+        // at the start of an AES block (nearly always): read and decrypted where it goes
+        R_TRY(ncmContentStorageReadContentIdFile(&cs, out, size, &id, s64(offset)));
+        u8 ctr[16];
+        CtrAt(fh, offset, ctr);
+        Aes128CtrContext ctx;
+        aes128CtrContextCreate(&ctx, key, ctr);
+        aes128CtrCrypt(&ctx, out, out, size);
+        R_SUCCEED();
+    }
     const size_t n = size_t(offset - from) + size;
     work.resize(n);
     R_TRY(ncmContentStorageReadContentIdFile(&cs, work.data(), n, &id, s64(from)));
@@ -271,9 +281,8 @@ Result ReadPlain(NcmContentStorage& cs, const NcmContentId& id, const u8 key[16]
 // the new content id) and encrypted with the section it is in.
 class Writer {
 public:
-    Writer(NcmContentStorage& cs, const NcmPlaceHolderId& ph) : m_cs(cs), m_ph(ph) {
+    Writer(NcmContentStorage& cs, const NcmPlaceHolderId& ph) : m_cs(cs), m_ph(ph), m_buf(new u8[kChunk]) {
         sha256ContextCreate(&m_sha);
-        m_buf.reserve(kChunk);
     }
     // the bytes from here on are encrypted with this section (null: as they are)
     void Encrypt(const nca::FsHeader* fh, const u8* key) {
@@ -289,14 +298,15 @@ public:
     }
     Result Write(const u8* data, size_t size) {
         while (size) {
-            const size_t n = std::min(size, kChunk - m_buf.size());
-            const size_t at = m_buf.size();
-            m_buf.insert(m_buf.end(), data, data + n);
-            if (m_fh) aes128CtrCrypt(&m_ctx, m_buf.data() + at, m_buf.data() + at, n);
+            const size_t n = std::min(size, kChunk - m_len);
+            // encrypted straight into the buffer, or copied as it is
+            if (m_fh) aes128CtrCrypt(&m_ctx, m_buf.get() + m_len, data, n);
+            else std::memcpy(m_buf.get() + m_len, data, n);
+            m_len += n;
             data += n;
             size -= n;
             m_at += n;
-            if (m_buf.size() == kChunk) R_TRY(Flush());
+            if (m_len == kChunk) R_TRY(Flush());
         }
         R_SUCCEED();
     }
@@ -310,11 +320,11 @@ public:
         R_SUCCEED();
     }
     Result Flush() {
-        if (m_buf.empty()) R_SUCCEED();
-        sha256ContextUpdate(&m_sha, m_buf.data(), m_buf.size());
-        R_TRY(ncmContentStorageWritePlaceHolder(&m_cs, &m_ph, s64(m_written), m_buf.data(), m_buf.size()));
-        m_written += m_buf.size();
-        m_buf.clear();
+        if (!m_len) R_SUCCEED();
+        sha256ContextUpdate(&m_sha, m_buf.get(), m_len);
+        R_TRY(ncmContentStorageWritePlaceHolder(&m_cs, &m_ph, s64(m_written), m_buf.get(), m_len));
+        m_written += m_len;
+        m_len = 0;
         R_SUCCEED();
     }
     u64 At() const { return m_at; }
@@ -325,7 +335,8 @@ private:
     NcmContentStorage& m_cs;
     NcmPlaceHolderId m_ph;
     Sha256Context m_sha{};
-    std::vector<u8> m_buf;
+    std::unique_ptr<u8[]> m_buf; // kChunk bytes, m_len of them in use
+    size_t m_len = 0;
     u64 m_at = 0, m_written = 0;
     const nca::FsHeader* m_fh = nullptr;
     Aes128CtrContext m_ctx{};
