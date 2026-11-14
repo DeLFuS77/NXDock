@@ -95,8 +95,11 @@ void Qr(NVGcontext* vg, float x, float y, float s, const std::string& text);
 // capsule holds the SD card (a little bar of the part in use), the WiFi, the battery and the
 // clock. `sd_used` is the part of the card in use (0..1), -1 when not known. Returns where the
 // capsule starts.
+// Every tab shows its icon and its name (2A); the light of the tab shown slides from `from_tab`
+// as `slide` goes from 0 to 1.
 float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect tabs[6], const char* sd_free,
-            int battery = -1, bool charging = false, int wifi = -2, HitRect* wifi_hit = nullptr, float sd_used = -1);
+            int battery = -1, bool charging = false, int wifi = -2, HitRect* wifi_hit = nullptr, float sd_used = -1,
+            int from_tab = -1, float slide = 1);
 
 // The WiFi as the fan of the HOME menu (1A): three arcs lit by the coverage, blue with signal,
 // amber with one bar, grey and crossed without network. Drawn to the left of `right`; returns

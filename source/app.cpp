@@ -591,6 +591,48 @@ void App::CheckBattery() {
 }
 
 // A cover still on its way (as chosen, A): a small blue circle turning at its corner, over the placeholder.
+float App::GrowFromPlus(NVGcontext* vg, double at, float x, float y, float w, float h) {
+    // the menus of + (1A) grow out of its symbol in the bar below, or the corner of the panel
+    float ox = x + w, oy = y + h;
+    for (const auto& r : m_hint_rects) {
+        if (r.button == HidNpadButton_Plus) {
+            ox = r.x + 16;
+            oy = r.y + r.h / 2;
+        }
+    }
+    const float pop = ui::EaseOutBack(ui::Appear(at, 0.28f));
+    const float scale = 0.55f + 0.45f * pop;
+    nvgTranslate(vg, ox, oy);
+    nvgScale(vg, scale, scale);
+    nvgTranslate(vg, -ox, -oy);
+    const float alpha = std::clamp(pop * 1.4f, 0.f, 1.f);
+    nvgGlobalAlpha(vg, alpha);
+    return alpha;
+}
+
+float App::RowComesIn(NVGcontext* vg, double at, int row, float alpha) {
+    // the rows of a menu come in one after another, from below
+    const float k = ui::EaseOut(ui::Appear(at + 0.06 + 0.025 * row, 0.22f));
+    nvgTranslate(vg, 0, (1 - k) * 14);
+    nvgGlobalAlpha(vg, alpha * k);
+    return alpha * k;
+}
+
+void App::HomeToLeave(NVGcontext* vg) {
+    // + no longer leaves (3A): the HOME button does, said where nothing else can be done
+    ui::Text(vg, kWidth / 2, kHeight - 56 - 26, 15, m_theme.muted, TrM().home_exit, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+}
+
+int App::CoverOf(const Game& g) {
+    const int image = m_covers.Get(g.cover);
+    if (image || !g.installed.base || !g.title_id || !m_covers.Missing(g.cover)) return image;
+    // the library has no cover for it (or not yet one it could fetch): the icon the game has on
+    // the console, rather than only its first letter
+    char path[24];
+    std::snprintf(path, sizeof(path), "ns:%016llX", static_cast<unsigned long long>(g.title_id));
+    return m_covers.Get(path);
+}
+
 void App::CoverLoading(NVGcontext* vg, float x, float y, float size, const std::string& path) {
     if (size < 30 || !m_covers.Loading(path)) return;
     const float r = std::clamp(size * 0.06f, 5.f, 11.f);
@@ -1570,16 +1612,6 @@ void App::Update(u64 down, u64 held) {
         if (down & (HidNpadButton_B | HidNpadButton_A)) m_wifi_open = false;
         return;
     }
-    if (down & HidNpadButton_Plus) {
-        // leaving stops an install (nothing is left half done): asked first, Stay in focus
-        if (m_queue && m_queue->Busy()) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::Quit;
-            return;
-        }
-        m_quit = true;
-        return;
-    }
     if (m_wizard) {
         UpdateWizard(down, held);
         return;
@@ -1926,7 +1958,12 @@ void App::Draw(NVGcontext* vg) {
     }
     const float sd_used = m_sd_total_bytes > 0 && m_sd_free_bytes >= 0 ? 1.f - float(double(m_sd_free_bytes) / double(m_sd_total_bytes)) : -1.f;
     perf::Timer t_top("draw: top bar");
-    const float capsule = ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect, sd_used);
+    // the light of the tab slides from the one before (2A); still, it is there at once
+    const bool changing = m_tab != m_shown_tab;
+    const int from_tab = changing ? int(m_shown_tab) : m_tab_before;
+    const float slide = changing ? 0.f : ui::EaseOut(ui::Appear(m_tab_at, 0.26f));
+    const float capsule = ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect, sd_used,
+                                     from_tab, slide);
     if (m_wifi > -2) m_hits.push_back({m_wifi_rect, HitKind::Wifi, 0});
     if (m_shop_active && m_tab == Tab::Library) {
         // which shop the library shows
@@ -1951,6 +1988,7 @@ void App::Draw(NVGcontext* vg) {
         // slid by a finger, from where the finger left the old one (20A)
         const int from = int(m_shown_tab), to = int(m_tab);
         m_tab_dir = ((to - from + kTabs) % kTabs) <= 2 ? 1.f : -1.f;
+        m_tab_before = from;
         m_shown_tab = m_tab;
         m_tab_at = m_time;
         m_tab_from = m_tab_from_next;
@@ -2082,7 +2120,7 @@ void App::DrawTransitions(NVGcontext* vg) {
     nvgFillPaint(vg, nvgBoxGradient(vg, x + 6, y + 12, s - 12, s, 14, 30, nvgRGBAf(0, 0, 0, 0.4f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
     ui::Cover(vg, m_theme, x, y, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10 + 4 * k,
-              m_covers.Get(g.cover));
+              CoverOf(g));
     CoverLoading(vg, x, y, s, g.cover);
 }
 
@@ -2595,9 +2633,11 @@ void App::UpdateLibrary(u64 down, u64 held) {
     if ((down & HidNpadButton_A) && count > 0) {
         OpenDetail(m_focus);
     }
-    if (down & HidNpadButton_Minus) {
-        // Options (5A): the order and Update all; with updates to install, the focus is on it
+    if (down & HidNpadButton_Plus) {
+        // Options (5A): the order and Update all; with updates to install, the focus is on it.
+        // + opens the menus of every screen (1A); NXDock is left with HOME
         m_menu = true;
+        m_menu_at = m_time;
         m_menu_focus = m_pending_updates == 0 ? m_ui.sort : kSorts + 1;
     }
     if (down & HidNpadButton_Y) {
@@ -2668,7 +2708,7 @@ void App::UpdateMenu(u64 down, u64 held) {
     } else if ((down & HidNpadButton_Minus) && rows > kSorts + 1) {
         // − as its row shows: Update all
         ActivateMenu(kSorts + 1);
-    } else if (down & (HidNpadButton_B | HidNpadButton_Minus)) {
+    } else if (down & (HidNpadButton_B | HidNpadButton_Plus)) {
         m_menu = false;
     }
 }
@@ -2793,12 +2833,16 @@ void App::DrawMenu(NVGcontext* vg) {
     nvgRect(vg, x - 30, y - 20, w + 60, h + 60);
     nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 10, w, h, 16, 36, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
+    nvgSave(vg);
+    const float alpha = GrowFromPlus(vg, m_menu_at, x, y, w, h);
     draw::Popup(vg, t, x, y, w, h, 16);
     AddHit(x, y, w, h, HitKind::Button); // a tap on the panel itself does nothing
     ui::Text(vg, x + 22, y + pad + 17, 14, t.muted, s.options);
     const char* sorts[] = {s.sort_az, s.sort_size, s.sort_missing, s.sort_recent};
     float ry = y + pad + 34;
     for (int i = 0; i < rows; i++) {
+        nvgSave(vg);
+        RowComesIn(vg, m_menu_at, i, alpha);
         if (i == kSorts) {
             nvgBeginPath(vg);
             nvgRect(vg, x + 16, ry + 6, w - 32, 1);
@@ -2836,7 +2880,9 @@ void App::DrawMenu(NVGcontext* vg) {
             ui::Text(vg, x + w - pad - 18, ry + rh / 2, 15, t.muted, std::to_string(updates).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         }
         ry += rh;
+        nvgRestore(vg);
     }
+    nvgRestore(vg);
     std::vector<ui::HitRect> rects;
     std::vector<ui::Hint> hints = {{ui::glyph::A, s.choose, HidNpadButton_A}};
     if (updates) hints.push_back({ui::glyph::Minus, s.update_all, HidNpadButton_Minus});
@@ -2957,8 +3003,9 @@ void App::DrawLibrary(NVGcontext* vg) {
             nvgFillColor(vg, t.muted);
             nvgTextBox(vg, kWidth / 2 - 330, 330, 660, m.lb_empty, nullptr);
             nvgRestore(vg);
-            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, m.lb_reload, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, m.lb_reload, HidNpadButton_X}},
                         m_hint_rects);
+            HomeToLeave(vg);
             return;
         }
         if (state == Catalog::State::Failed) {
@@ -2966,8 +3013,9 @@ void App::DrawLibrary(NVGcontext* vg) {
             const std::string error = m_catalog.Error();
             const float cw = 700, ch = ErrorCard(vg, t, 0, 0, cw, error, false);
             ErrorCard(vg, t, (kWidth - cw) / 2, std::max(96.f, 360 - ch / 2), cw, error, true);
-            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.retry, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.retry, HidNpadButton_X}},
                         m_hint_rects);
+            HomeToLeave(vg);
         } else {
             // the shape of the library while it comes, a light running over it (14A); below, how far
             // a large library is in preparing its catalog the first time
@@ -2980,7 +3028,7 @@ void App::DrawLibrary(NVGcontext* vg) {
                 std::snprintf(line, sizeof(line), "%s", preparing ? TrM().cat_preparing : s.loading_library);
             }
             DrawSkeleton(vg, line, total > 0 ? float(done) / float(total) : 0.f, preparing && total > 0);
-            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.cancel, HidNpadButton_X}, {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+            ui::HintBar(vg, t, where.c_str(), {{ui::glyph::X, s.cancel, HidNpadButton_X}},
                         m_hint_rects);
         }
         return;
@@ -3093,7 +3141,7 @@ void App::DrawLibrary(NVGcontext* vg) {
             nvgGlobalAlpha(vg, std::min(1.f, in * 1.25f));
         }
         // no format on the covers: it is in the band of the game in focus (5A)
-        ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, m_covers.Get(g.cover));
+        ui::Cover(vg, t, cx, cy, g_cover, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, CoverOf(g));
         CoverLoading(vg, cx, cy, g_cover, g.cover);
         InstalledBadge(vg, g, cx, cy, g_cover);
         nvgRestore(vg);
@@ -3211,9 +3259,8 @@ void App::DrawLibrary(NVGcontext* vg) {
     if (updates) {
         m_update_hint += std::string(" · ") + s.update_all + " " + std::to_string(updates);
     }
-    hints.push_back({ui::glyph::Minus, m_update_hint.c_str(), HidNpadButton_Minus});
+    hints.push_back({ui::glyph::Plus, m_update_hint.c_str(), HidNpadButton_Plus});
     if (m_shop_active) hints.push_back({ui::glyph::B, TrM().sh_shops_hint, HidNpadButton_B});
-    else hints.push_back({ui::glyph::Plus, s.exit, HidNpadButton_Plus});
     ui::HintBar(vg, t, status.c_str(), hints, m_hint_rects);
 }
 
@@ -3389,7 +3436,7 @@ void App::DrawFocusPanel(NVGcontext* vg, const Game& g, bool pill) {
     nvgRect(vg, cx - 20, cy - 10, cs + 40, cs + 40);
     nvgFillPaint(vg, nvgBoxGradient(vg, cx + 4, cy + 10, cs - 8, cs, 12, 22, nvgRGBAf(0, 0, 0, t.dark ? 0.45f : 0.2f), nvgRGBAf(0, 0, 0, 0)));
     nvgFill(vg);
-    ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 12, m_covers.Get(g.cover));
+    ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 12, CoverOf(g));
     CoverLoading(vg, cx, cy, cs, g.cover);
     const float ny = cy + cs + 26;
     nvgSave(vg);
@@ -3799,7 +3846,7 @@ void App::DrawLiftedCover(NVGcontext* vg, const Game& g, float x, float y, float
     nvgScale(vg, scale, scale * squash);
     nvgTranslate(vg, -s / 2, -s / 2);
     ui::Focus(vg, t, 0, 0, s, s, 10, m_time);
-    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, m_covers.Get(g.cover));
+    ui::Cover(vg, t, 0, 0, s, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 10, CoverOf(g));
     CoverLoading(vg, 0, 0, s, g.cover);
     InstalledBadge(vg, g, 0, 0, s);
     // a light that passes once over it
@@ -3845,11 +3892,11 @@ void App::DrawDetail(NVGcontext* vg) {
         nvgRoundedRect(vg, cx + 4, cy + 14, cs - 8, cs, 14);
         nvgFillPaint(vg, nvgBoxGradient(vg, cx, cy + 14, cs, cs, 14, 30, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
         nvgFill(vg);
-        ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, m_covers.Get(g.cover));
+        ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(g.key), Initial(g.name).c_str(), nullptr, false, false, 14, CoverOf(g));
         CoverLoading(vg, cx, cy, cs, g.cover);
         // its reflection on the floor, fading away in thin bands (6A)
         const float ry = cy + cs + 10, rh = 120, band = 10;
-        const int image = m_covers.Get(g.cover);
+        const int image = CoverOf(g);
         for (int b = 0; b < int(rh / band); b++) {
             nvgSave(vg);
             nvgIntersectScissor(vg, cx, ry + b * band, cs, band);
@@ -5355,8 +5402,9 @@ void App::DrawNoNetwork(NVGcontext* vg, const char* retry) {
     nvgFillColor(vg, t.muted);
     nvgTextBox(vg, cx - 330, cy + 100, 660, m.wf_none_hint, nullptr);
     nvgRestore(vg);
-    ui::HintBar(vg, t, nullptr, {{ui::glyph::X, retry, HidNpadButton_X}, {ui::glyph::Plus, Tr().exit, HidNpadButton_Plus}},
+    ui::HintBar(vg, t, nullptr, {{ui::glyph::X, retry, HidNpadButton_X}},
                 m_hint_rects);
+    HomeToLeave(vg);
 }
 
 void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
@@ -5375,7 +5423,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     if (v.state == State::Reconnecting) {
         ui::Spinner(vg, kWidth / 2, 330, 20, t.work, m_time);
         ui::Text(vg, kWidth / 2, 384, 20, t.muted, s.reconnecting, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        ui::HintBar(vg, t, nullptr, {{ui::glyph::Plus, s.exit, HidNpadButton_Plus}}, m_hint_rects);
+        ui::HintBar(vg, t, nullptr, {}, m_hint_rects);
         return;
     }
 
@@ -5511,8 +5559,7 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
     ui::HintBar(vg, t, nullptr,
                 {{ui::glyph::A, s.choose, HidNpadButton_A},
                  {ui::glyph::X, code_shown ? s.new_code : s.search_again, HidNpadButton_X},
-                 {ui::glyph::Y, TrM().pr_remember, HidNpadButton_Y},
-                 {ui::glyph::Plus, s.exit, HidNpadButton_Plus}},
+                 {ui::glyph::Y, TrM().pr_remember, HidNpadButton_Y}},
                 m_hint_rects);
 }
 

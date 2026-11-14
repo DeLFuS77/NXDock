@@ -27,6 +27,8 @@ public:
     int Get(const std::string& path);
     // True while a cover is still on its way (not yet fetched, or fetched again after a failure).
     bool Loading(const std::string& path);
+    // True when there is no cover for it: no address, or the library has none.
+    bool Missing(const std::string& path);
     // A small soft picture of a cover (kThumb a side, RGBA), for the light behind the game in focus
     // (1A); false while the cover has not been read.
     static constexpr int kThumb = 24;
@@ -74,6 +76,8 @@ private:
     std::vector<int> m_slots, m_free;
     // covers whose download failed, and when they may be asked again
     std::map<std::string, std::chrono::steady_clock::time_point> m_retry;
+    // how many times the download of each cover has failed
+    std::map<std::string, int> m_failures;
     std::atomic<bool> m_stop{false};
 };
 

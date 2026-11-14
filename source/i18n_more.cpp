@@ -678,6 +678,7 @@ constexpr More kEnglish{
     .qm_install_sd = "Install to the SD card",
     .qm_page = "See its page",
     .pr_done_fmt = "Library up to date · %d games",
+    .home_exit = "To leave NXDock: the HOME button.",
 };
 
 constexpr More kSpanish{
@@ -1349,6 +1350,7 @@ constexpr More kSpanish{
     .qm_install_sd = "Instalar en la tarjeta SD",
     .qm_page = "Ver la ficha",
     .pr_done_fmt = "Biblioteca al día · %d juegos",
+    .home_exit = "Para salir de NXDock: botón HOME.",
 };
 
 constexpr More kFrench{
@@ -2020,6 +2022,7 @@ constexpr More kFrench{
     .qm_install_sd = "Installer sur la carte SD",
     .qm_page = "Voir sa fiche",
     .pr_done_fmt = "Bibliothèque à jour · %d jeux",
+    .home_exit = "Pour quitter NXDock : bouton HOME.",
 };
 
 constexpr More kGerman{
@@ -2691,6 +2694,7 @@ constexpr More kGerman{
     .qm_install_sd = "Auf die SD-Karte installieren",
     .qm_page = "Seite ansehen",
     .pr_done_fmt = "Bibliothek aktuell · %d Spiele",
+    .home_exit = "NXDock verlassen: HOME-Taste.",
 };
 
 constexpr More kItalian{
@@ -3362,6 +3366,7 @@ constexpr More kItalian{
     .qm_install_sd = "Installa sulla scheda SD",
     .qm_page = "Vedi la scheda",
     .pr_done_fmt = "Libreria aggiornata · %d giochi",
+    .home_exit = "Per uscire da NXDock: tasto HOME.",
 };
 
 constexpr More kPortuguese{
@@ -4033,6 +4038,7 @@ constexpr More kPortuguese{
     .qm_install_sd = "Instalar no cartão SD",
     .qm_page = "Ver a ficha",
     .pr_done_fmt = "Biblioteca atualizada · %d jogos",
+    .home_exit = "Para sair do NXDock: botão HOME.",
 };
 
 constexpr More kDutch{
@@ -4704,6 +4710,7 @@ constexpr More kDutch{
     .qm_install_sd = "Op de SD-kaart installeren",
     .qm_page = "Pagina bekijken",
     .pr_done_fmt = "Bibliotheek bijgewerkt · %d games",
+    .home_exit = "NXDock verlaten: HOME-knop.",
 };
 
 constexpr More kRussian{
@@ -5375,6 +5382,7 @@ constexpr More kRussian{
     .qm_install_sd = "Установить на SD-карту",
     .qm_page = "Открыть страницу",
     .pr_done_fmt = "Библиотека обновлена · игр: %d",
+    .home_exit = "Выйти из NXDock: кнопка HOME.",
 };
 
 constexpr More kJapanese{
@@ -6046,6 +6054,7 @@ constexpr More kJapanese{
     .qm_install_sd = "SDカードにインストール",
     .qm_page = "詳細を見る",
     .pr_done_fmt = "ライブラリを更新しました · %d 本",
+    .home_exit = "NXDockを終了するには HOME ボタン。",
 };
 
 constexpr More kKorean{
@@ -6717,6 +6726,7 @@ constexpr More kKorean{
     .qm_install_sd = "SD 카드에 설치",
     .qm_page = "상세 보기",
     .pr_done_fmt = "라이브러리 최신 · 게임 %d개",
+    .home_exit = "NXDock 종료: HOME 버튼.",
 };
 
 constexpr More kChinese{
@@ -7388,6 +7398,7 @@ constexpr More kChinese{
     .qm_install_sd = "安装到 SD 卡",
     .qm_page = "查看详情",
     .pr_done_fmt = "游戏库已更新 · %d 个游戏",
+    .home_exit = "退出 NXDock：HOME 键。",
 };
 
 // In the order of LanguageName in i18n.cpp.

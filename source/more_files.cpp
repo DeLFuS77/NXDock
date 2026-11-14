@@ -271,14 +271,10 @@ void App::DrawFilesMenu(NVGcontext* vg) {
     m_files_menu_focus = std::clamp(m_files_menu_focus, 0, std::max(0, int(rows.size()) - 1));
     // a tap anywhere else closes it
     AddHit(0, 73, kWidth, kHeight - 73 - 56, HitKind::FilesMenuBack);
-    const float h = 52 + float(rows.size()) * kMenuRow + 14, x = kWidth - 24 - kMenuW, y = 84;
-    const float pop = ui::EaseOutBack(ui::Appear(m_list_at, 0.28f));
-    const float alpha = std::min(1.f, pop * 1.4f);
+    // above the bar, growing out of the + that opened it (1A)
+    const float h = 52 + float(rows.size()) * kMenuRow + 14, x = kWidth - 24 - kMenuW, y = std::max(84.f, kHeight - 56 - 12 - h);
     nvgSave(vg);
-    nvgTranslate(vg, x + kMenuW, y);
-    nvgScale(vg, 0.9f + 0.1f * pop, 0.9f + 0.1f * pop);
-    nvgTranslate(vg, -(x + kMenuW), -y);
-    nvgGlobalAlpha(vg, alpha);
+    const float alpha = GrowFromPlus(vg, m_list_at, x, y, kMenuW, h);
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x - 8, y + 6, kMenuW + 16, h + 16, 20);
     nvgFillPaint(vg, nvgBoxGradient(vg, x, y + 10, kMenuW, h, 16, 36, nvgRGBAf(0, 0, 0, 0.45f), nvgRGBAf(0, 0, 0, 0)));
@@ -292,16 +288,18 @@ void App::DrawFilesMenu(NVGcontext* vg) {
     for (size_t i = 0; i < rows.size(); i++) {
         const auto& r = rows[i];
         const float ry = y + 50 + float(i) * kMenuRow, rc = ry + (kMenuRow - 4) / 2;
+        nvgSave(vg);
+        const float ra = RowComesIn(vg, m_list_at, int(i), alpha);
         if (int(i) == m_files_menu_focus) {
             ui::FillRound(vg, x + 8, ry, kMenuW - 16, kMenuRow - 4, 10, t.panel2);
             ui::Focus(vg, t, x + 8, ry, kMenuW - 16, kMenuRow - 4, 10, m_time);
         }
         AddHit(x + 8, ry, kMenuW - 16, kMenuRow, HitKind::FilesMenuRow, r.action);
-        nvgGlobalAlpha(vg, (r.enabled ? 1.f : 0.45f) * alpha);
+        nvgGlobalAlpha(vg, (r.enabled ? 1.f : 0.45f) * ra);
         ActionIcon(vg, r.enabled ? (r.action == kFaDelete ? t.warn : t.work) : t.muted, r.action, x + 24, rc);
         ui::Text(vg, x + 58, rc, 17, r.enabled ? t.text : t.muted, r.label.c_str());
         if (!r.right.empty()) ui::Text(vg, x + kMenuW - 24, rc, 14, t.muted, r.right.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        nvgGlobalAlpha(vg, alpha);
+        nvgRestore(vg);
     }
     nvgRestore(vg);
     std::vector<ui::HitRect> rects;
@@ -314,7 +312,7 @@ void App::UpdateFilesMenu(u64 down, u64 held) {
     const int n = std::max(1, int(rows.size()));
     if (Repeat(down, held, HidNpadButton_AnyUp)) m_files_menu_focus = (m_files_menu_focus + n - 1) % n;
     if (Repeat(down, held, HidNpadButton_AnyDown)) m_files_menu_focus = (m_files_menu_focus + 1) % n;
-    if (down & (HidNpadButton_B | HidNpadButton_Minus)) {
+    if (down & (HidNpadButton_B | HidNpadButton_Plus | HidNpadButton_Minus)) {
         m_files_menu = false;
         return;
     }

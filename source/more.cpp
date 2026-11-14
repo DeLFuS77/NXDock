@@ -271,7 +271,7 @@ void App::DrawTiles(NVGcontext* vg) {
         draw::Box(vg, x + 20, y + 112, kTileW - 40, 14, t.muted, subs[tool]);
         nvgRestore(vg);
     }
-    std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}, {ui::glyph::Plus, Tr().exit, HidNpadButton_Plus}};
+    std::vector<ui::Hint> hints = {{ui::glyph::A, m.open, HidNpadButton_A}};
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
 
@@ -702,7 +702,7 @@ void App::DrawFiles(NVGcontext* vg) {
 
     std::vector<ui::Hint> hints = {{ui::glyph::Y, m.mark, HidNpadButton_Y},
                                    {ui::glyph::ZL, tt.fm_all, HidNpadButton_ZL},
-                                   {ui::glyph::Minus, tt.fm_actions, HidNpadButton_Minus},
+                                   {ui::glyph::Plus, tt.fm_actions, HidNpadButton_Plus},
                                    {ui::glyph::X, m.install_marked, HidNpadButton_X},
                                    {ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR},
                                    {ui::glyph::B, s.back, HidNpadButton_B}};
@@ -754,7 +754,7 @@ void App::UpdateFiles(u64 down, u64 held) {
         for (size_t i = 0; i < m_entries.size(); i++) all = all && (m_entries[i].name == ".." || m_marked[i]);
         for (size_t i = 0; i < m_entries.size(); i++) m_marked[i] = !all && m_entries[i].name != "..";
     }
-    if ((down & HidNpadButton_Minus) && !m_fwork) OpenFilesMenu();
+    if ((down & (HidNpadButton_Plus | HidNpadButton_Minus)) && !m_fwork) OpenFilesMenu(); // + (1A); - as before
     if (down & HidNpadButton_X) InstallMarkedFiles();
     if (down & HidNpadButton_B) {
         // up a folder, then back to the tiles

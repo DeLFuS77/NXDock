@@ -50,6 +50,15 @@ constexpr int kMaxSide = 288;
 constexpr unsigned long kReuseFrames = 4;
 constexpr const char* kCacheDir = "sdmc:/switch/NXDock/covers";
 
+// failed downloads of a cover before it is taken as having none (until NXDock is opened again)
+constexpr int kMaxFailures = 6;
+
+// True when the bytes are a picture stb_image can read, of a size it is drawn at.
+bool Decodes(const std::vector<unsigned char>& bytes) {
+    int w = 0, h = 0, comp = 0;
+    return !bytes.empty() && stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &comp) && w > 0 && h > 0 && w <= 4096 && h <= 4096;
+}
+
 // The file a cover is kept in: its address hashed, so any name of the app is a safe file name.
 // The cover made small (kThumb a side, each pixel the average of the ones it covers) and blurred
 // twice: stretched across the screen it is a soft light of the cover's colours.
@@ -249,6 +258,13 @@ int Covers::Upload(NVGcontext* vg) {
     return done;
 }
 
+bool Covers::Missing(const std::string& path) {
+    if (path.empty()) return true;
+    std::lock_guard lock(m_mutex);
+    const auto it = m_images.find(path);
+    return it != m_images.end() && it->second == 0;
+}
+
 bool Covers::Loading(const std::string& path) {
     if (path.empty()) return false;
     std::lock_guard lock(m_mutex);
@@ -263,6 +279,7 @@ void Covers::Free(NVGcontext* vg) {
     m_asked.clear();
     m_used.clear();
     m_retry.clear();
+    m_failures.clear();
     m_seen.clear();
     m_net.clear();
     m_decoded.clear(); // decoded for the library just left
@@ -300,8 +317,10 @@ bool Covers::Download(const std::string& path, std::vector<unsigned char>& bytes
     // the app may first fetch it from the internet and make it small: time enough for that
     const auto r = http::GetLarge(m_url + path, m_key, 30000, 4 * 1024 * 1024, cancel);
     if (r.status != 200 || r.body.empty()) {
-        // no answer, a busy or failing app: tried again later; a 404 is a game without a cover
-        retry = r.status == 0 || r.status == 429 || r.status >= 500;
+        // no answer, a busy or failing app: tried again later. A 404 is often a game without a
+        // cover, but also one the app could not fetch from the internet just then: tried again a
+        // few times, further apart (Work counts them)
+        retry = r.status == 0 || r.status == 429 || r.status >= 500 || r.status == 404;
         return false;
     }
     bytes.assign(r.body.begin(), r.body.end());
@@ -337,6 +356,12 @@ void Covers::Work(int net) {
         bool retry = false, dropped = false, found = false;
         if (net < 0) {
             found = ReadLocal(path, bytes);
+            if (found && path.rfind("ns:", 0) != 0 && !Decodes(bytes)) {
+                // a file on the card that is not a picture (cut, or an answer that was not one):
+                // thrown away and fetched again, instead of no cover for ever
+                std::remove(CachePath(path).c_str());
+                found = false;
+            }
             if (!found && path.rfind("ns:", 0) != 0) {
                 // not on the card: to the downloads, newest first
                 std::lock_guard lock(m_mutex);
@@ -350,6 +375,10 @@ void Covers::Work(int net) {
             }
         } else {
             found = Download(path, bytes, retry, &m_net_cancel[size_t(net)]);
+            if (found && !Decodes(bytes)) {
+                std::remove(CachePath(path).c_str()); // not kept: it would be no cover on every start
+                found = false;
+            }
             std::lock_guard lock(m_mutex);
             dropped = m_net_cancel[size_t(net)];
             m_net_path[size_t(net)].clear();
@@ -397,10 +426,12 @@ void Covers::Work(int net) {
         if (d.rgba.empty() && dropped) {
             // left the screen while downloading: asked again at once if it comes back
             m_asked.erase(path);
-        } else if (d.rgba.empty() && retry) {
-            // the download failed (often while scrolling fast): asked again when it is on screen again
+        } else if (d.rgba.empty() && retry && ++m_failures[path] <= kMaxFailures) {
+            // the download failed (often while scrolling fast): asked again when it is on screen
+            // again, a little later each time
             m_asked.erase(path);
-            m_retry[path] = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            const int n = m_failures[path];
+            m_retry[path] = std::chrono::steady_clock::now() + std::chrono::seconds(n <= 2 ? 2 : n <= 4 ? 15 : 60);
         } else if (d.rgba.empty()) {
             // no cover: remembered as none, the placeholder stays
             m_images[path] = 0;

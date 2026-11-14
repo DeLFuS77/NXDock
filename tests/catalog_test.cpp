@@ -52,6 +52,20 @@ int main() {
     // a game known only by its update belongs to its application
     Expect(games[1].title_id == 0x0100000000020000ull, "the application of an update");
 
+    // a game the app sends without a name (only its update, not in titledb): named from its file,
+    // not a "?" on its cover
+    std::vector<Game> unnamed;
+    Expect(ParseCatalog(R"({"games":[
+        {"key":"a","name":"","files":[{"id":"u","kind":"update","titleId":"0100000000030800","version":65536,"format":"nsp",
+          "name":"Some Game [0100000000030800][v65536].nsp","url":"/install/f/u/x.nsp"}]},
+        {"key":"b","files":[{"id":"d","kind":"dlc","titleId":"0100000000041001","format":"nsz",
+          "name":"[0100000000041001][v0].nsz","dlcName":"Some Game - Extra","url":"/install/f/d/y.nsz"}]},
+        {"key":"c","name":"  ","files":[{"id":"e","kind":"update","titleId":"0100000000050800","format":"nsp",
+          "name":"[0100000000050800][v0].nsp","url":"/install/f/e/z.nsp"}]}]})", unnamed), "games without a name");
+    Expect(unnamed.size() == 3 && unnamed[0].name == "Some Game", "named from the file of its update");
+    Expect(unnamed.size() == 3 && unnamed[1].name == "Some Game - Extra", "named from its DLC");
+    Expect(unnamed.size() == 3 && unnamed[2].name == "0100000000050000", "with nothing else, its title ID");
+
     Expect(!ParseCatalog("not json", games), "not JSON");
     Expect(!ParseCatalog(R"({"games":3})", games), "no list of games");
 
