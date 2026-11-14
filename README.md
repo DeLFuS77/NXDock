@@ -76,7 +76,8 @@ Sphaira are great choices, and they work side by side with NXDock.
 ![More: the tools; install without the library app, and look after saves, space and the files of the SD card](docs/more.gif)
 
 - **Install without the library app:** from the SD card or a USB disk (FAT32 or exFAT, split files included), from a
-  computer over MTP or over the USB cable with NS-USBloader, or from shops of the kind of Tinfoil and Ownfoil.
+  computer over MTP or over the USB cable with NS-USBloader or DBI's dbibackend, or from shops of the kind of Tinfoil
+  and Ownfoil.
 - **Files:** copy, move, rename, make folders and delete on the SD card and a USB disk, with many files at once. The
   folders of the system are never touched.
 - **MTP** also shows the installed games as NSP, the saves, the Album and a USB disk, read only.

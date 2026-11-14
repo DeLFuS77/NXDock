@@ -27,7 +27,9 @@
 #include "lz4nintendo.h"
 #include "merged_updates.hpp"
 #include "update_over_game.hpp"
+#include "heap_lend.hpp"
 
+#define ZSTD_STATIC_LINKING_ONLY // ZSTD_createDCtx_advanced, for the allocator of heap_lend.hpp
 #include <zstd.h>
 #include <algorithm>
 #include <atomic>
@@ -705,7 +707,10 @@ public:
             m_dctx[m_count] = ZSTD_createDCtx();
             R_UNLESS(m_dctx[m_count], Result_OutOfMemory);
             m_args[m_count] = {this, m_count};
-            if (R_FAILED(utils::CreateThread(&m_threads[m_count], Worker, &m_args[m_count], 1024 * 64, 0x2D, int(i)))) {
+            // NXDock: below the read, decompress and write threads (0x2D), which share these cores:
+            // a block being decompressed never holds them back. 0x3B is also the one priority the
+            // kernel shares out every 10 ms between the threads of a core (libnx thread.h).
+            if (R_FAILED(utils::CreateThread(&m_threads[m_count], Worker, &m_args[m_count], 1024 * 64, 0x3B, int(i)))) {
                 ZSTD_freeDCtx(m_dctx[m_count]);
                 m_dctx[m_count] = nullptr;
                 continue;
@@ -818,7 +823,9 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
     ON_SCOPE_EXIT( t->decompress_running = false; );
 
     // only used for ncz files.
-    auto dctx = ZSTD_createDCtx();
+    // NXDock: the window of a long-window NSZ (up to 128 MiB) may be lent past the heap.
+    auto dctx = ZSTD_createDCtx_advanced(ZSTD_customMem{nxdock::heap::Alloc, nxdock::heap::Free, nullptr});
+    R_UNLESS(dctx, Result_OutOfMemory);
     ON_SCOPE_EXIT(ZSTD_freeDCtx(dctx));
     const auto chunk_size = ZSTD_DStreamOutSize();
     const ncz::Section* ncz_section{};
@@ -1181,6 +1188,8 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                         if (ZSTD_isError(res)) {
                             log_write("[NCZ] ZSTD_decompressStream() pos: %zu size: %zu res: %zd msg: %s\n", input.pos, input.size, res, ZSTD_getErrorName(res));
                         }
+                        // NXDock: no room for the window is said as such, not as a damaged NCZ
+                        R_UNLESS(!ZSTD_isError(res) || ZSTD_getErrorCode(res) != ZSTD_error_memory_allocation, Result_OutOfMemory);
                         R_UNLESS(!ZSTD_isError(res), Result_YatiInvalidNczZstdError);
                         more = output.pos == output.size;
 
@@ -1272,9 +1281,14 @@ Result Yati::writeFuncInternal(ThreadData* t) {
             break;
         }
 
+        // NXDock: ncm flushes the placeholder on every write to the SD card (delay_flush in its
+        // content manager), so a buffer goes in pieces of at least 4 MiB (the inflate buffer it
+        // already has) and not of the 1 MiB an applet reads. File based emuMMC keeps the small
+        // pieces and the pause, which it needs.
+        const s64 chunk = is_file_based_emummc ? t->read_buffer_size : std::max<s64>(t->read_buffer_size, INFLATE_BUFFER_MAX);
         s64 off{};
         while (off < buf.size() && t->write_offset < t->write_size && R_SUCCEEDED(t->GetResults())) {
-            const auto wsize = std::min<s64>(t->read_buffer_size, buf.size() - off);
+            const auto wsize = std::min<s64>(chunk, buf.size() - off);
             R_TRY(ncmContentStorageWritePlaceHolder(std::addressof(cs), std::addressof(t->nca->placeholder_id), t->write_offset, buf.data() + off, wsize));
 
             off += wsize;
@@ -1683,6 +1697,10 @@ Result Yati::InstallCnmtNca(std::span<TikCollection> tickets, CnmtCollection& cn
     ncm::PackagedContentMeta header;
     std::vector<NcmPackagedContentInfo> infos;
     R_TRY(nca::ParseCnmt(path, cnmt.header.program_id, header, cnmt.extended_header, infos));
+
+    // NXDock: since 17.0.0 the cnmt says the console it is for (0 = Switch 1, 1 = Switch 2);
+    // content for Switch 2 is refused before any NCA of it is written.
+    R_UNLESS(header.content_meta_platform == 0, Result_Switch2Content);
 
     for (const auto& packed_info : infos) {
         const auto& info = packed_info.info;

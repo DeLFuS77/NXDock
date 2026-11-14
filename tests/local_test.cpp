@@ -100,6 +100,21 @@ int main(int argc, char** argv) {
     answer[4] = 0;
     CHECK(tinfoil::AnswerLength(answer) == -1);
 
+    // the USB protocol of DBI, as its dbibackend packs it ('<4sIII')
+    const auto ask = tinfoil::DbiHeader(tinfoil::kDbiRequest, tinfoil::kDbiList, 0);
+    CHECK(ask.size() == 16 && std::memcmp(ask.data(), "DBI0", 4) == 0 && ask[4] == 0 && ask[8] == 3 && ask[12] == 0);
+    unsigned char dbi[16] = {'D', 'B', 'I', '0', 1, 0, 0, 0, 3, 0, 0, 0, 0x34, 0x12};
+    CHECK(tinfoil::DbiLength(dbi, tinfoil::kDbiResponse, tinfoil::kDbiList) == 0x1234);
+    CHECK(tinfoil::DbiLength(dbi, tinfoil::kDbiAck, tinfoil::kDbiList) == -1);       // another type
+    CHECK(tinfoil::DbiLength(dbi, tinfoil::kDbiResponse, tinfoil::kDbiFileRange) == -1); // another command
+    CHECK(tinfoil::ListLength(dbi) == -1 && tinfoil::DbiLength(head, tinfoil::kDbiResponse, tinfoil::kDbiList) == -1);
+    const auto range = tinfoil::DbiRange("a.nsp", 0x800000, 0x1122334455ull);
+    CHECK(range.size() == 16 + 5);
+    CHECK(range[0] == 0x00 && range[2] == 0x80);      // the size of the piece (u32)
+    CHECK(range[4] == 0x55 && range[8] == 0x11);      // its offset (u64)
+    CHECK(range[12] == 5);                            // the length of the name (u32)
+    CHECK(std::memcmp(range.data() + 16, "a.nsp", 5) == 0);
+
     // the planner: the largest games first, only as many as needed, never archived ones
     {
         std::vector<InstalledApp> apps(4);

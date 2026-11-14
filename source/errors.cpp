@@ -114,6 +114,7 @@ ErrorText ExplainError(unsigned rc, const ErrorContext& ctx) {
             case NXDockResult::NcaBadMagic:
             case NXDockResult::YatiInvalidNcaMagic: set(m.e_container_t, m.e_container_w, m.e_container_d); break;
             case NXDockResult::GameRunning: set(m.e_running_t, m.e_running_w, m.e_running_d); break;
+            case NXDockResult::Switch2Content: set(m.e_switch2_t, m.e_switch2_w, m.e_switch2_d); break;
             case NXDockResult::UpdateStopsGame: set(m.e_stops_t, m.e_stops_w, m.e_stops_d); break;
             case NXDockResult::UpdateInGame: set(m.e_ingame_t, m.e_ingame_w, m.e_ingame_d); break;
             case NXDockResult::YatiNcmDbCorruptHeader:

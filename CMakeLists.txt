@@ -129,6 +129,7 @@ add_library(yati STATIC
     source/yati/nx/nxdumptool_rsa.c
     source/yati/nx/nxdumptool/save.c
     compat/yati_env.cpp
+    compat/heap_lend.cpp
 )
 target_include_directories(yati PUBLIC include compat)
 target_include_directories(yati PRIVATE include/yati/nx/nxdumptool)

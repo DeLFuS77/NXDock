@@ -1,16 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- In the console: the page of a game checks it and repairs it from the library from its + menu.
-- In the console: Play opens a game from its page; inside another game NXDock asks first, as it closes.
-- In the console: the play time, how many times a game was opened and when it was last played.
-- In the console: + sorts the list by name, size, last played, play time or where it is; the page shows the title ID.
-- In the console: updates and DLC without their game show in the list, with a filter, and their page can install the game.
-- Space › Tickets: every ticket with its game; those without a game can be deleted, saved to the SD card first.
-  Clean leftovers takes personal tickets without a game too, saved the same way.
-- Deleting a game from In the console can also remove its mods and its ticket.
-
 ## 0.9.0-beta.4
 
 These changes have not been tested in depth yet, so some bugs may remain.
@@ -22,6 +11,20 @@ These changes have not been tested in depth yet, so some bugs may remain.
 - The copy of the saves before an update, a repair, a removal or going back now goes to the SD card when no library is
   linked, and takes the console's and BCAT saves too, not only each user's.
 - A restore that fails half way puts the save back as it was.
+- In the console: the page of a game checks it and repairs it from the library from its + menu.
+- In the console: Play opens a game from its page; inside another game NXDock asks first, as it closes.
+- In the console: the play time, how many times a game was opened and when it was last played.
+- In the console: + sorts the list by name, size, last played, play time or where it is; the page shows the title ID.
+- In the console: updates and DLC without their game show in the list, with a filter, and their page can install the game.
+- Space › Tickets: every ticket with its game; those without a game can be deleted, saved to the SD card first.
+  Clean leftovers takes personal tickets without a game too, saved the same way.
+- Deleting a game from In the console can also remove its mods and its ticket.
+- Install over USB from DBI's dbibackend too, besides NS-USBloader: NXDock finds which one is on the computer.
+- NSZ files made with a long window (up to 128 MiB) also install when NXDock is opened from the Album, and lack of
+  memory is shown as such.
+- Content made for Switch 2 is refused before anything of it is installed.
+- Installs write to the SD card in larger pieces when NXDock runs as an applet.
+- The install log notes the memory NXDock has at the start and at the end of each job.
 
 ## 0.9.0-beta.3
 
