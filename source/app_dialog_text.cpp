@@ -573,7 +573,6 @@ App::Fill App::DialogMoreText(DialogContent& dc) {
             dc.title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             dc.error = m_dialog.from;
             break;
-        case DialogKind::CompressIntro:
         case DialogKind::CompressGo:
         case DialogKind::CompressUndo:
         case DialogKind::CompressInfo:

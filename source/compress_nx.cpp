@@ -50,7 +50,6 @@ namespace ns = sphaira::ns;
 constexpr int kLevel = 9;
 constexpr unsigned kThreads = 3;   // the cores a homebrew gets
 constexpr uint32_t kMinGain = 64;  // a block must get this much smaller to be kept compressed
-constexpr uint32_t kSample = 32;   // the analysis reads one block in 32
 // A game Nintendo compressed is packed again when most of its blocks are of its fast level 0;
 // those of its HC levels (5, 16) are as small as LZ4 gets.
 constexpr double kRepackShare = 0.5;
@@ -1597,53 +1596,6 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     return;
 }
 
-// What compressing one content would save, from a sample of its RomFS (`e` gets the state, the
-// share and the bytes). The program of a game, or the data of a DLC.
-void EstimateNca(Storage& s, const keys::Keys& k, const GameContents& g, const std::atomic<bool>& stop, std::vector<u8>& work, GameEstimate& e) {
-    u8 raw[0xC00];
-    nca::Header h;
-    e.state = GameEstimate::State::Unsupported;
-    e.why = GameEstimate::Why::Read;
-    if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) return;
-    bool already = false, sparse = false;
-    const int r = RomfsSection(h, already, sparse);
-    if (r < 0) {
-        e.why = sparse ? GameEstimate::Why::Sparse : GameEstimate::Why::Read;
-        return;
-    }
-    nca::Header copy = h;
-    keys::KeyEntry key;
-    if (R_FAILED(nca::GetDecryptedTitleKey(copy, k, key))) {
-        e.why = GameEstimate::Why::Key;
-        return;
-    }
-    const auto& fh = h.fs_header[r];
-    const u64 base = h.fs_table[r].GetOffset() + DataLevel(fh).logical_offset;
-    const u64 size = DataLevel(fh).hash_data_size;
-    const lz4pack::ReadFn stored = [&](u64 o, u8* b, size_t n) {
-        return !stop && R_SUCCEEDED(ReadPlain(s.cs, g.program, key.key, fh, base + o, b, n, work));
-    };
-    e.why = GameEstimate::Why::None;
-    if (already) {
-        // compressed by Nintendo: packed again when it used its fast level
-        std::vector<lz4pack::Entry> old;
-        u64 old_end = 0;
-        if (!ReadOldTable(s.cs, g.program, key.key, fh, base, old, old_end, work)) {
-            e.why = GameEstimate::Why::Read;
-            return;
-        }
-        if (lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
-            e.state = GameEstimate::State::Already;
-            return;
-        }
-        e.gain = lz4pack::EstimateRepack(old, old_end, kLevel, kSample, stored);
-    } else {
-        e.gain = lz4pack::EstimateGain(size, kLevel, kSample, stored);
-    }
-    e.saved = u64(double(size) * e.gain);
-    e.state = e.gain >= kCompressWorth ? GameEstimate::State::Worth : GameEstimate::State::Low;
-}
-
 // A DLC in a storage: its key and its data content (found by its own ID).
 bool FindAddOn(Storage& s, u64 id, GameContents& g) {
     const auto found = KeysOf(&s.db, NcmContentMetaType_AddOnContent, 0, id, id);
@@ -1787,9 +1739,8 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
         keys::Keys k;
         const bool ready = R_SUCCEEDED(splCryptoInitialize()) && R_SUCCEEDED(keys::parse_keys(k, true)) && R_SUCCEEDED(ncmInitialize());
         if (!ready) log_write("[NXDock] the keys or ncm could not be opened: nothing can be checked\n");
-        std::vector<u8> work;
-        // 1. every game, from the header of its program alone: fast, even with hundreds
-        std::vector<unsigned long long> possible;
+        // every game, from the header of its program alone: fast, even with hundreds. What each
+        // saves is not measured before: it shows when it is compressed
         for (const auto app : apps) {
             if (m_stop || !ready) break;
             GameEstimate e;
@@ -1852,98 +1803,27 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
                     e.merge = true;
                     e.patch = UpdateVersion(app);
                     e.merged = IsMergedGame(app);
-                    possible.push_back(app);
                 } else {
                     e.state = GameEstimate::State::Possible;
                     e.why = GameEstimate::Why::None;
-                    possible.push_back(app);
                 }
                 break;
             }
-            std::lock_guard lock(m_mutex);
-            m_view.games[app] = e;
-            if (e.state != GameEstimate::State::Possible) note(app, e);
-        }
-        {
-            std::lock_guard lock(m_mutex);
-            m_view.measure_total = int(possible.size());
-        }
-        // 2. what those that can be compressed would save, from a sample of their data
-        for (const auto app : possible) {
-            if (m_stop) break;
-            GameEstimate e;
-            {
-                std::lock_guard lock(m_mutex);
-                e = m_view.games[app];
-            }
-            for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
-                Storage s(sid);
-                GameContents g;
-                if (!s.ok || !FindGame(s, app, g)) continue;
-                u8 raw[0xC00];
-                nca::Header h;
-                if (R_FAILED(ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(nca::DecryptHeader(raw, k, h))) break;
-                bool already = false, sparse = false;
-                const int r = RomfsSection(h, already, sparse);
-                if (e.why == GameEstimate::Why::Update) {
-                    // the base and its update read together, a block in kSample
-                    Pair pair;
-                    Opened o;
-                    mergegame::Merger merger;
-                    GameEstimate::Why why{};
-                    if (!FindPair(s, app, pair) || !OpenMerger(s, k, pair, o, merger, why)) {
-                        e.state = GameEstimate::State::Unsupported;
-                        e.why = why == GameEstimate::Why::None ? GameEstimate::Why::Read : why;
-                        break;
-                    }
-                    const double gain = lz4pack::EstimateGain(merger.RomfsSize(), kLevel, kSample, [&](u64 o2, u8* b, size_t n) {
-                        return !m_stop && merger.ReadRomfs(o2, b, n);
-                    });
-                    const double after = double(merger.RomfsSize()) * (1.0 - gain);
-                    e.bytes = pair.before;
-                    e.saved = after < double(pair.before) ? u64(double(pair.before) - after) : 0;
-                    e.gain = pair.before ? double(e.saved) / double(pair.before) : 0;
-                    e.state = e.gain >= kCompressWorth ? GameEstimate::State::Worth : GameEstimate::State::Low;
-                    e.why = GameEstimate::Why::None;
-                    break;
-                }
-                if (r < 0) break;
-                {
-                    // the game alone; `bytes` stays what the program takes now
-                    const u64 bytes = e.bytes;
-                    EstimateNca(s, k, g, m_stop, work, e);
-                    e.bytes = bytes;
-                }
-                break;
-            }
-            // its DLC (4A): measured in the same way, and those worth it go with the game
-            if (e.state == GameEstimate::State::Worth) {
+            if (e.state == GameEstimate::State::Possible) {
+                // its DLC go with it (4A): those NXDock compressed already are left as they are
                 e.dlcs.clear();
-                e.dlc_saved = 0;
-                e.dlc_total = 0;
                 for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
                     Storage s(sid);
                     if (!s.ok) continue;
                     for (const u64 id : AddOnsOf(s, app)) {
-                        if (m_stop) break;
-                        e.dlc_total++;
-                        GameContents g;
-                        if (!FindAddOn(s, id, g)) continue;
-                        GameEstimate d;
-                        EstimateNca(s, k, g, m_stop, work, d);
-                        log_write("[NXDock] DLC %016llX: %llu MB, saves %.0f %%\n", (unsigned long long)id, (unsigned long long)(g.program_size >> 20),
-                                  d.gain * 100);
-                        if (d.state != GameEstimate::State::Worth) continue;
-                        e.dlcs.push_back(id);
-                        e.dlc_saved += d.saved;
-                        e.bytes += u64(g.program_size);
+                        const bool ours = std::any_of(marks.begin(), marks.end(), [id](const CompressedGame& c) { return c.app_id == id; });
+                        if (!ours && std::find(e.dlcs.begin(), e.dlcs.end(), id) == e.dlcs.end()) e.dlcs.push_back(id);
                     }
                 }
-                e.saved += e.dlc_saved;
+                e.dlc_total = int(e.dlcs.size());
             }
             std::lock_guard lock(m_mutex);
             m_view.games[app] = e;
-            m_view.measure_done++;
             note(app, e);
         }
         ncmExit();
@@ -2055,7 +1935,7 @@ bool Compressor::StartCompress(unsigned long long app) {
         m_view.error.clear();
         m_view.saved = 0;
     }
-    // its DLC worth it, from the analysis: compressed after the game (4A)
+    // its DLC, from the check: compressed after the game (4A)
     std::vector<u64> dlcs;
     {
         std::lock_guard lock(m_mutex);

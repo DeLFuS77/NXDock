@@ -315,7 +315,6 @@ void App::DrawSpace(NVGcontext* vg) {
         sub[6] = m.sd_action_sub;
     }
     sub[7] = m.cz_action_sub;
-    right[7] = m.cz_tag;
     // the tickets (6A): how many, and how many without their game
     if (v.scanned && v.tickets_all >= 0) {
         std::snprintf(text, sizeof(text), m.tk_sub_fmt, v.tickets_all, v.leftovers.tickets);

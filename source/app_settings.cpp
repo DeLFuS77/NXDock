@@ -25,7 +25,6 @@ const char* SettingHelp(int row) {
         case kRowDest: return tt.h_dest;
         case kRowPick: return tt.h_pick;
         case kRowScreen: return tt.h_screen;
-        case kRowCompress: return tt.h_compress;
         case kRowSaveCopy: return tt.h_save_copy;
         case kRowSaveAuto: return tt.h_save_auto;
         case kRowFinish: return tt.h_finish;
@@ -262,15 +261,6 @@ void App::ActivateSetting(int row) {
             m_ui.notify_done = !m_ui.notify_done;
             m_ui.Save();
             break;
-        case kRowCompress:
-            // turned on only after its window (24A); off at once
-            if (m_ui.compress_on) {
-                m_ui.compress_on = false;
-                m_ui.Save();
-            } else {
-                OpenDialog(DialogKind::CompressIntro);
-            }
-            break;
         case kRowAnim:
             m_ui.anim = (m_ui.anim + 1) % 3;
             ui::SetMotion(m_ui.anim);
@@ -417,7 +407,6 @@ void App::DrawSettings(NVGcontext* vg) {
         {m.st_dest, m_ui.dest == 2 ? s.wiz_ask_each : s.sd_card, true},
         {m.st_pick, picks[std::clamp(m_ui.pick, 0, 2)], true},
         {m.st_screen, screens[m_ui.screen_off_auto ? 2 : m_ui.saver ? 1 : 0], m_ui.saver || m_ui.screen_off_auto},
-        {m.cz_row, yes(m_ui.compress_on), m_ui.compress_on},
         {m.sc_row, yes(m_ui.save_copy), m_ui.save_copy},
         {TrT().sv_auto_row, save_auto, m_ui.save_auto_days > 0},
         {m.st_finish, yes(m_ui.finish_effect), m_ui.finish_effect},

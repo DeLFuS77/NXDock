@@ -338,6 +338,13 @@ private:
     std::vector<int> CompressRows(const Space::View& v) const;
     void DrawCompress(NVGcontext* vg);
     void UpdateCompress(u64 down, u64 held);
+    // From the menu of + of a game In the console (14/11): the screen of Compress games with that
+    // game in focus and its question open; B goes back to In the console.
+    bool CanCompress(const InstalledApp& a) const;
+    void CompressFromConsole(unsigned long long app);
+    unsigned long long m_compress_ask = 0; // the game whose question opens once it is checked
+    bool m_compress_return = false;        // B goes back to In the console
+    MoreScreen m_compress_back_more = MoreScreen::Tiles;
     void FollowCompress(const Compressor::View& c);
     void CompressDialogText(std::string& title, std::string& body, std::string& note, std::string& primary);
     void ConfirmCompressDialog();
@@ -853,7 +860,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
                             UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
                             Usb3, Usb3Reboot };

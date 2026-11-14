@@ -146,7 +146,7 @@ inline bool AskText(const char* guide, const std::string& initial, bool secret, 
 // menu, connecting by hand.
 enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
-    kRowDest, kRowPick, kRowScreen, kRowCompress,
+    kRowDest, kRowPick, kRowScreen,
     kRowSaveCopy, kRowSaveAuto, // a group of their own (S1 A of 14/11)
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowStyle, kRowSounds, kRowAnim, kRowFocusView, kRowTouchRumble,

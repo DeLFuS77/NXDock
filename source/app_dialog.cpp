@@ -651,7 +651,6 @@ void App::ConfirmDialog() {
         case DialogKind::HomeRemove:
             DoHomeShortcut(m_dialog.kind == DialogKind::HomeRemove);
             break;
-        case DialogKind::CompressIntro:
         case DialogKind::CompressGo:
         case DialogKind::CompressUndo:
         case DialogKind::CompressStopsOriginal:

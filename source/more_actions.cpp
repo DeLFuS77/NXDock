@@ -35,15 +35,15 @@ constexpr float kActW = 470, kActRow = 56;
 // What a row does when it has no button of its own (kButton: as its button)
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
-             kViewTop, kViewClose, kUpdateShop, kUsb3, kSortBase = 100 };
+             kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
 // a card, an arrow, a plus, a funnel, a grid, a spanner, a box half filled, a die, lines wrapped, arrows to
-// the end and to the top.
+// the end and to the top, two arrows that press together (compress).
 enum : int { kIconInstall = 0, kIconList = 1, kIconCross = 5, kIconEdit = 6, kIconInfo = 8, kIconBin = 9, kIconTick = 20, kIconBox,
              kIconPause, kIconPlay, kIconScreen, kIconAgain, kIconShield, kIconCard, kIconOpen, kIconPlus, kIconFunnel, kIconGrid, kIconMods,
-             kIconInvert, kIconDie, kIconWrap, kIconEnd, kIconTop };
+             kIconInvert, kIconDie, kIconWrap, kIconEnd, kIconTop, kIconPress };
 
 void Icon(NVGcontext* vg, NVGcolor c, int icon, float x, float cy) {
     if (icon < 20) {
@@ -161,6 +161,22 @@ void Icon(NVGcontext* vg, NVGcolor c, int icon, float x, float cy) {
             nvgLineTo(vg, x + 16, cy + 6);
             nvgClosePath(vg);
             nvgFill(vg);
+            break;
+        case kIconPress:
+            // two arrows pressing a bar from above and below
+            nvgMoveTo(vg, x + 10, cy - 10);
+            nvgLineTo(vg, x + 10, cy - 3);
+            nvgMoveTo(vg, x + 6, cy - 6.5f);
+            nvgLineTo(vg, x + 10, cy - 2.5f);
+            nvgLineTo(vg, x + 14, cy - 6.5f);
+            nvgMoveTo(vg, x + 10, cy + 10);
+            nvgLineTo(vg, x + 10, cy + 3);
+            nvgMoveTo(vg, x + 6, cy + 6.5f);
+            nvgLineTo(vg, x + 10, cy + 2.5f);
+            nvgLineTo(vg, x + 14, cy + 6.5f);
+            nvgMoveTo(vg, x + 1, cy);
+            nvgLineTo(vg, x + 19, cy);
+            nvgStroke(vg);
             break;
         case kIconDie:
             ui::StrokeRound(vg, x + 1, cy - 9, 18, 18, 4, c, 2.2f);
@@ -290,6 +306,8 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 rows.push_back({kMarkAll, m.ac_mark_all, {}, can > picked, 0, false, kIconTick});
                 rows.push_back({kUnmarkAll, m.ac_unmark, {}, !m_console_picked.empty(), 0, false, kIconBox});
                 rows.push_back({kInvert, m.ac_invert, {}, can > 0, 0, false, kIconInvert}); // 16A
+                // the game in focus, compressed from here (14/11)
+                if (CanCompress(a)) rows.push_back({kCompress, m.cz_menu_row, {}, true, 0, false, kIconPress});
             }
             rows.push_back({kMissing, m_console_missing ? tt.ms_hint_all : tt.ms_hint_filter, {}, true, 0, false, kIconFunnel});
             // those without their game (5C), when there are some
@@ -347,6 +365,7 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 }
                 rows.push_back({kRepair, m.ck_repair, block ? block : std::string{}, !block && bad, 0, false, kIconAgain});
             }
+            if (CanCompress(*found)) rows.push_back({kCompress, m.cz_menu_row, {}, true, 0, false, kIconPress}); // 14/11
             if (orphan) {
                 rows.push_back({kInstallBase, m.og_install, {}, LibraryBase(m_console_app), HidNpadButton_X, false, kIconInstall});
             } else if (LibraryGame(m_console_app)) {
@@ -583,6 +602,16 @@ void App::ActDo(const ActRow& row) {
             break;
         }
         case kRandom: RollRandom(); break; // 21A
+        case kCompress: {
+            // the game in focus of the list, or the one whose page is open
+            unsigned long long app = m_console_app;
+            if (m_act_screen == ActScreen::ConsoleList) {
+                const auto v = ConsoleView(m_space->Snapshot());
+                if (!v.apps.empty()) app = v.apps[size_t(std::clamp(m_console_focus, 0, int(v.apps.size()) - 1))].app_id;
+            }
+            CompressFromConsole(app);
+            break;
+        }
         case kUpdateShop: UpdateFromShop(m_shop_focus); break; // 15A
         case kUsb3: OpenUsb3(); break;                         // USB A
         case kViewWrap:
