@@ -322,7 +322,7 @@ static u64 save_journal_storage_read(journal_storage_ctx_t *ctx, remap_storage_c
     {
         u64 block_num = (in_pos / ctx->block_size);
         u64 block_pos = (in_pos % ctx->block_size);
-        u64 physical_offset = (ctx->map.entries[block_num].physical_index * ctx->block_size + block_pos);
+        u64 physical_offset = ((u64)ctx->map.entries[block_num].physical_index * ctx->block_size + block_pos);
         u64 bytes_to_read = ((ctx->block_size - block_pos) < remaining ? (ctx->block_size - block_pos) : remaining);
 
         u64 read_bytes = save_remap_read(remap, (u8*)buffer + out_pos, ctx->journal_data_offset + physical_offset, bytes_to_read);
@@ -807,7 +807,7 @@ u32 save_allocation_table_storage_read(allocation_table_storage_ctx_t *ctx, void
         }
 
         u32 segment_pos = (u32)(in_pos - ((u64)iterator.virtual_block * ctx->block_size));
-        u64 physical_offset = ((iterator.physical_block * ctx->block_size) + segment_pos);
+        u64 physical_offset = (((u64)iterator.physical_block * ctx->block_size) + segment_pos);
 
         u32 remaining_in_segment = ((iterator.current_segment_size * ctx->block_size) - segment_pos);
         u32 bytes_to_read = (remaining < remaining_in_segment ? remaining : remaining_in_segment);
