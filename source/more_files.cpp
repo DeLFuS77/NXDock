@@ -12,6 +12,7 @@
 #include "i18n.hpp"
 #include "i18n_more.hpp"
 #include "i18n_tools.hpp"
+#include "file_match.hpp"
 #include "usb_disks.hpp"
 
 #include <algorithm>
@@ -139,6 +140,28 @@ void ActionIcon(NVGcontext* vg, NVGcolor c, int action, float x, float cy) {
             nvgLineTo(vg, x + 13.5f, cy + 2.5f);
             nvgStroke(vg);
             break;
+        case 10: // invert the marks: a box half filled
+            ui::StrokeRound(vg, x + 1, cy - 9, 18, 18, 4, c, 2.2f);
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x + 4, cy + 6);
+            nvgLineTo(vg, x + 16, cy - 6);
+            nvgLineTo(vg, x + 16, cy + 6);
+            nvgClosePath(vg);
+            nvgFill(vg);
+            break;
+        case 11: // update from here: an arrow up out of a tray
+            nvgBeginPath(vg);
+            nvgMoveTo(vg, x + 10, cy + 5);
+            nvgLineTo(vg, x + 10, cy - 9);
+            nvgMoveTo(vg, x + 4, cy - 3);
+            nvgLineTo(vg, x + 10, cy - 9);
+            nvgLineTo(vg, x + 16, cy - 3);
+            nvgMoveTo(vg, x + 2, cy + 3);
+            nvgLineTo(vg, x + 2, cy + 10);
+            nvgLineTo(vg, x + 18, cy + 10);
+            nvgLineTo(vg, x + 18, cy + 3);
+            nvgStroke(vg);
+            break;
         case 8: // properties
             nvgBeginPath(vg);
             nvgCircle(vg, x + 10, cy, 9);
@@ -252,6 +275,9 @@ std::vector<App::FilesRow> App::FilesMenuRows() {
         rows.push_back({kFaInstall, tt.fm_install_inside, text, true});
     }
     rows.push_back({kFaView, m_files_all ? tt.fm_show_games : tt.fm_show_all, {}, true});
+    // the marks the other way (16A), and the updates of the games installed found here (15A)
+    rows.push_back({kFaInvert, TrM().ac_invert, {}, std::any_of(m_entries.begin(), m_entries.end(), [](const LocalEntry& e) { return e.name != ".."; })});
+    rows.push_back({kFaUpdateHere, TrM().uh_row, {}, true});
     rows.push_back({kFaCopy, tt.fm_copy, chosen.empty() ? tt.fw_none : "", !chosen.empty()});
     rows.push_back({kFaCut, tt.fm_cut, chosen.empty() ? tt.fw_none : locked ? tt.fw_system : "", !chosen.empty() && !locked});
     rows.push_back({kFaPaste, tt.fm_paste, m_clip.empty() ? tt.fw_clip : !writable ? tt.fw_here : "", !m_clip.empty() && writable});
@@ -271,8 +297,9 @@ void App::DrawFilesMenu(NVGcontext* vg) {
     m_files_menu_focus = std::clamp(m_files_menu_focus, 0, std::max(0, int(rows.size()) - 1));
     // a tap anywhere else closes it
     AddHit(0, 73, kWidth, kHeight - 73 - 56, HitKind::FilesMenuBack);
-    // above the bar, growing out of the + that opened it (1A)
-    const float h = 52 + float(rows.size()) * kMenuRow + 14, x = kWidth - 24 - kMenuW, y = std::max(84.f, kHeight - 56 - 12 - h);
+    // above the bar, growing out of the + that opened it (1A); with many rows they are a little lower
+    const float pitch = std::clamp((kHeight - 56 - 12 - 76 - 66) / float(std::max<size_t>(1, rows.size())), 42.f, kMenuRow);
+    const float h = 52 + float(rows.size()) * pitch + 14, x = kWidth - 24 - kMenuW, y = std::max(76.f, kHeight - 56 - 12 - h);
     nvgSave(vg);
     const float alpha = GrowFromPlus(vg, m_list_at, x, y, kMenuW, h);
     nvgBeginPath(vg);
@@ -287,14 +314,14 @@ void App::DrawFilesMenu(NVGcontext* vg) {
     ui::Text(vg, x + 22, y + 28, 15, t.muted, head);
     for (size_t i = 0; i < rows.size(); i++) {
         const auto& r = rows[i];
-        const float ry = y + 50 + float(i) * kMenuRow, rc = ry + (kMenuRow - 4) / 2;
+        const float ry = y + 50 + float(i) * pitch, rc = ry + (pitch - 4) / 2;
         nvgSave(vg);
         const float ra = RowComesIn(vg, m_list_at, int(i), alpha);
         if (int(i) == m_files_menu_focus) {
-            ui::FillRound(vg, x + 8, ry, kMenuW - 16, kMenuRow - 4, 10, t.panel2);
-            ui::Focus(vg, t, x + 8, ry, kMenuW - 16, kMenuRow - 4, 10, m_time);
+            ui::FillRound(vg, x + 8, ry, kMenuW - 16, pitch - 4, 10, t.panel2);
+            ui::Focus(vg, t, x + 8, ry, kMenuW - 16, pitch - 4, 10, m_time);
         }
-        AddHit(x + 8, ry, kMenuW - 16, kMenuRow, HitKind::FilesMenuRow, r.action);
+        AddHit(x + 8, ry, kMenuW - 16, pitch, HitKind::FilesMenuRow, r.action);
         nvgGlobalAlpha(vg, (r.enabled ? 1.f : 0.45f) * ra);
         ActionIcon(vg, r.enabled ? (r.action == kFaDelete ? t.warn : t.work) : t.muted, r.action, x + 24, rc);
         ui::Text(vg, x + 58, rc, 17, r.enabled ? t.text : t.muted, r.label.c_str());
@@ -397,6 +424,20 @@ void App::FilesDo(int action) {
         case kFaForget:
             m_clip.clear();
             m_files_menu = false;
+            break;
+        case kFaInvert: {
+            std::vector<char> can(m_entries.size(), 0);
+            for (size_t i = 0; i < m_entries.size(); i++) can[i] = m_entries[i].name != "..";
+            m_marked.resize(m_entries.size(), 0);
+            char text[160];
+            std::snprintf(text, sizeof(text), TrM().ac_inverted_fmt, InvertMarks(m_marked, can));
+            m_files_menu = false;
+            Notice(text);
+            break;
+        }
+        case kFaUpdateHere:
+            m_files_menu = false;
+            UpdateFromFolder(m_folder);
             break;
         case kFaPaste: {
             m_files_menu = false;

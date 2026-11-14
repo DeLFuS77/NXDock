@@ -24,6 +24,11 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # In the console: the orders, the play time in words, without the game, the folders of mods
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/console_order_test tests/console_order_test.cpp source/console_order.cpp
   /tmp/console_order_test /tmp
+  # the explorer next to the console, the updates of a folder, the marks the other way, the text viewer
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/file_match_test tests/file_match_test.cpp source/file_match.cpp source/console_order.cpp
+  /tmp/file_match_test
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/text_view_test tests/text_view_test.cpp source/text_view.cpp
+  /tmp/text_view_test /tmp
   # what titledb knows of updates and DLC, for the games not in the library
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/versions_test tests/versions_test.cpp source/versions_list.cpp -lpthread
   /tmp/versions_test

@@ -20,6 +20,7 @@
 #include "usb_tinfoil.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace nxdock {
@@ -33,6 +34,15 @@ constexpr float kTileGap = 18, kTileW = (kWidth - 96 - (kCols - 1) * kTileGap) /
 constexpr float kSideW = 250;
 constexpr float kRowTop = 134, kRowPitch = 50, kRowsBottom = 576;
 constexpr int kVisibleRows = int((kRowsBottom - kRowTop) / kRowPitch);
+// The game card (14A of groups 3 and 4): while one is in, a fifth tile of the first row, tool 9.
+constexpr int kCardTool = 9;
+int TileCount(bool card) { return kTiles + (card ? 1 : 0); }
+int FirstRow(bool card) { return kFirstRow + (card ? 1 : 0); }
+int ToolAt(int place, bool card) {
+    if (card && place == kFirstRow) return kCardTool;
+    if (card && place > kFirstRow) place--;
+    return kOrder[std::clamp(place, 0, kTiles - 1)];
+}
 
 // A small padlock: what NXDock never deletes, renames or moves.
 void Padlock(NVGcontext* vg, float x, float cy, NVGcolor c) {
@@ -42,6 +52,13 @@ void Padlock(NVGcontext* vg, float x, float cy, NVGcolor c) {
     nvgStrokeWidth(vg, 1.8f);
     nvgStroke(vg);
     ui::FillRound(vg, x + 1, cy - 2, 10, 8, 2, c);
+}
+
+std::string LowerExt(const std::string& name) {
+    const auto dot = name.find_last_of('.');
+    std::string ext = dot == std::string::npos ? std::string{} : name.substr(dot + 1);
+    for (auto& c : ext) c = char(std::tolower((unsigned char)c));
+    return ext;
 }
 
 std::string BaseName(const std::string& path) {
@@ -56,7 +73,8 @@ std::string BaseName(const std::string& path) {
 void App::OpenMoreTile(int place) {
     const auto& s = Tr();
     m_tile = place;
-    switch (kOrder[std::clamp(place, 0, kTiles - 1)]) {
+    switch (ToolAt(place, m_card.ok)) {
+        case kCardTool: OpenCard(); break;
         case 0: OpenMoreScreen(MoreScreen::Files); break;
         case 1: OpenMoreScreen(MoreScreen::Mtp); break;
         case 2: OpenMoreScreen(MoreScreen::Usb); break;
@@ -160,6 +178,8 @@ void App::DrawMore(NVGcontext* vg) {
         case MoreScreen::Space: DrawSpace(vg); break;
         case MoreScreen::Shops: DrawShops(vg); break;
         case MoreScreen::Mods: DrawMods(vg); break;
+        case MoreScreen::Card: DrawCard(vg); break;
+        case MoreScreen::Viewer: DrawViewer(vg); break;
         default: DrawTiles(vg); break;
     }
 }
@@ -174,6 +194,8 @@ void App::UpdateMore(u64 down, u64 held) {
         case MoreScreen::Space: UpdateSpace(down, held); break;
         case MoreScreen::Shops: UpdateShops(down, held); break;
         case MoreScreen::Mods: UpdateMods(down, held); break;
+        case MoreScreen::Card: UpdateCard(down, held); break;
+        case MoreScreen::Viewer: UpdateViewer(down, held); break;
         default: m_more = MoreScreen::Tiles; break;
     }
 }
@@ -181,19 +203,26 @@ void App::UpdateMore(u64 down, u64 held) {
 void App::DrawTiles(NVGcontext* vg) {
     const Theme& t = m_theme;
     const More& m = TrM();
-    const char* titles[kTiles] = {m.t_files, m.t_mtp, m.t_usb, m.t_shops, m.t_saves, m.t_space, m.t_mods, m.t_screen, m.t_dumps};
-    const char* subs[kTiles] = {m.t_files_sub, m.t_mtp_sub, m.t_usb_sub, m.t_shops_sub, m.t_saves_sub, m.t_space_sub, m.t_mods_sub, m.t_screen_sub, m.t_dumps_sub};
-    m_tile = std::clamp(m_tile, 0, kTiles - 1);
-    m_tile_lift.resize(kTiles, 0.f);
-    for (int i = 0; i < kTiles; i++) {
-        const int row = i < kFirstRow ? 0 : 1, col = i < kFirstRow ? i : i - kFirstRow;
-        const int tool = kOrder[i];
+    // the game card in: its name and its size under its tile (14A)
+    const std::string card_sub = m_card.ok ? m_card.name + " \xC2\xB7 " + draw::Size(m_card.Bytes()) : std::string{};
+    const char* titles[kTiles + 1] = {m.t_files, m.t_mtp, m.t_usb, m.t_shops, m.t_saves, m.t_space, m.t_mods, m.t_screen, m.t_dumps, m.gc_tile};
+    const char* subs[kTiles + 1] = {m.t_files_sub, m.t_mtp_sub, m.t_usb_sub, m.t_shops_sub, m.t_saves_sub, m.t_space_sub, m.t_mods_sub, m.t_screen_sub, m.t_dumps_sub,
+                                    card_sub.c_str()};
+    const bool card = m_card.ok;
+    const int tiles = TileCount(card), first_row = FirstRow(card);
+    m_tile = std::clamp(m_tile, 0, tiles - 1);
+    m_tile_lift.resize(size_t(tiles), 0.f);
+    for (int i = 0; i < tiles; i++) {
+        const int row = i < first_row ? 0 : 1, col = i < first_row ? i : i - first_row;
+        const int tool = ToolAt(i, card);
         const float y0 = 100 + row * (kTileH + 64);
         if (col == 0) draw::Section(vg, t, 50, y0, row == 0 ? m.sect_noserver : m.sect_console);
         const float x = 48 + col * (kTileW + kTileGap), y = y0 + 20;
         AddHit(x, y, kTileW, kTileH, HitKind::MoreTile, i);
-        // in one after another with a little bounce (2A); the one in focus lifted and leaning
-        const float in = ui::EaseOutBack(ui::Appear(m_more_at + 0.05 * i, 0.45f));
+        // in one after another with a little bounce (2A); the one in focus lifted and leaning; the
+        // game card comes in when it is put in
+        const double since = tool == kCardTool ? std::max(m_more_at + 0.05 * i, m_card_at) : m_more_at + 0.05 * i;
+        const float in = ui::EaseOutBack(ui::Appear(since, 0.45f));
         float& lift = m_tile_lift[size_t(i)];
         const float want = i == m_tile ? 1.f : 0.f;
         lift = ui::Still() ? want : lift + (want - lift) * 0.25f;
@@ -204,7 +233,7 @@ void App::DrawTiles(NVGcontext* vg) {
         const float sc = (0.94f + 0.06f * in) * (1 + 0.03f * lift);
         nvgScale(vg, sc, sc);
         nvgTranslate(vg, -cx, -cy);
-        nvgGlobalAlpha(vg, std::min(1.f, ui::Appear(m_more_at + 0.05 * i, 0.3f) * 1.2f));
+        nvgGlobalAlpha(vg, std::min(1.f, ui::Appear(since, 0.3f) * 1.2f));
         draw::Panel(vg, t, x, y, kTileW, kTileH, 16);
         // a touch of the colour of its group from the top (13A)
         const NVGcolor group = row == 0 ? Hex(0x2a8fe0) : Hex(0x6a4ae0);
@@ -236,6 +265,17 @@ void App::DrawTiles(NVGcontext* vg) {
                 nvgFill(vg);
                 nvgRestore(vg);
             }
+        }
+        if (tool == kCardTool) {
+            // the game card: its cover with a card on it and "inserted", not a picture in a bubble
+            DrawCardTile(vg, x + 20, y + 18, 52, 52);
+            nvgSave(vg);
+            nvgIntersectScissor(vg, x + 12, y, kTileW - 24, kTileH);
+            ui::Title(vg, x + 20, y + 94, 19, t.text, titles[tool]);
+            nvgRestore(vg);
+            draw::Box(vg, x + 20, y + 112, kTileW - 40, 14, t.muted, subs[tool]);
+            nvgRestore(vg);
+            continue;
         }
         // its picture in white in a bubble of the colour of its group: blue to install without the
         // library, violet for the console (13A); never red
@@ -417,13 +457,15 @@ void App::DrawTileIcon(NVGcontext* vg, int tile, float x, float cy, const NVGcol
 }
 
 void App::UpdateTiles(u64 down, u64 held) {
-    // four in the first row, five in the second
-    const bool second = m_tile >= kFirstRow;
-    const int col = second ? m_tile - kFirstRow : m_tile;
+    // four in the first row (five with the game card), five in the second
+    const int tiles = TileCount(m_card.ok), first_row = FirstRow(m_card.ok);
+    m_tile = std::clamp(m_tile, 0, tiles - 1);
+    const bool second = m_tile >= first_row;
+    const int col = second ? m_tile - first_row : m_tile;
     if (Repeat(down, held, HidNpadButton_AnyLeft) && col > 0) m_tile--;
-    if (Repeat(down, held, HidNpadButton_AnyRight) && col < (second ? kTiles - kFirstRow : kFirstRow) - 1) m_tile++;
-    if (Repeat(down, held, HidNpadButton_AnyUp) && second) m_tile = std::min(col, kFirstRow - 1);
-    if (Repeat(down, held, HidNpadButton_AnyDown) && !second) m_tile = kFirstRow + col;
+    if (Repeat(down, held, HidNpadButton_AnyRight) && col < (second ? tiles - first_row : first_row) - 1) m_tile++;
+    if (Repeat(down, held, HidNpadButton_AnyUp) && second) m_tile = std::min(col, first_row - 1);
+    if (Repeat(down, held, HidNpadButton_AnyDown) && !second) m_tile = std::min(first_row + col, tiles - 1);
     if (down & HidNpadButton_A) OpenMoreTile(m_tile);
 }
 
@@ -539,6 +581,7 @@ void App::DrawFiles(NVGcontext* vg) {
     const More& m = TrM();
     FollowPlaces();
     CheckSdSpace();
+    FollowConsoleHas(); // what the console has, for the tags of the files (13A)
 
     // the places on the left
     nvgBeginPath(vg);
@@ -604,22 +647,48 @@ void App::DrawFiles(NVGcontext* vg) {
     }
     nvgSave(vg);
     nvgScissor(vg, lx, 86, vx - lx - 12, 30);
-    ui::Text(vg, lx + 4, 104, 15, t.muted, m_folder.c_str());
+    const float path_end = ui::Text(vg, lx + 4, 104, 15, t.muted, m_folder.c_str());
     nvgRestore(vg);
+    {
+        // while the console is read, said in blue after the path; it fades once the tags are there
+        const float a = m_has_ready ? 1 - ui::Appear(m_has_at + 0.4, 0.4f) : 1.f;
+        const bool games = std::any_of(m_entries.begin(), m_entries.end(), [](const LocalEntry& e) { return !e.dir && !e.format.empty(); });
+        if (a > 0 && games) {
+            nvgGlobalAlpha(vg, a);
+            nvgSave(vg);
+            nvgScissor(vg, lx, 86, vx - lx - 12, 30);
+            ui::Text(vg, std::min(path_end + 16, vx - 12 - ui::TextWidth(vg, 13, m.fs_comparing)), 104, 13, t.work, m.fs_comparing);
+            nvgRestore(vg);
+            nvgGlobalAlpha(vg, 1.f);
+        }
+    }
     if (m_entries.empty()) {
         ui::Text(vg, lx + lw / 2, 300, 18, t.muted, m.empty_folder, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
+    // what is marked, for where it goes and the SD card without room (12A)
+    int count = 0;
+    unsigned long long bytes = 0;
+    for (size_t i = 0; i < m_entries.size(); i++) {
+        if (m_marked[i]) {
+            count++;
+            bytes += m_entries[i].size;
+        }
+    }
+    if (NoRoomAppears(1, bytes, m_files_nand)) m_files_noroom = true;
+    const bool noroom = NoRoomShown(bytes, m_files_nand);
+    if (!noroom) m_files_noroom = false;
+    const int visible = noroom ? kVisibleRows - 1 : kVisibleRows;
     m_file_focus = std::clamp(m_file_focus, 0, std::max(0, int(m_entries.size()) - 1));
     if (m_file_focus < m_file_first) m_file_first = m_file_focus;
-    if (m_file_focus >= m_file_first + kVisibleRows) m_file_first = m_file_focus - kVisibleRows + 1;
+    if (m_file_focus >= m_file_first + visible) m_file_first = m_file_focus - visible + 1;
     if (!m_entries.empty()) {
         // the focus glides from row to row (3A)
         const float fy = m_glide_list.Step(kRowTop + (m_file_focus - m_file_first) * kRowPitch);
         ui::FillRound(vg, lx, fy, lw, 44, 10, t.panel2);
-        if (!m_files_side) ui::Focus(vg, t, lx, fy, lw, 44, 10, m_time);
+        if (!m_files_side && !m_files_noroom) ui::Focus(vg, t, lx, fy, lw, 44, 10, m_time);
     }
-    ListArea(lx, kRowTop, lw, kVisibleRows * kRowPitch, kRowPitch);
-    for (int r = 0; r < kVisibleRows && m_file_first + r < int(m_entries.size()); r++) {
+    ListArea(lx, kRowTop, lw, visible * kRowPitch, kRowPitch);
+    for (int r = 0; r < visible && m_file_first + r < int(m_entries.size()); r++) {
         const int i = m_file_first + r;
         const auto& e = m_entries[i];
         const float y = kRowTop + r * kRowPitch, cy = y + 22;
@@ -645,24 +714,69 @@ void App::DrawFiles(NVGcontext* vg) {
         u64 tid = 0;
         u32 tver = 0;
         const bool titled = !e.dir && TitleFromName(e.name, tid, tver);
+        // next to what the console has (13A): installed and older dimmed, new for a game in green;
+        // the tags come one after another once the console has been read
+        const FileMatch match = titled && m_has_ready && !e.format.empty() ? MatchFile(m_has, tid, tver) : FileMatch{};
+        const float tag_in = match.state == FileState::Unknown ? 0.f : ui::Appear(m_has_at + 0.08 * r, 0.35f);
+        const bool dim = match.state == FileState::Installed || match.state == FileState::Older;
+        const int kind = titled ? TitleKind(tid) : 0;
+        char state_text[120] = "";
+        const char* state_label = nullptr;
+        NVGcolor state_col = t.muted;
+        bool state_tick = false;
+        if (tag_in > 0) {
+            state_label = state_text;
+            if (match.state == FileState::Installed) {
+                std::snprintf(state_text, sizeof(state_text), m.fs_installed_fmt, std::to_string(kind == 0 ? match.running : match.installed).c_str());
+                state_tick = true;
+            } else if (match.state == FileState::Older) {
+                std::snprintf(state_text, sizeof(state_text), m.fs_older_fmt, std::to_string(match.installed).c_str());
+            } else {
+                state_label = kind == 2 ? m.fs_dlc : m.fs_update;
+                state_col = t.ok;
+            }
+        }
+        const char* kind_tag = kind == 0 ? m.game_word : kind == 1 ? m.ic_update_word : m.ic_dlc_word;
+        const float kind_w = titled ? ui::TextWidth(vg, 12, kind_tag) + 14 : 0, kind_x = lx + lw - 170 - kind_w;
+        const float state_w = state_label ? ui::TextWidth(vg, 12, state_label) + (state_tick ? 34 : 18) : 0;
+        const float state_max = kind_x - 10 - state_w;
+        const float name_right = std::min(lx + lw - (titled ? 340 : 220), state_label ? state_max - 8 : 1e9f);
+        if (dim) nvgGlobalAlpha(vg, in * (1 - 0.45f * tag_in));
         nvgSave(vg);
-        nvgScissor(vg, lx + 90, y, lw - 90 - (titled ? 340 : 220), 44);
+        nvgScissor(vg, lx + 90, y, std::max(40.f, name_right - lx - 90), 44);
         const float nx = ui::Text(vg, lx + 90, cy, 16, e.dir || !e.format.empty() ? t.text : t.muted, name.c_str());
         nvgRestore(vg);
         if (e.name != "..") {
             const auto guard = fileops::GuardOf(e.path);
             if (guard == fileops::Guard::System || guard == fileops::Guard::Self) {
-                Padlock(vg, std::min(nx + 10, lx + lw - (titled ? 340 : 220)), cy, t.muted);
+                Padlock(vg, std::min(nx + 10, name_right), cy, t.muted);
             }
         }
         if (titled) {
             // what it is, as the numbers alone do not say it
-            const int kind = TitleKind(tid);
-            const char* tag = kind == 0 ? m.game_word : kind == 1 ? m.ic_update_word : m.ic_dlc_word;
             const NVGcolor col = kind == 0 ? t.work : kind == 1 ? t.cyan : t.violet;
-            const float tw = ui::TextWidth(vg, 12, tag) + 14, tx = lx + lw - 170 - tw;
-            ui::StrokeRound(vg, tx, cy - 9, tw, 18, 9, col, 1.f);
-            ui::Text(vg, tx + tw / 2, cy, 12, col, tag, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            ui::StrokeRound(vg, kind_x, cy - 9, kind_w, 18, 9, col, 1.f);
+            ui::Text(vg, kind_x + kind_w / 2, cy, 12, col, kind_tag, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+        if (state_label) {
+            const float px = std::max(std::min(nx + 12, state_max), lx + 90);
+            const float pop = ui::EaseOutBack(tag_in);
+            nvgSave(vg);
+            nvgGlobalAlpha(vg, in * std::min(1.f, tag_in * 1.5f));
+            nvgTranslate(vg, px, cy);
+            nvgScale(vg, 0.7f + 0.3f * pop, 0.7f + 0.3f * pop);
+            nvgTranslate(vg, -px, -cy);
+            NVGcolor bg = state_col;
+            bg.a = match.state == FileState::ForGame ? 0.2f : 0.16f;
+            ui::FillRound(vg, px, cy - 11, state_w, 22, 11, t.panel2);
+            ui::FillRound(vg, px, cy - 11, state_w, 22, 11, bg);
+            float sx = px + 9;
+            if (state_tick) {
+                ui::CheckMark(vg, sx + 5, cy, 10, state_col, 2.f);
+                sx += 16;
+            }
+            ui::Text(vg, sx, cy, 12, state_col, state_label);
+            nvgRestore(vg);
         }
         if (!e.dir) {
             std::string fmt = e.format;
@@ -678,17 +792,9 @@ void App::DrawFiles(NVGcontext* vg) {
         nvgRestore(vg);
     }
 
-    // what is marked, where it goes, and what is left after
-    int count = 0;
-    unsigned long long bytes = 0;
-    for (size_t i = 0; i < m_entries.size(); i++) {
-        if (m_marked[i]) {
-            count++;
-            bytes += m_entries[i].size;
-        }
-    }
     // what is marked, and where it goes in large: the SD card unless chosen for this install
     const float sy = 586, sh = 64;
+    if (noroom) DrawNoRoom(vg, lx, sy - 58, lw, bytes, m_files_noroom && !m_files_side, 1);
     char text[200];
     std::snprintf(text, sizeof(text), m.marked_short_fmt, count, draw::Size(bytes).c_str());
     const float mw = std::max({190.f, ui::TextWidth(vg, 16, text) + 40, ui::TextWidth(vg, 13, tt.fa_switch) + 98});
@@ -729,6 +835,24 @@ void App::UpdateFiles(u64 down, u64 held) {
         if (down & HidNpadButton_B) LeaveMoreScreen();
         return;
     }
+    // the button of the SD card without room (12A), under the list
+    unsigned long long bytes = 0;
+    for (size_t i = 0; i < m_entries.size() && i < m_marked.size(); i++) {
+        if (m_marked[i]) bytes += m_entries[i].size;
+    }
+    const bool noroom = NoRoomShown(bytes, m_files_nand);
+    if (!noroom) m_files_noroom = false;
+    if (m_files_noroom) {
+        if (down & HidNpadButton_A) {
+            UseNandOnce(1);
+            return;
+        }
+        if (Repeat(down, held, HidNpadButton_AnyUp)) m_files_noroom = false;
+        down &= ~u64(HidNpadButton_A | HidNpadButton_AnyUp | HidNpadButton_AnyDown);
+    } else if (noroom && m_file_focus >= int(m_entries.size()) - 1 && Repeat(down, held, HidNpadButton_AnyDown)) {
+        m_files_noroom = true;
+        down &= ~u64(HidNpadButton_AnyDown);
+    }
     const int before = m_file_focus;
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_file_focus > 0) m_file_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_file_focus < int(m_entries.size()) - 1) m_file_focus++;
@@ -740,6 +864,12 @@ void App::UpdateFiles(u64 down, u64 held) {
         if (e.dir && (down & HidNpadButton_A)) {
             const bool to_root = e.name == ".." && std::find(m_place_roots.begin(), m_place_roots.end(), e.path) != m_place_roots.end();
             OpenFolder(e.path, to_root);
+        } else if (!e.dir && (down & HidNpadButton_A) && IsTextName(e.name)) {
+            OpenViewer(e); // read only (20A)
+            return;
+        } else if (!e.dir && (down & HidNpadButton_A) && LowerExt(e.name) == "nro") {
+            AskOpenNro(e); // after a question: NXDock closes (22A)
+            return;
         } else if (e.name != "..") {
             m_marked[m_file_focus] = !m_marked[m_file_focus];
             if (down & HidNpadButton_Y) {

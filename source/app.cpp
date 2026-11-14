@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 #include "app.hpp"
+#include "file_match.hpp"
 #include "perf.hpp"
 
 #include "draw.hpp"
@@ -555,8 +556,11 @@ void App::Exit() {
     // what arrives from the computer stops first, so a job reading it ends
     MtpStop();
     UsbLink().Cancel();
-    // a job running is cancelled and cleaned up before the network goes
+    // a job running is cancelled and cleaned up before the network goes; leaving for another app
+    // (22A), what was installing and waiting is written down to go on the next time
+    const auto kept = m_keep_queue && m_queue ? m_queue->Jobs() : std::vector<InstallJob>{};
     m_queue.reset();
+    if (!kept.empty()) KeepForLater(kept);
     UsbLink().Stop();
     UsbDisksStop();
     m_push.reset();
@@ -1035,6 +1039,9 @@ void App::FollowPreflight() {
     AddJobs(std::move(jobs));
 }
 
+// What the internal memory keeps free besides an install.
+constexpr u64 kNandMargin = 64ull * 1024 * 1024;
+
 void App::DestCards(NVGcontext* vg, float x, float y, float w, float h, bool nand, unsigned long long need, HitKind kind) {
     const Theme& t = m_theme;
     const auto& s = Tr();
@@ -1083,6 +1090,90 @@ void App::DestCards(NVGcontext* vg, float x, float y, float w, float h, bool nan
         nvgStrokeColor(vg, on ? t.work : t.muted);
         nvgStrokeWidth(vg, on ? 6.f : 2.f);
         nvgStroke(vg);
+    }
+}
+
+// ---- the SD card without room (12A of the visual test of groups 3 and 4) ----
+
+bool App::NoRoomShown(unsigned long long need, bool nand) const {
+    // the SD card stays the default: the line only says it, and offers the internal memory once
+    return !nand && need > 0 && m_sd_free_bytes >= 0 && need > u64(m_sd_free_bytes);
+}
+
+bool App::NoRoomAppears(int screen, unsigned long long need, bool nand) {
+    std::string& key = m_noroom_key[std::clamp(screen, 0, 2)];
+    if (!NoRoomShown(need, nand)) {
+        key.clear();
+        return false;
+    }
+    const std::string now = std::to_string(need);
+    if (key == now) return false;
+    const bool first = key.empty();
+    key = now;
+    if (first) m_noroom_at[std::clamp(screen, 0, 2)] = m_time;
+    return true;
+}
+
+float App::DrawNoRoom(NVGcontext* vg, float x, float y, float w, unsigned long long need, bool focused, int screen) {
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    const float k = ui::EaseOutBack(ui::Appear(m_noroom_at[std::clamp(screen, 0, 2)], 0.4f));
+    const float h = 52;
+    const u64 free_sd = m_sd_free_bytes > 0 ? u64(m_sd_free_bytes) : 0;
+    const bool fits = m_nand_free_bytes >= 0 && need + kNandMargin <= u64(m_nand_free_bytes);
+    char line[200], ask[200];
+    std::snprintf(line, sizeof(line), m.nr_missing_fmt, SizeText(need > free_sd ? need - free_sd : 0).c_str());
+    if (fits) std::snprintf(ask, sizeof(ask), m.nr_ask_fmt, SizeText(u64(m_nand_free_bytes)).c_str());
+    else std::snprintf(ask, sizeof(ask), "%s", m.nr_neither);
+    nvgSave(vg);
+    // it opens down from under the cards
+    nvgIntersectScissor(vg, x - 8, y - 4, w + 16, (h + 8) * std::clamp(k, 0.f, 1.05f));
+    nvgGlobalAlpha(vg, std::clamp(ui::Appear(m_noroom_at[std::clamp(screen, 0, 2)], 0.25f), 0.f, 1.f));
+    NVGcolor fill = t.orange;
+    fill.a = 0.12f;
+    ui::FillRound(vg, x, y, w, h, 12, t.panel);
+    ui::FillRound(vg, x, y, w, h, 12, fill);
+    NVGcolor edge = t.orange;
+    edge.a = 0.6f;
+    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, 12, edge, 1.2f);
+    // a warning triangle, in orange
+    const float wx = x + 24, wy = y + h / 2;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, wx, wy - 10);
+    nvgLineTo(vg, wx + 11, wy + 9);
+    nvgLineTo(vg, wx - 11, wy + 9);
+    nvgClosePath(vg);
+    nvgFillColor(vg, t.orange);
+    nvgFill(vg);
+    ui::Text(vg, wx, wy + 2, 13, t.panel, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    float right = x + w - 8;
+    if (fits) {
+        const float bw = ui::TextWidth(vg, 16, m.nr_use) + 40, bx = right - bw;
+        if (focused) ui::Focus(vg, t, bx, y + 6, bw, h - 12, 10, m_time);
+        ui::FillRound(vg, bx, y + 6, bw, h - 12, 10, t.work);
+        ui::Text(vg, bx + bw / 2, y + h / 2, 16, t.on_work, m.nr_use, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        AddHit(bx, y - 2, bw, h + 4, HitKind::NoRoomUse, screen);
+        right = bx - 12;
+    }
+    nvgSave(vg);
+    nvgIntersectScissor(vg, x + 44, y, std::max(40.f, right - x - 44), h);
+    ui::Text(vg, x + 46, y + 17, 15, t.orange, line);
+    ui::Text(vg, x + 46, y + 36, 13, t.muted, ask);
+    nvgRestore(vg);
+    nvgRestore(vg);
+    return h;
+}
+
+void App::UseNandOnce(int screen) {
+    // the internal memory for this install only; the next one goes to the SD card again
+    if (screen == 0) {
+        m_to_nand = true;
+        m_dest_touched = true;
+    } else if (screen == 1) {
+        m_files_nand = true;
+        m_files_noroom = false;
+    } else {
+        m_card_nand = true;
     }
 }
 
@@ -1367,6 +1458,8 @@ bool App::Tap(float x, float y, u64& down) {
             case HitKind::FilesDest:
                 m_files_nand = it->index == 1;
                 break;
+            case HitKind::NoRoomUse: UseNandOnce(it->index); break; // 12A
+
             case HitKind::QueueRow:
                 if (m_queue_focus == it->index) {
                     down |= HidNpadButton_A;
@@ -1463,6 +1556,17 @@ bool App::Tap(float x, float y, u64& down) {
                 m_console_focus = 0;
                 m_console_list_at = m_time;
                 break;
+            case HitKind::CardRow:
+                // a content of the game card (14A): a second tap ticks it
+                if (m_card_focus == it->index) down |= HidNpadButton_A;
+                else m_card_focus = it->index;
+                break;
+            case HitKind::CardInstall:
+                m_card_focus = it->index;
+                down |= HidNpadButton_A;
+                break;
+            case HitKind::CardDest: m_card_nand = it->index == 1; break;
+            case HitKind::ViewerArea: break; // the text viewer: a finger drags it, a tap does nothing
             case HitKind::TicketRow:
                 if (m_ticket_focus == it->index) {
                     down |= HidNpadButton_Y;
@@ -1608,6 +1712,11 @@ bool App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::DialogBack: down |= HidNpadButton_B; break; // as B: each question answers its own way
             case HitKind::DialogLine:
+                if (m_dialog.kind == DialogKind::UpdateHere) {
+                    m_dialog.entry = it->index;
+                    if (it->index >= 0 && it->index < int(m_dialog.marks.size())) m_dialog.marks[size_t(it->index)] ^= 1;
+                    break;
+                }
                 if (m_dialog.entry == it->index) {
                     m_dialog.focus = 1;
                     down |= HidNpadButton_A;
@@ -1635,6 +1744,7 @@ void App::Update(u64 down, u64 held) {
         if (m_time - m_launch_at > 0.8) m_quit = true;
         return;
     }
+    if (m_dice_at > 0) return; // the dice roll (21A), a moment
     if (m_dialog.kind != DialogKind::None) {
         UpdateDialog(down, held);
         return;
@@ -1822,6 +1932,9 @@ bool App::Frame() {
     GridSize(m_ui.library_size, m_ui.focus_view == 1);
     { perf::Timer t_("frame: Update"); Update(down, held); }
     { perf::Timer t_("frame: FollowPreflight"); FollowPreflight(); }
+    // the game card coming and going (14A), the updates looked for in a folder or a shop (15A)
+    FollowCard();
+    FollowUpdateHere();
     if (m_tab != m_tab_seen) {
         // the Library again: what the console has now, also what DBI or the HOME menu changed
         if (m_tab_seen == Tab::Shops) LeaveShopsTab();
@@ -2117,9 +2230,10 @@ void App::Draw(NVGcontext* vg) {
     if (m_act && CurrentActScreen() == ActParent(m_act_screen)) {
         DrawActions(vg);
     }
-    if (m_dialog.kind != DialogKind::None) {
+    if (m_dialog.kind != DialogKind::None && m_dice_at < 0) {
         DrawDialog(vg);
     }
+    DrawDice(vg); // a game at random (21A): the question waits for the dice
     if (m_time < m_notice_until && !m_notice.empty()) {
         // a short notice above the hint bar
         const float mark = m_notice_ok ? 28.f : 0.f; // something done: a green tick before it
@@ -2994,8 +3108,29 @@ void App::UpdateDetail(u64 down, u64 held) {
         if (g.files[i].kind != CatalogFile::Kind::Update || &g.files[i] == newest) rows.push_back(i);
     }
     const int count = int(rows.size()) + 1;
-    if (Repeat(down, held, HidNpadButton_AnyUp) && m_detail_focus > 0) m_detail_focus--;
-    if (Repeat(down, held, HidNpadButton_AnyDown) && m_detail_focus < count - 1) m_detail_focus++;
+    // the button of the SD card without room (12A) sits between the rows and Install
+    u64 picked = 0;
+    for (size_t i = 0; i < g.files.size() && i < m_detail_pick.size(); i++) {
+        if (m_detail_pick[i]) picked += g.files[i].size;
+    }
+    const bool noroom = NoRoomShown(picked, m_to_nand);
+    const int use = int(rows.size()) + 1;
+    if (m_detail_focus == use && !noroom) m_detail_focus = int(rows.size());
+    if (Repeat(down, held, HidNpadButton_AnyUp)) {
+        if (m_detail_focus == use) m_detail_focus = std::max(0, int(rows.size()) - 1);
+        else if (m_detail_focus == int(rows.size()) && noroom) m_detail_focus = use;
+        else if (m_detail_focus > 0) m_detail_focus--;
+    }
+    if (Repeat(down, held, HidNpadButton_AnyDown)) {
+        if (m_detail_focus == use) m_detail_focus = int(rows.size());
+        else if (m_detail_focus == int(rows.size()) - 1 && noroom) m_detail_focus = use;
+        else if (m_detail_focus < count - 1) m_detail_focus++;
+    }
+    if ((down & HidNpadButton_A) && m_detail_focus == use) {
+        UseNandOnce(0);
+        m_detail_focus = int(rows.size()); // then Install, which says where
+        return;
+    }
     if (down & (HidNpadButton_ZL | HidNpadButton_ZR)) {
         // the SD card or the internal memory, for this install only (it asks before going there)
         m_to_nand = !m_to_nand;
@@ -4041,8 +4176,13 @@ void App::DrawDetail(NVGcontext* vg) {
     }
     float ly = fy + 76;
     const float lh = 46;
+    // the SD card without room (12A): a line under the cards, its button in focus when it appears
+    if (NoRoomAppears(0, picked_size, m_to_nand)) m_detail_focus = int(rows.size()) + 1;
+    const bool noroom = NoRoomShown(picked_size, m_to_nand);
+    if (!noroom && m_detail_focus > int(rows.size())) m_detail_focus = int(rows.size());
+    const float strip = noroom ? 60.f : 0.f;
     // room below for where it goes (two large cards) and Install
-    const float list_h = std::min({float(rows.size()) * lh + 12, 250.f, std::max(2 * lh + 12, 664 - 14 - 52 - 18 - 64 - 16 - ly)});
+    const float list_h = std::min({float(rows.size()) * lh + 12, 250.f, std::max(2 * lh + 12, 664 - 14 - 52 - 18 - 64 - 16 - strip - ly)});
     enter(2);
     ui::Glass(vg, t, rx, ly, rw, list_h, 12);
     ListArea(rx, ly, rw, list_h, lh);
@@ -4107,7 +4247,8 @@ void App::DrawDetail(NVGcontext* vg) {
     enter(3);
     DestCards(vg, rx, cards_y, rw, 64, m_to_nand, picked_size, HitKind::Dest);
     nvgRestore(vg);
-    const float dy = cards_y + 64 + 18;
+    if (noroom) DrawNoRoom(vg, rx, cards_y + 64 + 8, rw, picked_size, m_detail_focus == int(rows.size()) + 1, 0);
+    const float dy = cards_y + 64 + 18 + strip;
     char install[160];
     std::snprintf(install, sizeof(install), m_to_nand ? TrM().dc_install_nand_fmt : TrM().dc_install_sd_fmt, SizeText(picked_size).c_str());
     const float bw = ui::TextWidth(vg, 20, install) + 64, bx = kWidth - 48 - bw;
@@ -4595,25 +4736,12 @@ void App::FollowPush() {
 }
 
 bool TitleFromName(const std::string& name, u64& id, u32& version) {
-    id = 0;
-    version = 0;
-    for (size_t at = name.find('['); at != std::string::npos; at = name.find('[', at + 1)) {
-        if (at + 18 > name.size() || name[at + 17] != ']' || name[at + 1] != '0') continue;
-        u64 v = 0;
-        bool hex = true;
-        for (size_t i = at + 1; i < at + 17 && hex; i++) {
-            const char c = name[i];
-            const int d = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
-            if (d < 0) hex = false;
-            v = v << 4 | u64(d < 0 ? 0 : d);
-        }
-        if (!hex) continue;
-        id = v;
-        const size_t vat = name.find("[v", at + 18);
-        if (vat != std::string::npos) version = u32(std::strtoul(name.c_str() + vat + 2, nullptr, 10));
-        return true;
-    }
-    return false;
+    unsigned long long tid = 0;
+    unsigned v = 0;
+    const bool found = ParseTitleName(name, tid, v);
+    id = tid;
+    version = v;
+    return found;
 }
 
 int TitleKind(u64 id) {
@@ -5683,7 +5811,6 @@ void App::DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h) {
 namespace {
 
 // Room an install to the internal memory needs over its size, as the install core asks.
-constexpr u64 kNandMargin = 64ull * 1024 * 1024;
 
 bool Undoable(const SessionItem& item) {
     return item.state == SessionItem::State::Installed || item.state == SessionItem::State::Failed;
@@ -6083,6 +6210,7 @@ void App::DrawDialog(NVGcontext* vg) {
         int mark = 0; // 1: fine, 2: a warning (the check before installing)
         bool focus = false; // the row in focus (the versions of a game, 20A)
         int hit = -1;       // a row that answers to touch
+        int tick = -1;      // a box to tick before it: 0 off, 1 on (15A of groups 3 and 4)
     };
     std::string title, body, note, primary, error;
     std::vector<Line> lines;
@@ -6357,6 +6485,87 @@ void App::DrawDialog(NVGcontext* vg) {
             primary = m.pl_play;
             break;
         }
+        case DialogKind::UpdateHere: {
+            // the updates and DLC of a folder or a shop for the games installed (15A)
+            const More& m = TrM();
+            char text[300];
+            if (m_here_waiting) {
+                title = m.uh_row;
+                body = m_here_where + "\n" + m.uh_looking;
+                verify_bar = verify_running = true;
+                verify_text = m.fs_comparing;
+                can = false;
+                break;
+            }
+            const int n = int(m_dialog.jobs.size());
+            if (n == 0) {
+                title = m.uh_row;
+                body = m_dialog.text + "\n" + m.uh_none;
+            } else {
+                std::snprintf(text, sizeof(text), m.uh_found_fmt, n);
+                title = text;
+                body = m_dialog.text;
+            }
+            if (m_dialog.size > 0) {
+                std::snprintf(text, sizeof(text), m.uh_left_fmt, int(m_dialog.size));
+                body += std::string("\n") + text;
+            }
+            m_dialog.marks.resize(size_t(n), 1);
+            m_dialog.entry = std::clamp(m_dialog.entry, 0, std::max(0, n - 1));
+            // a window of five around the focus, each with its box
+            const int first = std::clamp(m_dialog.entry - 2, 0, std::max(0, n - 5));
+            int marked = 0;
+            for (int i = 0; i < n; i++) {
+                if (!m_dialog.marks[size_t(i)]) continue;
+                marked++;
+                size += m_dialog.jobs[size_t(i)].size;
+            }
+            for (int r = first; r < n && r < first + 5; r++) {
+                const InstallJob& j = m_dialog.jobs[size_t(r)];
+                Line l{j.game, m.uh_new, Upper(j.format) + " \xC2\xB7 " + SizeText(j.size), t.text};
+                l.focus = r == m_dialog.entry;
+                l.hit = r;
+                l.tick = m_dialog.marks[size_t(r)] ? 1 : 0;
+                lines.push_back(l);
+            }
+            std::snprintf(text, sizeof(text), m.uh_add_fmt, marked, SizeText(size).c_str());
+            primary = text;
+            can = marked > 0;
+            break;
+        }
+        case DialogKind::PlayRandom: {
+            // a game at random (21A): its name, how much it was played, and another one on Y
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.rg_title_fmt, m_dialog.text.c_str());
+            title = text;
+            body = m_dialog.from;
+            primary = m.pl_play;
+            break;
+        }
+        case DialogKind::OpenNro: {
+            // a .nro of the explorer (22A): NXDock closes; what the queue has stops, and can go on
+            const More& m = TrM();
+            char text[300];
+            std::snprintf(text, sizeof(text), m.pl_title_fmt, m_nro_name.c_str());
+            title = text;
+            body = m.nro_close;
+            const auto jobs = m_queue ? m_queue->Jobs() : std::vector<InstallJob>{};
+            int pending = 0, lost = 0;
+            for (const auto& j : jobs) {
+                if (j.state != InstallJob::State::Waiting && j.state != InstallJob::State::Running) continue;
+                pending++;
+                lost += !j.resumable;
+            }
+            if (pending) {
+                std::snprintf(text, sizeof(text), m.nro_queue_fmt, pending);
+                lines.push_back({text, "", "", t.orange, 2});
+                if (pending > lost) lines.push_back({m.nro_go_on, "", "", t.text});
+                if (lost) lines.push_back({m.nro_lost, "", "", t.text});
+            }
+            primary = m.open;
+            break;
+        }
         case DialogKind::TicketsDelete: {
             const More& m = TrM();
             char text[200];
@@ -6443,7 +6652,7 @@ void App::DrawDialog(NVGcontext* vg) {
         }
         case DialogKind::Resume: {
             const More& m = TrM();
-            title = m.rs_title;
+            title = m_resume && KeptForLater(*m_resume) ? m.rs_left_title : m.rs_title;
             if (m_resume) {
                 const auto& f = m_resume->job.fields;
                 const auto get = [&f](const char* k) {
@@ -6455,7 +6664,7 @@ void App::DrawDialog(NVGcontext* vg) {
                 const int parts = ResumeChecked(*m_resume, &bytes);
                 char text[300];
                 std::snprintf(text, sizeof(text), m.rs_parts_fmt, parts, SizeText(u64(bytes)).c_str());
-                body += std::string("\n") + text;
+                if (parts > 0) body += std::string("\n") + text;
                 if (!m_resume->waiting.empty()) {
                     std::snprintf(text, sizeof(text), m.rs_waiting_fmt, int(m_resume->waiting.size()));
                     body += std::string("\n") + text;
@@ -6719,6 +6928,10 @@ void App::DrawDialog(NVGcontext* vg) {
                 }
                 tx += 30;
             }
+            if (l.tick >= 0) {
+                draw::TickBox(vg, t, tx, ly, l.tick > 0, "dialog-tick:" + std::to_string(l.hit));
+                tx += 36;
+            }
             nvgSave(vg);
             nvgScissor(vg, tx, ly - lp / 2, iw - 32 - rw - 140, lp);
             tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, l.text.c_str());
@@ -6865,6 +7078,7 @@ void App::DrawDialog(NVGcontext* vg) {
         // leaving some out (DlcNeeds, Reinstall), discarding (Resume)
         const More& m = TrM();
         const char* label = m_dialog.kind == DialogKind::ContentDetails ? TrT().cd_ticket_go
+                            : m_dialog.kind == DialogKind::PlayRandom ? m.rg_another
                             : m_dialog.kind == DialogKind::Where     ? s.internal
                             : m_dialog.kind == DialogKind::Nand      ? m.nand_sd_button
                             : m_dialog.kind == DialogKind::DlcNeeds  ? m.dn_skip
@@ -6926,6 +7140,18 @@ void App::UpdateDialog(u64 down, u64 held) {
         m_queue->CancelVerify();
         m_dialog.kind = DialogKind::None;
         return;
+    }
+    if (m_dialog.kind == DialogKind::UpdateHere && !m_dialog.jobs.empty()) {
+        // the list of 15A: up and down move, Y ticks or unticks, A adds what is ticked
+        const int n = int(m_dialog.jobs.size());
+        m_dialog.marks.resize(size_t(n), 1);
+        if (Repeat(down, held, HidNpadButton_AnyUp) && m_dialog.entry > 0) m_dialog.entry--;
+        if (Repeat(down, held, HidNpadButton_AnyDown) && m_dialog.entry < n - 1) m_dialog.entry++;
+        if (down & HidNpadButton_Y) {
+            auto& mark = m_dialog.marks[size_t(std::clamp(m_dialog.entry, 0, n - 1))];
+            mark = !mark;
+            return;
+        }
     }
     if (m_dialog.kind == DialogKind::Versions) {
         const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
@@ -7012,11 +7238,17 @@ int App::DialogExtra(u64& mask) const {
         case DialogKind::Reinstall:
         case DialogKind::Resume: mask = HidNpadButton_X; return 2;
         case DialogKind::ContentDetails: mask = HidNpadButton_X; return 2;
+        case DialogKind::PlayRandom: mask = HidNpadButton_Y; return 2; // another one (21A)
         default: mask = 0; return -1;
     }
 }
 
 void App::DialogExtraChosen() {
+    if (m_dialog.kind == DialogKind::PlayRandom) {
+        m_dialog = Dialog{};
+        RollRandom(); // the dice again
+        return;
+    }
     if (m_dialog.kind == DialogKind::ContentDetails) {
         ConsoleTicketBack();
         return;
@@ -7139,6 +7371,36 @@ void App::ConfirmDialog() {
             m_dialog = Dialog{};
             PlayConsoleGame(true);
             return;
+        case DialogKind::PlayRandom: {
+            // the game chosen opens as from its page (2A of group 2)
+            const unsigned long long app = m_dialog.ids.empty() ? 0 : m_dialog.ids.front();
+            m_dialog = Dialog{};
+            if (!app) return;
+            m_console_app = app;
+            m_console_item = 0;
+            m_console_btn = 0;
+            m_console_marks.clear();
+            PlayConsoleGame(true);
+            return;
+        }
+        case DialogKind::OpenNro:
+            m_dialog = Dialog{};
+            OpenNro();
+            return;
+        case DialogKind::UpdateHere: {
+            // what is ticked goes to the queue, to the SD card
+            std::vector<InstallJob> jobs;
+            for (size_t i = 0; i < m_dialog.jobs.size(); i++) {
+                if (i < m_dialog.marks.size() && m_dialog.marks[i]) jobs.push_back(std::move(m_dialog.jobs[i]));
+            }
+            m_dialog = Dialog{};
+            if (jobs.empty()) return;
+            char text[160];
+            std::snprintf(text, sizeof(text), TrM().uh_added_fmt, int(jobs.size()));
+            AddJobs(std::move(jobs));
+            if (m_dialog.kind == DialogKind::None) NoticeOk(text);
+            return;
+        }
         case DialogKind::TicketsDelete:
             // they wait while something installs: an install writes tickets
             if ((m_queue && (m_queue->Busy() || m_queue->Undoing())) || !m_space || !m_space->StartDeleteTickets(m_ticket_delete)) {

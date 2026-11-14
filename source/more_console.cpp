@@ -21,7 +21,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cmath>
 #include <ctime>
+#include <random>
 #include <sys/stat.h>
 
 namespace nxdock {
@@ -1044,15 +1046,17 @@ void App::DrawLaunch(NVGcontext* vg) {
     nvgRect(vg, 0, 0, kWidth, kHeight);
     nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.92f * k));
     nvgFill(vg);
-    const Game* g = LibraryGame(m_console_app);
+    const bool app = !m_launch_text.empty(); // a .nro (22A): no cover of a game
+    const Game* g = app ? nullptr : LibraryGame(m_console_app);
     int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
-    if (!image) image = m_covers.Get(IconPath(m_console_app));
+    if (!image && !app) image = m_covers.Get(IconPath(m_console_app));
     const float s = 140 + 50 * k;
     nvgGlobalAlpha(vg, k);
     ui::Cover(vg, m_theme, kWidth / 2 - s / 2, kHeight / 2 - s / 2 - 30, s, PlaceholderColor(m_launch_name), Initial(m_launch_name).c_str(), nullptr,
               false, false, 22, image);
     char text[300];
-    std::snprintf(text, sizeof(text), TrM().pl_opening_fmt, m_launch_name.c_str());
+    if (app) std::snprintf(text, sizeof(text), "%s", m_launch_text.c_str());
+    else std::snprintf(text, sizeof(text), TrM().pl_opening_fmt, m_launch_name.c_str());
     ui::Text(vg, kWidth / 2, kHeight / 2 + s / 2 + 4, 20, nvgRGBf(0.91f, 0.93f, 0.95f), text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     nvgGlobalAlpha(vg, 1.f);
 }
@@ -1295,5 +1299,124 @@ void App::ConsoleVersionReset() {
 
 // The lines of a game on the console, for the menu of actions (more_actions.cpp).
 std::vector<InstalledApp::Content> ConsoleItems(const InstalledApp& a) { return Items(a); }
+
+
+// ---- a game at random (21A of groups 3 and 4) ----
+
+namespace {
+
+constexpr double kDiceTime = 1.6;
+
+} // namespace
+
+void App::RollRandom() {
+    const More& m = TrM();
+    if (!m_space) return;
+    // NXDock closes when the game opens: never while it installs, removes or checks
+    if ((m_queue && (m_queue->Busy() || m_queue->Undoing() || m_queue->GetVerify().running)) || m_space->Busy()) {
+        Notice(m.cz_busy);
+        return;
+    }
+    const auto v = m_space->Snapshot();
+    std::vector<const InstalledApp*> can;
+    for (const auto& a : v.apps) {
+        if (ConsoleCanPlay(a)) can.push_back(&a);
+    }
+    if (can.empty()) {
+        Notice(m.rg_none);
+        return;
+    }
+    static std::mt19937 rng{std::random_device{}()};
+    std::uniform_int_distribution<size_t> pick(0, can.size() - 1);
+    // the covers that pass, slower and slower, the chosen one last
+    m_dice_apps.clear();
+    for (int i = 0; i < 14; i++) m_dice_apps.push_back(can[pick(rng)]->app_id);
+    const InstalledApp* chosen = can[pick(rng)];
+    if (can.size() > 1 && m_dice_apps.size() > 1) {
+        while (m_dice_apps[m_dice_apps.size() - 2] == chosen->app_id) m_dice_apps[m_dice_apps.size() - 2] = can[pick(rng)]->app_id;
+    }
+    m_dice_apps.push_back(chosen->app_id);
+    // the question, with what it was played and Another one on Y
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::PlayRandom;
+    m_dialog.ids = {chosen->app_id};
+    m_dialog.text = chosen->name;
+    m_dialog.from = StatsText(*chosen) + " \xC2\xB7 " + WhereOf(*chosen, Tr());
+    m_dialog.focus = 1;
+    // without animations, the question at once; else the dice first, the question after it
+    m_dice_at = ui::Still() ? -100 : m_time;
+}
+
+void App::DrawDice(NVGcontext* vg) {
+    if (m_dice_at < 0) return;
+    const double age = m_time - m_dice_at;
+    if (age > kDiceTime + 0.35) {
+        m_dice_at = -100;
+        m_dialog_at = m_time; // the question comes in now
+        return;
+    }
+    const Theme& t = m_theme;
+    const float fade = float(std::min(1.0, age / 0.2) * std::min(1.0, (kDiceTime + 0.35 - age) / 0.25));
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.6f * fade));
+    nvgFill(vg);
+    nvgGlobalAlpha(vg, fade);
+    ui::Text(vg, kWidth / 2, 170, 22, nvgRGBf(0.91f, 0.93f, 0.95f), TrM().rg_choosing, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    // the covers slide from right to left and slow down on the last one
+    const int n = int(m_dice_apps.size());
+    const float p = float(std::min(1.0, age / kDiceTime));
+    const float ease = 1 - (1 - p) * (1 - p) * (1 - p);
+    const float pos = ease * float(n - 1); // the cover in the middle, as a fraction
+    const float size = 200, gap = 40, cx = kWidth / 2, cy = kHeight / 2 - 10;
+    const auto v = m_space ? m_space->Snapshot() : Space::View{};
+    for (int i = 0; i < n; i++) {
+        const float d = float(i) - pos;
+        if (std::fabs(d) > 3.5f) continue;
+        const float x = cx + d * (size + gap), s = size * (1 - 0.18f * std::min(1.f, std::fabs(d)));
+        std::string name;
+        for (const auto& a : v.apps) {
+            if (a.app_id == m_dice_apps[size_t(i)]) name = a.name;
+        }
+        const Game* g = LibraryGame(m_dice_apps[size_t(i)]);
+        int image = g && !g->cover.empty() ? m_covers.Get(g->cover) : 0;
+        if (!image) image = m_covers.Get(IconPath(m_dice_apps[size_t(i)]));
+        nvgSave(vg);
+        nvgGlobalAlpha(vg, fade * std::max(0.f, 1 - std::fabs(d) / 3.5f));
+        ui::Cover(vg, t, x - s / 2, cy - s / 2, s, PlaceholderColor(name), Initial(name).c_str(), nullptr, false, false, 16, image);
+        nvgRestore(vg);
+    }
+    // the one landed on gets the focus ring
+    if (p >= 1) ui::Focus(vg, t, cx - size / 2, cy - size / 2, size, size, 16, m_time);
+    // a die that rolls under it
+    const float dr = 22, dx = cx, dy = cy + size / 2 + 50;
+    nvgSave(vg);
+    nvgTranslate(vg, dx, dy);
+    nvgRotate(vg, float((1 - ease) * 12.0));
+    ui::FillRound(vg, -dr, -dr, 2 * dr, 2 * dr, 8, nvgRGBf(0.96f, 0.97f, 0.98f));
+    const int face = p >= 1 ? 5 : 1 + int(age * 14) % 6;
+    const float pip = 4.2f, o = 10;
+    const auto dot = [&](float px, float py) {
+        nvgBeginPath(vg);
+        nvgCircle(vg, px, py, pip);
+        nvgFillColor(vg, t.work);
+        nvgFill(vg);
+    };
+    if (face % 2) dot(0, 0);
+    if (face >= 2) {
+        dot(-o, -o);
+        dot(o, o);
+    }
+    if (face >= 4) {
+        dot(o, -o);
+        dot(-o, o);
+    }
+    if (face == 6) {
+        dot(-o, 0);
+        dot(o, 0);
+    }
+    nvgRestore(vg);
+    nvgGlobalAlpha(vg, 1.f);
+}
 
 } // namespace nxdock

@@ -227,6 +227,11 @@ add_executable(nxdock
     source/more_update.cpp
     source/versions_list.cpp
     source/mtp_more.cpp
+    source/file_match.cpp
+    source/text_view.cpp
+    source/more_here.cpp
+    source/more_card.cpp
+    source/more_text.cpp
     source/perf.cpp
 )
 

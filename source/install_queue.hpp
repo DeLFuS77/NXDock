@@ -27,8 +27,8 @@ namespace nxdock {
 struct InstallJob {
     enum class State { Waiting, Running, Done, Failed, Cancelled };
     // where the file comes from: the library app, the SD card or a USB disk, the computer over
-    // the USB cable (NS-USBloader), or the computer over MTP
-    enum class Origin { Library, File, Usb, Mtp };
+    // the USB cable (NS-USBloader), the computer over MTP, or the game card (14A of groups 3 and 4)
+    enum class Origin { Library, File, Usb, Mtp, Card };
 
     int id = 0;
     std::string game, label, cover, color_key; // as shown: the game, what of it, its picture
@@ -255,6 +255,12 @@ std::vector<InstallJob> ResumeJobs(const ResumeState& state, const std::string& 
 void DiscardResume(const ResumeState& state);
 // The placeholders (hexadecimal) of the journal in one storage: never cleaned (24A).
 std::set<std::string> ResumePlaceholders(bool sd);
+// Leaving NXDock for another app (22A of groups 3 and 4): once the queue has stopped, a journal
+// with what was installing and waiting (those that can go on: from the library or a disk) and no
+// part, so the next NXDock asks to go on. False when none can.
+bool KeepForLater(const std::vector<InstallJob>& jobs);
+// Whether a journal was written by KeepForLater (another app was opened), not by the console going off.
+bool KeptForLater(const ResumeState& state);
 
 // The install or check was cancelled by the user.
 bool IsCancelled(unsigned rc);

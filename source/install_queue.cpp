@@ -12,6 +12,7 @@
 #include "file_source.hpp"
 #include "http_source.hpp"
 #include "mtp.hpp"
+#include "space.hpp"
 #include "usb_tinfoil.hpp"
 #include "i18n.hpp"
 #include "uninstall.hpp"
@@ -98,6 +99,31 @@ Result DownloadCheck(sphaira::yati::source::Base& source, sphaira::yati::contain
     }
     R_SUCCEED();
 }
+
+// The game card as a source (14A): its secure partition as an NSP. A read that fails once the card
+// is out is a stop, not a broken file.
+class CardSource final : public sphaira::yati::source::Base {
+public:
+    CardSource() {
+        m_nsp = OpenGameCardNsp();
+        if (!m_nsp) m_open_result = Result_YatiInvalidNcaReadSize;
+    }
+    s64 Size() const { return m_nsp ? s64(m_nsp->size) : 0; }
+    Result Read(void* buf, s64 off, s64 size, u64* bytes_read) override {
+        *bytes_read = 0;
+        R_UNLESS(m_nsp && off >= 0 && size >= 0 && u64(off) <= m_nsp->size, Result_YatiInvalidNcaReadSize);
+        const u64 n = std::min<u64>(u64(size), m_nsp->size - u64(off));
+        if (!m_nsp->read(u64(off), buf, size_t(n))) {
+            R_UNLESS(GameCardInserted(), Result_TransferCancelled);
+            R_THROW(Result_YatiInvalidNcaReadSize);
+        }
+        *bytes_read = n;
+        R_SUCCEED();
+    }
+
+private:
+    std::shared_ptr<InstalledNsp> m_nsp;
+};
 
 // The container of the file, from its first bytes.
 Result OpenContainer(sphaira::yati::source::Base& source, std::unique_ptr<sphaira::yati::container::Base>& out, const char*& kind) {
@@ -355,6 +381,32 @@ std::set<std::string> ResumePlaceholders(bool sd) {
 void DiscardResume(const ResumeState& state) {
     DeletePlaceholders(state.parts);
     ClearResume(kResumeDir);
+}
+
+bool KeepForLater(const std::vector<InstallJob>& jobs) {
+    // the one that was installing first, then those waiting, in their order
+    ResumeState state;
+    bool first = true;
+    for (const auto state_wanted : {InstallJob::State::Running, InstallJob::State::Waiting}) {
+        for (const auto& j : jobs) {
+            const bool can = j.resumable && (j.origin == InstallJob::Origin::Library || j.origin == InstallJob::Origin::File);
+            if (j.state != state_wanted || !can) continue;
+            if (first) {
+                state.job = ToResume(j);
+                state.job.fields["left"] = "1"; // another app was opened, the console did not go off
+                first = false;
+            } else {
+                state.waiting.push_back(ToResume(j));
+            }
+        }
+    }
+    if (first) return false;
+    return SaveResume(kResumeDir, state);
+}
+
+bool KeptForLater(const ResumeState& state) {
+    const auto it = state.job.fields.find("left");
+    return it != state.job.fields.end() && it->second == "1";
 }
 
 void InstallQueue::SetPaused(bool paused) {
@@ -816,6 +868,14 @@ void InstallQueue::RunJob(InstallJob& job) {
                 size = s64(job.size);
                 if (!holder) rc = Result_TransferCancelled;
                 break;
+            case InstallJob::Origin::Card: {
+                // the secure partition of the game card, as an NSP made as it is read (14A)
+                auto card = std::make_unique<CardSource>();
+                rc = card->GetOpenResult();
+                size = card->Size();
+                holder = std::move(card);
+                break;
+            }
         }
         {
             std::lock_guard lock(m_mutex);
@@ -839,6 +899,8 @@ void InstallQueue::RunJob(InstallJob& job) {
                 if (job.downgrade) config.allow_downgrade = true;
                 // the ticket of what is installed, put back: its parts are there and are kept (7A)
                 if (job.ticket_only) config.ticket_only = true;
+                // the game card holds its game, an update and DLC: only the content of this job (14A)
+                if (job.origin == InstallJob::Origin::Card && job.title_id) config.title_ids = {job.title_id};
                 if (journaled) {
                     const bool sd = !job.nand;
                     config.resume.part = [&journal, &journal_mutex, sd](const NcmContentId& cid, const NcmPlaceHolderId& ph, s64 size, bool checked,

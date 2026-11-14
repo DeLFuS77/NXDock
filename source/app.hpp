@@ -38,6 +38,8 @@
 #include "motion.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
+#include "file_match.hpp"
+#include "text_view.hpp"
 
 namespace nxdock {
 
@@ -79,7 +81,8 @@ private:
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
-                         ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, TicketRow };
+                         ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, TicketRow,
+                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -124,7 +127,7 @@ private:
     ui::HitRect m_tab_rects[kTabs]{};
 
     // The More tab (3A, more.cpp): a tile for each tool and their screens.
-    enum class MoreScreen { Tiles, Files, Mtp, Usb, Shops, Saves, Space, Mods };
+    enum class MoreScreen { Tiles, Files, Mtp, Usb, Shops, Saves, Space, Mods, Card, Viewer };
     void OpenMoreTile(int tile);
     void OpenMoreScreen(MoreScreen screen);
     void LeaveMoreScreen();
@@ -168,7 +171,8 @@ private:
         std::string label, right;
         bool enabled;
     };
-    enum FilesAction { kFaInstall, kFaView, kFaCopy, kFaCut, kFaPaste, kFaForget, kFaRename, kFaFolder, kFaProps, kFaDelete };
+    enum FilesAction { kFaInstall, kFaView, kFaCopy, kFaCut, kFaPaste, kFaForget, kFaRename, kFaFolder, kFaProps, kFaDelete,
+                       kFaInvert, kFaUpdateHere }; // groups 3 and 4: 16A, 15A
     std::vector<int> FilesChosen() const;                 // the marked rows, or the one in focus
     std::vector<std::string> FilesChosenPaths() const;
     std::vector<FilesRow> FilesMenuRows();
@@ -418,7 +422,7 @@ private:
     bool m_menu = false;
     // The menu of actions of + on every other screen (1A, 14/11): the same rows as its buttons, with
     // the button of each at its right (2A); - opens it too.
-    enum class ActScreen { None, Detail, ConsoleList, ConsoleGame, Session, History, Queue, Shops, SpacePick, Compress, ConsoleSort, Tickets };
+    enum class ActScreen { None, Detail, ConsoleList, ConsoleGame, Session, History, Queue, Shops, SpacePick, Compress, ConsoleSort, Tickets, Viewer };
     struct ActRow {
         int id = 0;            // what it does (more_actions.cpp)
         std::string label, right;
@@ -693,6 +697,7 @@ private:
     unsigned long long m_console_check = 0;               // the game whose check is on its page
     double m_launch_at = -100;                            // a game asked to open: NXDock closes after a moment
     std::string m_launch_name;
+    std::string m_launch_text; // another app opens (22A): what is said meanwhile, without a cover
     void CheckConsoleGame();
     void RepairConsoleGame();
     void PlayConsoleGame(bool asked);
@@ -702,6 +707,65 @@ private:
     // why Repair from the library cannot be done (nullptr: it can)
     const char* ConsoleRepairBlock(unsigned long long app);
     void DrawLaunch(NVGcontext* vg);
+    // Groups 3 and 4 (14/11, the recommended options of their visual test)
+    // 12A: the SD card without room: an orange line under the cards, its button "Use the internal
+    // memory" in focus when it appears, for that install only. `screen`: 0 the page of a game, 1 the
+    // files, 2 the game card.
+    bool NoRoomShown(unsigned long long need, bool nand) const;
+    bool NoRoomAppears(int screen, unsigned long long need, bool nand); // true the first frame it shows
+    float DrawNoRoom(NVGcontext* vg, float x, float y, float w, unsigned long long need, bool focused, int screen);
+    void UseNandOnce(int screen);
+    std::string m_noroom_key[3];
+    double m_noroom_at[3] = {-100, -100, -100};
+    bool m_files_noroom = false; // the files: the focus on that button
+    // 13A: what the console has, from the scan of Space, for the explorer and for 15A
+    void FollowConsoleHas();
+    ConsoleHas m_has;
+    bool m_has_ready = false;
+    unsigned m_has_for = ~0u;
+    double m_has_at = -100, m_has_polled = -100;
+    // 14A: the game card, a tile of More while it is in, and its install screen
+    void FollowCard();
+    void OpenCard();
+    void DrawCard(NVGcontext* vg);
+    void UpdateCard(u64 down, u64 held);
+    void InstallCard();
+    void DrawCardTile(NVGcontext* vg, float x, float y, float w, float h);
+    std::future<GameCard> m_card_read;
+    GameCard m_card;
+    bool m_card_in = false, m_card_nand = false, m_card_jobs = false;
+    double m_card_polled = -100, m_card_at = -100;
+    std::vector<char> m_card_pick;
+    bool m_card_matched = false; // marked as the console has it, once it was read
+    int m_card_focus = 0;
+    // 15A: the updates and DLC of a folder or a shop for the games installed, all ticked, to the queue
+    void UpdateFromFolder(const std::string& folder);
+    void UpdateFromShop(int shop);
+    void FollowUpdateHere();
+    std::vector<InstallJob> m_here_jobs; // every update and DLC found, before it is matched
+    bool m_here_waiting = false;         // the scan of the console is not there yet
+    std::string m_here_where;
+    int m_update_shop = -1;              // the shop being opened to look for updates in
+    // 20A: the text viewer of the explorer, read only
+    void OpenViewer(const LocalEntry& e);
+    void DrawViewer(NVGcontext* vg);
+    void UpdateViewer(u64 down, u64 held);
+    TextFile m_text;
+    std::string m_text_name, m_text_path;
+    std::vector<TextRow> m_text_rows;
+    int m_text_cols = 0, m_text_top = 0;
+    bool m_text_wrap = true;
+    // 21A: a game at random, with a short roll of dice over the covers
+    void RollRandom();
+    void DrawDice(NVGcontext* vg);
+    double m_dice_at = -100;
+    std::vector<unsigned long long> m_dice_apps; // the covers that pass, the one chosen last
+    // 22A: a .nro of the explorer opened after a question; the queue is kept to go on later
+    void AskOpenNro(const LocalEntry& e);
+    void OpenNro();
+    std::string m_nro_path, m_nro_name;
+    bool m_keep_queue = false;
+
     // the tickets of the console, in More › Space (6A)
     struct TicketRow {
         TicketId id;
@@ -725,7 +789,7 @@ private:
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
-                            UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete };
+                            UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -747,6 +811,7 @@ private:
         bool remove_extra = false;       // ConsoleRemove: its mods and its tickets go too (7A)
         int extra_mods = 0;              // ConsoleRemove: the folders of mods found
         int extra_common = 0, extra_personal = 0; // ConsoleRemove: the tickets found
+        std::vector<char> marks;         // UpdateHere: the jobs ticked (15A)
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;

@@ -29,6 +29,17 @@ These changes have not been tested in depth yet, so some bugs may remain.
   into, rename and delete.
 - MTP: a save zip dropped back on its game in Saves restores it; the save it replaces is copied to the SD card first.
 - MTP: files over 4 GB copied to a FAT32 SD card are kept in parts, so the console reads them as one file.
+- When an install does not fit on the SD card, a line under the destination offers the internal memory for that
+  install only.
+- The file explorer shows which games are installed, which updates and DLC are for installed games, and which files
+  are older than what is installed.
+- Game card: a tile in More while a card is inserted installs its game, update and DLC.
+- Update installed games from here, in the + menu of a folder and of a shop: the newer updates and DLC found there,
+  all ticked, go to the queue.
+- Invert marks in the + menu of every list with boxes to tick.
+- Text files (.txt, .log, .ini, .json, .cfg, .md) open read only in the explorer, up to 4 MB.
+- In the console: + plays a random game.
+- A .nro opens from the explorer after a question; what the queue had can carry on when NXDock opens again.
 
 ## 0.9.0-beta.3
 

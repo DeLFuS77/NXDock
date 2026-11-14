@@ -83,6 +83,7 @@ void App::FollowShop() {
     }
     const More& m = TrM();
     if (error != ShopError::None) {
+        m_update_shop = -1; // nothing to look for updates in (15A)
         ErrorText e;
         switch (error) {
             case ShopError::Encrypted: e = {m.e_shop_enc_t, m.e_shop_enc_w, m.e_shop_enc_d, {}}; break;

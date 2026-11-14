@@ -44,6 +44,20 @@ struct InstalledNsp {
 };
 std::shared_ptr<InstalledNsp> OpenInstalledNsp(unsigned long long id, unsigned version, unsigned char type, bool nand);
 
+// The game card (14A of the visual test of groups 3 and 4): whether one is in, what it holds (its
+// game, and the update and DLC it brings, with their sizes) and its name; and its secure
+// partition as an NSP made as it is read, to install from it. Null without a card.
+bool GameCardInserted();
+struct GameCard {
+    bool ok = false;            // read
+    unsigned long long app = 0; // its game
+    std::string name;
+    std::vector<InstalledApp::Content> contents; // the game first, then its update, then its DLC
+    unsigned long long Bytes() const;
+};
+GameCard ReadGameCard();
+std::shared_ptr<InstalledNsp> OpenGameCardNsp();
+
 // What "Clean leftovers" would remove: contents no title refers to, and tickets of titles that
 // are not on the console in any way (archived games keep theirs).
 struct Leftovers {
