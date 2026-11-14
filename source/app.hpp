@@ -243,7 +243,6 @@ private:
     std::string m_fwork_to, m_fwork_place;
     bool m_fwork_split = false;
     double m_fwork_at = 0;
-    std::string m_files_refocus;       // the name to keep in focus when the folder is read again
     double m_touch_at = 0;             // when the finger came down, for a long press (m_long_fired is shared with the covers)
     void OpenFilesMenu();
     std::vector<fileops::GameFile> m_files_found; // the games under what is chosen, read when the menu opens
@@ -360,7 +359,6 @@ private:
     void SortPickRows(const Space::View& v); // by name, the focus kept on its row, as names arrive
     std::string m_plan_head;
     // shops of the kind of Tinfoil and Ownfoil (9A, more_shop.cpp)
-    void OpenShops();
     bool EditShop(ShopConfig& shop, bool fresh);
     void FollowShop();
     void LeaveShop();
@@ -490,8 +488,6 @@ private:
     void ActivatePairRow(int row, const Link::View& v);
     void DrawQueue(NVGcontext* vg);
     void UpdateQueue(u64 down, u64 held);
-    void DrawQueueStrip(NVGcontext* vg, float y);
-    float StripKey(NVGcontext* vg, float qy);
     // The marked files of the page of a game go to the queue; to the internal memory, only after
     // the question (1A).
     void EnqueuePicked();
@@ -700,7 +696,6 @@ private:
     std::unique_ptr<InstallQueue> m_queue;
     unsigned m_queue_version = 0;
     int m_queue_focus = 0;          // row in focus on the queue screen
-    double m_quit_asked = -100;     // + while installing asks first
     // the Installed tab
     int m_installed_view = 0;       // 0: in the console, 1: this session, 2: the history
     // In the console: every game installed, and the page of one with what it has
@@ -764,7 +759,7 @@ private:
     void DrawCardTile(NVGcontext* vg, float x, float y, float w, float h);
     std::future<GameCard> m_card_read;
     GameCard m_card;
-    bool m_card_in = false, m_card_nand = false, m_card_jobs = false;
+    bool m_card_in = false, m_card_nand = false;
     double m_card_polled = -100, m_card_at = -100;
     std::vector<char> m_card_pick;
     bool m_card_matched = false; // marked as the console has it, once it was read
