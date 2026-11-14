@@ -11,6 +11,7 @@
 #include "errors.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 
 #include <algorithm>
 
@@ -176,12 +177,12 @@ void App::DrawShops(NVGcontext* vg) {
     std::vector<ui::Hint> hints;
     if (m_shop_focus < int(m_shops.size())) {
         hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
-        hints.push_back({ui::glyph::Y, m.sh_edit, HidNpadButton_Y});
-        hints.push_back({ui::glyph::Minus, m.sh_remove, HidNpadButton_Minus});
     } else {
         hints.push_back({ui::glyph::A, m.sh_add, HidNpadButton_A});
     }
     hints.push_back({ui::glyph::X, m.sh_add, HidNpadButton_X});
+    // editing and taking off are in the menu of + (1A, 14/11)
+    if (m_shop_focus < int(m_shops.size())) hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
@@ -271,12 +272,6 @@ void App::UpdateShops(u64 down, u64 held) {
             m_shops[size_t(m_shop_focus)] = shop;
             SaveShops(ShopsPath(), m_shops);
         }
-        return;
-    }
-    if (down & HidNpadButton_Minus) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::ShopRemove;
-        m_dialog.entry = m_shop_focus;
         return;
     }
     if ((down & HidNpadButton_A) && m_shop_loader && !m_shop_loader->Busy()) {

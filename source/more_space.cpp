@@ -10,6 +10,7 @@
 #include "history.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 #include "sdcheck_nx.hpp"
 
 #include <algorithm>
@@ -412,6 +413,7 @@ void App::DrawPicker(NVGcontext* vg, const Space::View& v) {
     if (m_pick_kind == 0) {
         hints.push_back({ui::glyph::Y, m.mark, HidNpadButton_Y});
         hints.push_back({ui::glyph::X, m.archive_go, HidNpadButton_X});
+        hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus}); // marking all, as everywhere (1A)
     } else {
         hints.push_back({ui::glyph::A, m_pick_kind == 1 ? m.move_go : m.dump_go, HidNpadButton_A});
     }

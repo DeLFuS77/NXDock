@@ -671,4 +671,7 @@ void App::ConfirmToolDialog() {
     }
 }
 
+// The pictures of the menu of files, for the other menus of actions (more_actions.cpp).
+void FileActionIcon(NVGcontext* vg, NVGcolor c, int action, float x, float cy) { ActionIcon(vg, c, action, x, cy); }
+
 } // namespace nxdock

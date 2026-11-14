@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.4
 
+These changes have not been tested in depth yet, so some bugs may remain.
+
+- + opens the menu of actions on every screen: Installed, the queue, the shops, the page of a game, Space and dumps
+  and Compress games. − opens it too. Each row shows the button that does the same.
+- Mark all and Clear the marks wherever there are boxes to tick.
+- Deleting a game from Installed can copy its saves first, to the library or to the SD card.
 - The copy of the saves before an update, a repair, a removal or going back now goes to the SD card when no library is
   linked, and takes the console's and BCAT saves too, not only each user's.
 - A restore that fails half way puts the save back as it was.

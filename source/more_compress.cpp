@@ -13,6 +13,7 @@
 #include "history.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 #include "uninstall.hpp"
 
 #include <algorithm>
@@ -410,6 +411,7 @@ void App::DrawCompress(NVGcontext* vg) {
         } else {
             hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
         }
+        hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus}); // the same, as everywhere (1A)
     }
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);

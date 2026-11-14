@@ -696,12 +696,14 @@ bool Space::StartArchive(std::vector<unsigned long long> apps) {
     return true;
 }
 
-bool Space::StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items) {
+bool Space::StartRemove(unsigned long long app, std::vector<InstalledApp::Content> items,
+                        std::function<std::string(unsigned long long)> before) {
     if (items.empty()) return false;
-    return StartRemove({{app, std::move(items)}});
+    return StartRemove({{app, std::move(items)}}, std::move(before));
 }
 
-bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games) {
+bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games,
+                        std::function<std::string(unsigned long long)> before) {
     if (Busy() || games.empty()) return false;
     u64 total = 0;
     for (auto& [app, items] : games) {
@@ -711,12 +713,19 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
         });
         total += items.size();
     }
-    Run(Task::Remove, [this, games, total]() -> std::string {
+    Run(Task::Remove, [this, games, total, before]() -> std::string {
         const More& m = TrM();
         std::lock_guard titles(TitlesLock());
         Result rc = 0;
         u64 i = 0;
         for (const auto& [app, items] : games) {
+            const bool whole = std::any_of(items.begin(), items.end(),
+                                           [](const InstalledApp::Content& c) { return c.type == NcmContentMetaType_Application; });
+            if (whole && before) {
+                // its saves first; nothing of this game goes when they could not be copied
+                const std::string error = before(app);
+                if (!error.empty()) return error;
+            }
             bool base = false;
             for (const auto& c : items) {
                 Progress(i++, total);
