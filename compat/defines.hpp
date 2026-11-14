@@ -114,6 +114,7 @@ enum class NXDockResult : u32 {
     NczLz4Rebuild,         // an LZ4 block of an NCZSECT3 is not made again to its size
     UpdateStopsGame,       // an official update over a game compressed or optimized: it would not start
     UpdateInGame,          // an update an optimized game holds already
+    Switch2Content,        // content for Switch 2 (the platform of its cnmt), which does not run here
 };
 
 #define MAKE_NXDOCK_RESULT_ENUM(x) Result_##x = MAKERESULT(Module_NXDock, (u32)NXDockResult::x)
@@ -178,4 +179,5 @@ enum : Result {
     MAKE_NXDOCK_RESULT_ENUM(NczLz4Rebuild),
     MAKE_NXDOCK_RESULT_ENUM(UpdateStopsGame),
     MAKE_NXDOCK_RESULT_ENUM(UpdateInGame),
+    MAKE_NXDOCK_RESULT_ENUM(Switch2Content),
 };

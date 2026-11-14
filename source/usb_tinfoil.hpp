@@ -15,6 +15,9 @@ namespace nxdock {
 // Installing over a USB cable from NS-USBloader (or anything that speaks the USB protocol of
 // Tinfoil and Awoo): the computer sends the list of its files ("TUL0"), and the console asks
 // for pieces of them ("TUC0", command 1) until it says it is done (command 0).
+// DBI's dbibackend speaks another one ("DBI0") and sends nothing until it is asked: when no list
+// has come a moment after the cable is in, the console asks for it as DBI does. NS-USBloader
+// skips a header that is not its own, so the question does it no harm.
 //
 // The console side is libnx's usbComms (the usual 057E:3000 device), with every transfer
 // posted asynchronously and waited for with a timeout, so a pulled cable or a cancel never
@@ -44,6 +47,9 @@ public:
     void Listen(bool on);
     bool TakeList(std::vector<std::string>& names);
 
+    // The list came from DBI's dbibackend.
+    bool Dbi() const { return m_dbi; }
+
 private:
     void ListenLoop();
     std::thread m_thread;
@@ -51,11 +57,31 @@ private:
     std::mutex m_list_mutex;
     std::vector<std::string> m_list;
     bool m_have_list = false, m_list_new = false;
+    // A transfer through `buffer` (page aligned, `capacity` bytes). usbComms cannot take back a
+    // transfer it posted: a read of a header that timed out stays posted, and the next read of
+    // the same size waits for that one instead of posting another; a write left posted is
+    // waited for before the next one.
+    Result Transfer(bool read, void* data, size_t size, u64 timeout_ns, unsigned char* buffer, size_t capacity);
     Result Transfer(bool read, void* data, size_t size, u64 timeout_ns);
+    Result ReadHeader(void* data, size_t size, u64 timeout_ns);
+    Result WriteRequest(const void* data, size_t size, u64 timeout_ns);
+    Result FinishWrite(u64 timeout_ns);
+    Result ReadRangeTinfoil(const std::string& name, u64 offset, u64 size, void* out);
+    Result ReadRangeDbi(const std::string& name, u64 offset, u64 size, void* out);
+    // Asks for the list as DBI does, without waiting for the computer to read the question.
+    void AskDbiList();
     bool m_started = false;
     std::atomic<bool> m_cancel{false};
     std::mutex m_mutex;
-    unsigned char* m_buffer = nullptr; // page aligned, for the transfers
+    unsigned char* m_buffer = nullptr;  // page aligned, for the data
+    unsigned char* m_header = nullptr;  // page aligned, for the headers waited for
+    unsigned char* m_request = nullptr; // page aligned, for what the console sends
+    bool m_read_posted = false, m_write_posted = false;
+    u32 m_read_urb = 0, m_write_urb = 0;
+    size_t m_read_size = 0;
+    bool m_dbi = false;       // the list came from dbibackend
+    bool m_dbi_asked = false; // the list was asked for as DBI does since the cable came in
+    int m_quiet_polls = 0;    // polls without a list since the cable came in
 };
 
 // The one USB link, used by the USB screen and by the install queue.
@@ -73,7 +99,7 @@ private:
     std::string m_name;
 };
 
-// The Tinfoil protocol as bytes, apart from the cable, to test on the computer.
+// The Tinfoil and DBI protocols as bytes, apart from the cable, to test on the computer.
 namespace tinfoil {
 constexpr unsigned kListMagic = 0x304C5554;    // "TUL0"
 constexpr unsigned kCommandMagic = 0x30435554; // "TUC0"
@@ -87,6 +113,18 @@ std::vector<unsigned char> RangeRequest(const std::string& name, unsigned long l
 std::vector<unsigned char> ExitRequest();
 // The 32-byte header of the answer: the bytes that follow, or -1 when it is not one.
 long long AnswerLength(const unsigned char* header32);
+
+// The USB protocol of DBI (its dbibackend script): the console asks and the computer answers,
+// each step with a 16-byte header: "DBI0", the type (request, response or ack), the command
+// and the size of what follows.
+constexpr unsigned kDbiMagic = 0x30494244; // "DBI0"
+constexpr unsigned kDbiRequest = 0, kDbiResponse = 1, kDbiAck = 2;
+constexpr unsigned kDbiExit = 0, kDbiFileRange = 2, kDbiList = 3;
+std::vector<unsigned char> DbiHeader(unsigned type, unsigned cmd, unsigned size);
+// The size of a DBI header of that type and command, or -1 when it is not one.
+long long DbiLength(const unsigned char* header16, unsigned type, unsigned cmd);
+// What the console asks for: the size of the piece, its offset, the length of the name and the name.
+std::vector<unsigned char> DbiRange(const std::string& name, unsigned size, unsigned long long offset);
 } // namespace tinfoil
 
 } // namespace nxdock

@@ -31,6 +31,7 @@
 
 extern "C" void nxdock_log_open(const char* path);
 extern "C" void nxdock_log_close();
+extern "C" void nxdock_log_memory(const char* when);
 
 namespace nxdock {
 
@@ -748,6 +749,7 @@ void InstallQueue::RunJob(InstallJob& job) {
     net::Boost boost;
     nxdock_log_open("sdmc:/switch/NXDock/install.log");
     log_write("[NXDock] %s: %s (%s) %s\n", NXDOCK_VERSION, job.game.c_str(), job.label.c_str(), job.format.c_str());
+    nxdock_log_memory("at the start");
 
     const bool applet = net::IsAppletMode();
     HttpSource::Options options;
@@ -872,6 +874,7 @@ void InstallQueue::RunJob(InstallJob& job) {
         }
     }
     log_write("[NXDock] result 0x%X\n", rc);
+    nxdock_log_memory("at the end");
     nxdock_log_close();
     if (journaled) {
         // the job ended, well or not: its placeholders that were not registered go with the journal

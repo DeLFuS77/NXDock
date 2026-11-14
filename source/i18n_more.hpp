@@ -26,6 +26,7 @@ struct More {
     const char *e_experimental_t, *e_experimental_w, *e_experimental_d;
     const char *e_container_t, *e_container_w, *e_container_d;
     const char *e_running_t, *e_running_w, *e_running_d;
+    const char *e_switch2_t, *e_switch2_w, *e_switch2_d; // content made for Switch 2
     const char *e_stops_t, *e_stops_w, *e_stops_d;   // an update that would stop its game
     const char *e_ingame_t, *e_ingame_w, *e_ingame_d; // an update an optimized game holds
     const char *e_storage_t, *e_storage_w, *e_storage_d;

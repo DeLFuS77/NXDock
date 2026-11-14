@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Install over USB from DBI's dbibackend too, besides NS-USBloader: NXDock finds which one is on the computer.
+- Content made for Switch 2 is refused before anything of it is installed.
+- Installs write to the SD card in larger pieces when NXDock runs as an applet.
+- The install log notes the memory NXDock has at the start and at the end of each job.
+
 ## 0.9.0-beta.3
 
 These changes have not been tested in depth yet, so some bugs may remain.

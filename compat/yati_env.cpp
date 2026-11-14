@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <malloc.h>
 #include <switch.h>
 #include <mutex>
 
@@ -115,4 +116,29 @@ extern "C" void log_write(const char* s, ...) {
     va_start(v, s);
     log_write_arg(s, &v);
     va_end(v);
+}
+
+// NXDock: the memory at hand, written into the log of a job when it starts and when it ends, to
+// know how much an install has as an applet and as an application with each firmware: the heap
+// the loader gave NXDock and what of it is in use, and the four memory pools of the console
+// (svcGetSystemInfo, which the NPDM of the loader allows).
+extern "C" void nxdock_log_memory(const char* when) {
+    constexpr double kMiB = 1024.0 * 1024.0;
+    const AppletType type = appletGetAppletType();
+    const bool applet = type != AppletType_Application && type != AppletType_SystemApplication;
+    u64 total = 0, used = 0;
+    svcGetInfo(&total, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+    const struct mallinfo mi = mallinfo();
+    log_write("[NXDock] memory %s: %s, process %.1f of %.1f MiB, heap %.1f MiB, in use %.1f MiB (at most %.1f MiB)\n", when,
+              applet ? "applet" : "application", double(used) / kMiB, double(total) / kMiB,
+              double(envGetHeapOverrideSize()) / kMiB, double(mi.uordblks) / kMiB, double(mi.arena) / kMiB);
+    static const char* const kPools[] = {"application", "applet", "system", "system unsafe"};
+    for (u64 pool = 0; pool < 4; pool++) {
+        u64 pool_total = 0, pool_used = 0;
+        if (R_SUCCEEDED(svcGetSystemInfo(&pool_total, 0, INVALID_HANDLE, pool)) &&
+            R_SUCCEEDED(svcGetSystemInfo(&pool_used, 1, INVALID_HANDLE, pool))) {
+            log_write("[NXDock]   pool %s: %.1f of %.1f MiB used\n", kPools[pool], double(pool_used) / kMiB, double(pool_total) / kMiB);
+        }
+    }
 }
