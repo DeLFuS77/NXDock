@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
 //
-// The few libnx names the network source uses, so it can be tested on the computer.
+// The few libnx names the network source and the texts use, so they can be tested on the computer.
 #pragma once
 
 #include <chrono>
@@ -42,3 +42,14 @@ struct NcmContentMetaKey {
     u8 install_type;
     u8 padding[2];
 };
+
+// The language of the console, which a computer does not have: English.
+enum SetLanguage {
+    SetLanguage_JA, SetLanguage_ENUS, SetLanguage_FR, SetLanguage_DE, SetLanguage_IT, SetLanguage_ES, SetLanguage_ZHCN,
+    SetLanguage_KO, SetLanguage_NL, SetLanguage_PT, SetLanguage_RU, SetLanguage_ZHTW, SetLanguage_ENGB, SetLanguage_FRCA,
+    SetLanguage_ES419, SetLanguage_ZHHANS, SetLanguage_ZHHANT, SetLanguage_PTBR,
+};
+inline Result setInitialize() { return 1; }
+inline Result setGetSystemLanguage(u64*) { return 1; }
+inline Result setMakeLanguage(u64, SetLanguage*) { return 1; }
+inline void setExit() {}
