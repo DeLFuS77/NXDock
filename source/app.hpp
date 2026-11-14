@@ -870,6 +870,11 @@ private:
     bool m_risk_ok = false;
     std::string m_update_hint;
     Dialog m_dialog;
+    // A dialog of this kind, with nothing left of the one before.
+    void OpenDialog(DialogKind kind) {
+        m_dialog = Dialog{};
+        m_dialog.kind = kind;
+    }
     DialogKind m_dialog_drawn = DialogKind::None; // to start its entrance
     double m_time = 0;
     double m_next_repeat = 0;

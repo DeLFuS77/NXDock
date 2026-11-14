@@ -937,8 +937,7 @@ void App::AskConsoleRemoveMarked() {
         Notice(TrM().cz_busy);
         return;
     }
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::ConsoleRemove;
+    OpenDialog(DialogKind::ConsoleRemove);
     m_dialog.keep_saves = m_ui.save_copy; // the box starts as Settings › Saves says
     m_dialog.text = found->name;
     if (base) ConsoleRemoveExtras({m_console_app});
@@ -1023,8 +1022,7 @@ void App::PlayConsoleGame(bool asked) {
     }
     if (!asked && !net::IsAppletMode()) {
         // opened inside a game (R held, or the HOME shortcut): that game closes, so it asks first
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Play;
+        OpenDialog(DialogKind::Play);
         m_dialog.text = name;
         m_dialog.ids = {m_console_app};
         return;
@@ -1256,8 +1254,7 @@ void App::OpenContentDetails(const InstalledApp& a, const InstalledApp::Content&
     m_tool.primary = tt.cd_version_go;
     m_tool.can = asks_more;
     m_tool.cancel = s.close;
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::ContentDetails;
+    OpenDialog(DialogKind::ContentDetails);
     m_dialog.ids = {a.app_id, c.id, c.version, c.type, c.nand ? 1ull : 0ull};
     m_dialog.text = a.name;
 }
@@ -1339,8 +1336,7 @@ void App::RollRandom() {
     }
     m_dice_apps.push_back(chosen->app_id);
     // the question, with what it was played and Another one on Y
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::PlayRandom;
+    OpenDialog(DialogKind::PlayRandom);
     m_dialog.ids = {chosen->app_id};
     m_dialog.text = chosen->name;
     m_dialog.from = StatsText(*chosen) + " \xC2\xB7 " + WhereOf(*chosen, Tr());

@@ -316,8 +316,7 @@ void App::AskUpdateAll() {
     // every update goes where its game is; the question lists where, the internal memory too
     m_sd_checked = -100;
     CheckSdSpace();
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::UpdateAll;
+    OpenDialog(DialogKind::UpdateAll);
     m_dialog.jobs = std::move(jobs);
 }
 
@@ -1137,8 +1136,7 @@ void App::ActivateQuick(int row) {
             m_detail = false;
             const Game& g = m_games[m_detail_game];
             if (m_queue->StartVerify(g.title_id)) {
-                m_dialog = Dialog{};
-                m_dialog.kind = DialogKind::Verify;
+                OpenDialog(DialogKind::Verify);
                 m_dialog.game = m_detail_game;
                 m_dialog.single = true;
             } else {

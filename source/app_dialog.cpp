@@ -1189,8 +1189,7 @@ void App::ConfirmDialog() {
             // an older one: asked once more, with what it means for the save
             job.downgrade = true;
             const u32 now = g.installed.patch;
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::Downgrade;
+            OpenDialog(DialogKind::Downgrade);
             m_dialog.jobs = {job};
             m_dialog.size = now;
             return;

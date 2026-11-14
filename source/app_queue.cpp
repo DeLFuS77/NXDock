@@ -70,8 +70,7 @@ void App::EnqueuePicked() {
         // "ask each time" (wizard): SD card or internal memory, and the internal memory asks again
         m_sd_checked = -100;
         CheckSdSpace();
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Where;
+        OpenDialog(DialogKind::Where);
         m_dialog.jobs = std::move(jobs);
         m_dialog.focus = 1; // the SD card, the default
         return;
@@ -80,8 +79,7 @@ void App::EnqueuePicked() {
         // never to the internal memory without asking: the question (1A), Cancel in focus
         m_sd_checked = -100;
         CheckSdSpace();
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Nand;
+        OpenDialog(DialogKind::Nand);
         m_dialog.jobs = std::move(jobs);
         m_to_nand = false; // the next one goes to the SD card again
         return;
@@ -297,8 +295,7 @@ void App::FollowQueueWeb() {
         const auto jobs = m_queue->Jobs();
         const auto it = std::find_if(jobs.begin(), jobs.end(), [&cmd](const InstallJob& j) { return j.id == cmd.job; });
         if (it != jobs.end() && (it->state == InstallJob::State::Waiting || it->state == InstallJob::State::Running)) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::WebCancel;
+            OpenDialog(DialogKind::WebCancel);
             m_dialog.entry = cmd.job;
             m_dialog.text = it->game + (it->label.empty() ? "" : " \xC2\xB7 " + it->label);
         }
@@ -310,8 +307,7 @@ void App::CheckResume() {
     auto state = std::make_unique<ResumeState>();
     if (!LoadResume(kResumeDir, *state)) return;
     m_resume = std::move(state);
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::Resume;
+    OpenDialog(DialogKind::Resume);
     m_dialog.focus = 1;
 }
 
@@ -364,14 +360,12 @@ void App::FollowPush() {
     }
     // once, the first time a library is linked: share what is installed? (2A)
     if (m_prefs.share_installed < 0) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Share;
+        OpenDialog(DialogKind::Share);
         return;
     }
     // what the web sent: asked about, never installed without A (1A)
     if (!m_pushed.empty()) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Push;
+        OpenDialog(DialogKind::Push);
         for (const auto& p : m_pushed) {
             m_dialog.push.push_back(p.id);
             if (m_dialog.from.empty()) m_dialog.from = p.from;
@@ -527,8 +521,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
             PreflightFiles(jobs);
             return jobs;
         });
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Preflight;
+        OpenDialog(DialogKind::Preflight);
         m_dialog.single = true;
         return;
     }
@@ -562,8 +555,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
             if (j.dlc_needs > have) any = true;
         }
         if (any) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::DlcNeeds;
+            OpenDialog(DialogKind::DlcNeeds);
             m_dialog.jobs = std::move(jobs);
             return;
         }
@@ -574,8 +566,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
     {
         const auto over = UpdatesThatStop(jobs);
         if (std::any_of(over.begin(), over.end(), [](const UpdateCheck& c) { return StopsTheGame(c.over); })) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::UpdateStops;
+            OpenDialog(DialogKind::UpdateStops);
             m_dialog.jobs = std::move(jobs);
             m_dialog.checks = over;
             m_dialog.single = OriginalsFor(m_dialog.jobs).empty();
@@ -612,8 +603,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
             }
         }
         if (any) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::Reinstall;
+            OpenDialog(DialogKind::Reinstall);
             m_dialog.jobs = std::move(jobs);
             return;
         }
@@ -632,8 +622,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
         const PreCheck check = CheckBeforeInstall(m_sysinfo, required);
         for (auto& j : jobs) j.checked = true;
         if (check.Warns()) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::PreCheck;
+            OpenDialog(DialogKind::PreCheck);
             m_dialog.jobs = std::move(jobs);
             m_dialog.check = check;
             return;
@@ -641,8 +630,7 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
     }
     if (!m_risk_ok && m_safety && m_safety->Risky() && !jobs.empty()) {
         // not on an emuMMC, or Nintendo reachable: said once, before the first install
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Risk;
+        OpenDialog(DialogKind::Risk);
         m_dialog.jobs = std::move(jobs);
         return;
     }
@@ -714,8 +702,7 @@ void App::UpdateQueue(u64 down, u64 held) {
     if (down & HidNpadButton_X) {
         if (j.state == InstallJob::State::Running) {
             // the one installing is cancelled only after a question, Keep installing in focus
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::QueueCancel;
+            OpenDialog(DialogKind::QueueCancel);
             m_dialog.entry = j.id;
             m_dialog.text = j.game + (j.label.empty() ? "" : " · " + j.label);
             return;

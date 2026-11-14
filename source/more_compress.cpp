@@ -44,8 +44,7 @@ unsigned long long DlcSaved(const std::vector<CompressedGame>& marks, unsigned l
 void App::OpenCompress() {
     if (!m_ui.compress_on) {
         // the first time: what it is, the focus on Cancel
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressIntro;
+        OpenDialog(DialogKind::CompressIntro);
         return;
     }
     if (!m_compress) m_compress = std::make_unique<Compressor>();
@@ -428,8 +427,7 @@ void App::FollowCompress(const Compressor::View& c) {
         }
     }
     if (!c.error.empty()) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::VaultError;
+        OpenDialog(DialogKind::VaultError);
         m_dialog.single = true;
         m_dialog.from = c.error;
         m_dialog.text = m.cz_title;
@@ -519,8 +517,7 @@ void App::UpdateCompress(u64 down, u64 held) {
         return;
     }
     if (e.state == GameEstimate::State::Ours || e.why == GameEstimate::Why::Redo) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressUndo;
+        OpenDialog(DialogKind::CompressUndo);
         m_dialog.ids = {a.app_id};
         m_dialog.text = a.name;
         return;
@@ -528,8 +525,7 @@ void App::UpdateCompress(u64 down, u64 held) {
     const bool waiting = e.merge && e.merged && e.state == GameEstimate::State::Low;
     if (e.state != GameEstimate::State::Worth && !waiting) return;
     if (!hosversionAtLeast(12, 0, 0)) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressInfo;
+        OpenDialog(DialogKind::CompressInfo);
         m_dialog.single = true;
         m_dialog.text = m.cz_fw_title;
         m_dialog.from = m.cz_fw_body;
@@ -537,8 +533,7 @@ void App::UpdateCompress(u64 down, u64 held) {
     }
     if (!m_sigpatches.found) {
         // never without them: the game would not start
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::CompressInfo;
+        OpenDialog(DialogKind::CompressInfo);
         m_dialog.single = true;
         m_dialog.text = m.cz_nosig_title;
         m_dialog.from = m.cz_nosig_body;
@@ -548,8 +543,7 @@ void App::UpdateCompress(u64 down, u64 held) {
         Notice(m.cz_busy);
         return;
     }
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::CompressGo;
+    OpenDialog(DialogKind::CompressGo);
     m_dialog.ids = {a.app_id};
     m_dialog.text = a.name;
     m_dialog.size = e.saved;

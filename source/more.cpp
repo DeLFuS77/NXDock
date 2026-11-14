@@ -102,8 +102,7 @@ void App::OpenMoreTile(int place) {
 void App::OpenMoreScreen(MoreScreen screen) {
     // the computer sends files on its own: the warning of an unsafe system comes first
     if ((screen == MoreScreen::Mtp || screen == MoreScreen::Usb) && !m_risk_ok && m_safety && m_safety->Risky()) {
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Risk;
+        OpenDialog(DialogKind::Risk);
         m_after_risk = screen;
         return;
     }
@@ -570,8 +569,7 @@ void App::QueueLocal(std::vector<InstallJob> jobs) {
     if (!jobs.empty() && jobs.front().nand) {
         m_sd_checked = -100;
         CheckSdSpace();
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::Nand;
+        OpenDialog(DialogKind::Nand);
         m_dialog.jobs = std::move(jobs);
         return;
     }
@@ -1153,8 +1151,7 @@ void App::UpdateArrival(u64 down, u64 held) {
             return;
         }
         // the internal memory, only after its question (Cancel in focus)
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::MtpNand;
+        OpenDialog(DialogKind::MtpNand);
         return;
     }
     if (m_more == MoreScreen::Usb && (down & HidNpadButton_ZR)) m_files_nand = !m_files_nand;

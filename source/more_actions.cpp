@@ -625,14 +625,12 @@ void App::ActDo(const ActRow& row) {
             break;
         case kScreenOff: AskScreenOff(); break; // the screen off while it installs (11A)
         case kShopRemove:
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::ShopRemove;
+            OpenDialog(DialogKind::ShopRemove);
             m_dialog.entry = m_shop_focus;
             break;
         case kVersions: OpenVersions(); break; // another version of the update (20A)
         case kClearHistory:
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::ClearHistory;
+            OpenDialog(DialogKind::ClearHistory);
             break;
         default:
             if (row.id >= kSortBase && row.id < int(kSortBase) + int(kSortCount)) {

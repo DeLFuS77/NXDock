@@ -178,8 +178,7 @@ void App::OpenUsb3() {
     m_usb3 = ReadUsb30(); // as it is now
     m_usb3_read = true;
     m_usb3_error.clear();
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::Usb3;
+    OpenDialog(DialogKind::Usb3);
     m_dialog.focus = SheetFocus(SheetState(m_usb3, m_usb_speed));
 }
 
@@ -198,8 +197,7 @@ void App::Usb3Do(int action) {
             m_usb3_backed = backed;
             m_usb3_written_on = on;
             // done: reboot now or later, the focus on now (that was asked for)
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::Usb3Reboot;
+            OpenDialog(DialogKind::Usb3Reboot);
             m_dialog.focus = 1;
             return;
         }

@@ -204,8 +204,7 @@ void App::FollowSpace() {
             m_console_done_text.clear();
             m_console_removing.clear();
         }
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::VaultError;
+        OpenDialog(DialogKind::VaultError);
         m_dialog.single = true;
         m_dialog.from = v.error;
         m_dialog.text = m.t_space;
@@ -484,8 +483,7 @@ void App::UpdateSpace(u64 down, u64 held) {
         if (m_pick_kind == 0) {
             if (down & (HidNpadButton_Y | HidNpadButton_A)) m_pick_marks[size_t(m_pick_focus)] = !m_pick_marks[size_t(m_pick_focus)];
             if (down & HidNpadButton_X) {
-                m_dialog = Dialog{};
-                m_dialog.kind = DialogKind::SpaceArchive;
+                OpenDialog(DialogKind::SpaceArchive);
                 unsigned long long bytes = 0;
                 for (size_t i = 0; i < m_pick_rows.size(); i++) {
                     if (!m_pick_marks[i]) continue;
@@ -584,8 +582,7 @@ void App::UpdateSpace(u64 down, u64 held) {
     switch (m_space_focus) {
         case 0:
             if (!v.leftovers.Any()) return;
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::SpaceClean;
+            OpenDialog(DialogKind::SpaceClean);
             break;
         case 1: OpenPicker(0); break;
         case 2: OpenPicker(1); break;
@@ -596,8 +593,7 @@ void App::UpdateSpace(u64 down, u64 held) {
                 Notice(m.need_link);
                 return;
             }
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::SpaceCard;
+            OpenDialog(DialogKind::SpaceCard);
             break;
         case 5:
             if (!c.Linked()) {
@@ -849,8 +845,7 @@ void App::AskDeleteTickets() {
         return;
     }
     // it asks first; each .tik is saved to the SD card before it goes
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::TicketsDelete;
+    OpenDialog(DialogKind::TicketsDelete);
 }
 
 } // namespace nxdock

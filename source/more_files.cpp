@@ -530,8 +530,7 @@ void App::FilesDo(int action) {
             }
             m_tool.lines.push_back({tt.fp_where, m_folder});
             m_tool.single = true;
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::FilesProps;
+            OpenDialog(DialogKind::FilesProps);
             break;
         }
         case kFaDelete: {
@@ -559,8 +558,7 @@ void App::FilesDo(int action) {
             if (fileops::GuardOfAll(paths) == fileops::Guard::Careful) m_tool.note = tt.fd_careful;
             std::snprintf(text, sizeof(text), tt.fd_go_fmt, draw::Size(m_files_count.bytes).c_str());
             m_tool.primary = text;
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::FilesDelete;
+            OpenDialog(DialogKind::FilesDelete);
             m_dialog.push = paths;
             break;
         }
@@ -594,8 +592,7 @@ void App::StartFilesWork(int kind, std::vector<std::string> paths, const std::st
         if (kind == 0) fileops::DeleteAll(paths, *p);
         else fileops::CopyAll(paths, to, kind == 2, split, *p);
     });
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::FilesWork;
+    OpenDialog(DialogKind::FilesWork);
 }
 
 void App::FollowFilesWork() {

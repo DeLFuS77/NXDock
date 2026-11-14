@@ -299,8 +299,7 @@ void App::AskUndo(std::vector<int> jobs) {
         Notice(Tr().undo_wait_queue);
         return;
     }
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::Undo;
+    OpenDialog(DialogKind::Undo);
     m_dialog.undo = std::move(jobs);
 }
 
@@ -336,8 +335,7 @@ void App::UpdateInstalled(u64 down, u64 held) {
         }
         m_installed_focus = std::clamp(m_installed_focus, 0, int(m_history.size()) - 1);
         if (down & HidNpadButton_A) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::HistoryInfo;
+            OpenDialog(DialogKind::HistoryInfo);
             m_dialog.entry = m_installed_focus;
             m_dialog.single = true;
         }

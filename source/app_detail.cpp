@@ -242,8 +242,7 @@ void App::UpdateDetail(u64 down, u64 held) {
     }
     if ((down & HidNpadButton_Y) && (g.installed.base || !g.installed.dlc.empty())) {
         if (m_queue->StartVerify(g.title_id)) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::Verify;
+            OpenDialog(DialogKind::Verify);
             m_dialog.game = m_detail_game;
             m_dialog.single = true;
         } else {
@@ -496,8 +495,7 @@ void App::OpenVersions() {
     const Game& g = m_games[m_detail_game];
     const auto rows = VersionRows(g);
     if (rows.empty() || !g.installed.base) return;
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::Versions;
+    OpenDialog(DialogKind::Versions);
     m_dialog.game = m_detail_game;
     m_dialog.focus = 1;
     // the focus on the version installed, or the newest

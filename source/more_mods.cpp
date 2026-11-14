@@ -243,8 +243,7 @@ void App::UpdateMods(u64 down, u64 held) {
     if (!(down & HidNpadButton_A)) return;
     const auto fail = [&](const char* title, const char* todo, const std::string& what) {
         ErrorText e{title, what, todo, {}};
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::VaultError;
+        OpenDialog(DialogKind::VaultError);
         m_dialog.single = true;
         m_dialog.from = PackError(e);
         m_dialog.text = m.t_mods;

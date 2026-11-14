@@ -190,8 +190,7 @@ void App::AskOpenNro(const LocalEntry& e) {
         NacpLanguageEntry* lang = nullptr;
         if (R_SUCCEEDED(nacpGetLanguageEntry(nacp.get(), &lang)) && lang && lang->name[0]) m_nro_name = lang->name;
     }
-    m_dialog = Dialog{};
-    m_dialog.kind = DialogKind::OpenNro;
+    OpenDialog(DialogKind::OpenNro);
 }
 
 void App::OpenNro() {

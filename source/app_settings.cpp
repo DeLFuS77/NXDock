@@ -194,8 +194,7 @@ void App::ActivateSetting(int row) {
             break;
         case kRowSelfBack:
             if (m_update_has_old) {
-                m_dialog = Dialog{};
-                m_dialog.kind = DialogKind::SelfBack;
+                OpenDialog(DialogKind::SelfBack);
             }
             break;
         case kRowHome:
@@ -269,8 +268,7 @@ void App::ActivateSetting(int row) {
                 m_ui.compress_on = false;
                 m_ui.Save();
             } else {
-                m_dialog = Dialog{};
-                m_dialog.kind = DialogKind::CompressIntro;
+                OpenDialog(DialogKind::CompressIntro);
             }
             break;
         case kRowAnim:
@@ -301,8 +299,7 @@ void App::ActivateSetting(int row) {
         case kRowForget:
             if (current.Linked()) {
                 // asked first: pairing again needs a new code
-                m_dialog = Dialog{};
-                m_dialog.kind = DialogKind::Forget;
+                OpenDialog(DialogKind::Forget);
             }
             break;
         case kRowAddress: {
