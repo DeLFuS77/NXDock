@@ -50,6 +50,22 @@ jobs:
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: /language:c-cpp
+          upload: never
+          output: sarif-results
+      # the libraries fetched while building (build/_deps: nanovg, stb, monocypher, libusbhsfs)
+      # are not NXDock's own code: their findings are left out before the results go up
+      - name: Leave out the fetched libraries
+        run: |
+          command -v jq >/dev/null || (apt-get update && apt-get install -y --no-install-recommends jq)
+          for f in sarif-results/*.sarif; do
+            jq '.runs[].results |= map(select(any(.locations[]?; (.physicalLocation.artifactLocation.uri // "") | startswith("build/")) | not))' "$f" > "$f.tmp"
+            mv "$f.tmp" "$f"
+          done
+      - name: Upload
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: sarif-results
+          category: /language:c-cpp
 
   go:
     name: Analyze (go)
