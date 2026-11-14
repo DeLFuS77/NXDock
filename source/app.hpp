@@ -535,6 +535,36 @@ private:
     void AskUndo(std::vector<int> jobs);
     // A question over everything, with Cancel in focus first.
     void DrawDialog(NVGcontext* vg);
+public:
+    // What a dialog shows (app_dialog_text.cpp fills it, DrawDialog draws it): its title, body,
+    // rows, note, error, the bar of space and its buttons.
+    struct DialogLine {
+        std::string text, tag, right;
+        NVGcolor color;
+        int mark = 0; // 1: fine, 2: a warning (the check before installing)
+        bool focus = false; // the row in focus (the versions of a game, 20A)
+        int hit = -1;       // a row that answers to touch
+        int tick = -1;      // a box to tick before it: 0 off, 1 on (15A of groups 3 and 4)
+    };
+private:
+    struct DialogContent {
+        std::string title, body, note, primary, error;
+        std::vector<DialogLine> lines;
+        bool can = true, bar = false;
+        bool verify_bar = false, verify_running = false;
+        bool tick = false;  // ConsoleRemove: the box of the saves (3A)
+        bool tick2 = false; // ConsoleRemove: the box of its mods and its tickets (7A)
+        std::string cancel_label;
+        float verify_frac = 0;
+        std::string verify_text;
+        u64 size = 0;
+    };
+    // Not this area's dialog, filled, or nothing to draw (the dialog closed itself).
+    enum class Fill { NotMine, Draw, Stop };
+    Fill DialogInstallText(DialogContent& dc);
+    Fill DialogConsoleText(DialogContent& dc);
+    Fill DialogMoreText(DialogContent& dc);
+    Fill DialogAppText(DialogContent& dc);
     void UpdateDialog(u64 down, u64 held);
     void ConfirmDialog();
     // A third button some questions have between Cancel and the action (-1 none), and its use.
