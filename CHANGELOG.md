@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0-beta.4
+
+These changes have not been tested in depth yet, so some bugs may remain.
+
+- + opens the menu of actions on every screen: Installed, the queue, the shops, the page of a game, Space and dumps
+  and Compress games. − opens it too. Each row shows the button that does the same.
+- Mark all and Clear the marks wherever there are boxes to tick.
+- Deleting a game from Installed can copy its saves first, to the library or to the SD card.
+
 ## 0.9.0-beta.3
 
 These changes have not been tested in depth yet, so some bugs may remain.

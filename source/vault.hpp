@@ -28,6 +28,7 @@ std::string TitleHex(unsigned long long id);
 
 // The saves of every user of the console for a game, copied to the library with a note, before
 // a change to the game (18A): an update, a repair, a removal or going back to an older version.
+// With no `url` (no library linked), to the SD card instead (3A of 14/11).
 // On the caller's thread. Empty when it went well or there was nothing to copy; else the error,
 // packed (errors.hpp). `current` is the version installed now, kept with the copy.
 std::string CopySavesBefore(const std::string& url, const std::string& key, unsigned long long app_id, unsigned current,

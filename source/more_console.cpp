@@ -467,14 +467,14 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     std::snprintf(text, sizeof(text), m.ic_marked_fmt, marked, draw::Size(freed).c_str());
     ui::Text(vg, x0, fy + (base_marked ? 24 : 0), 15, marked ? t.text : t.muted, text);
 
-    // as everywhere: Y marks, − deletes what is marked
+    // as everywhere: Y marks, + has every action (deleting what is marked among them)
     std::vector<ui::Hint> hints;
     if (!items.empty()) {
         hints.push_back({ui::glyph::A, tt.cd_hint, HidNpadButton_A});
         hints.push_back({ui::glyph::Y, m.ic_mark, HidNpadButton_Y});
-        if (marked) hints.push_back({ui::glyph::Minus, m.ic_remove_marked, HidNpadButton_Minus});
     }
     if (g) hints.push_back({ui::glyph::X, ms.Any() && (ms.update_lib || ms.dlc_lib) ? tt.ms_install_hint : m.ic_from_library, HidNpadButton_X});
+    if (!items.empty()) hints.push_back({ui::glyph::Plus, tt.fm_actions, HidNpadButton_Plus});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, v.task == Space::Task::Remove ? m.ic_removing : nullptr, hints, m_hint_rects);
 }
@@ -501,18 +501,10 @@ void App::PickedText(const Space::View& v, char* out, size_t size) {
 std::vector<ui::Hint> App::ConsoleHints() {
     const auto& s = Tr();
     const More& m = TrM();
-    static std::string many;
-    // as everywhere: A opens, Y marks, − deletes what is marked
+    // as everywhere: A opens, Y marks, + has every action (deleting what is marked, the filter,
+    // the size)
     std::vector<ui::Hint> hints = {{ui::glyph::A, m.ic_open, HidNpadButton_A}, {ui::glyph::Y, m.ic_mark, HidNpadButton_Y}};
-    if (!m_console_picked.empty()) {
-        char text[120];
-        std::snprintf(text, sizeof(text), m.ic_rm_picked_fmt, int(m_console_picked.size()));
-        many = text;
-        hints.push_back({ui::glyph::Minus, many.c_str(), HidNpadButton_Minus});
-    } else {
-        hints.push_back({ui::glyph::Minus, m_console_missing ? TrT().ms_hint_all : TrT().ms_hint_filter, HidNpadButton_Minus});
-    }
-    hints.push_back({ui::glyph::X, m.ic_size, HidNpadButton_X});
+    hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus});
     hints.push_back({Glyphs(), s.view_switch, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     return hints;
@@ -539,19 +531,9 @@ void App::UpdateConsole(u64 down, u64 held) {
     if (!m_space) return;
     const auto all = m_space->Snapshot();
     if (!m_console_app) {
-        if ((down & HidNpadButton_Minus) && m_console_picked.empty()) {
-            // the filter of what is missing (6A)
-            m_console_missing = !m_console_missing;
-            m_console_focus = 0;
-            return;
-        }
+        // the filter of what is missing (6A), the size and deleting what is marked are in the menu
+        // of + (1A, 14/11)
         const auto v = ConsoleView(all);
-        if (down & HidNpadButton_X) {
-            // the size: list, medium covers, large covers; kept for the next time
-            m_ui.console_size = (m_ui.console_size + 1) % 3;
-            m_ui.Save();
-            return;
-        }
         if (v.apps.empty()) return;
         const int n = int(v.apps.size());
         m_console_focus = std::clamp(m_console_focus, 0, n - 1);
@@ -561,10 +543,6 @@ void App::UpdateConsole(u64 down, u64 held) {
             if (!a.archived) {
                 if (!m_console_picked.erase(a.app_id)) m_console_picked.insert(a.app_id);
             }
-        }
-        if ((down & HidNpadButton_Minus) && !m_console_picked.empty()) {
-            AskConsoleRemoveMany(v);
-            return;
         }
         if (m_ui.console_size != 0) {
             const int cols = m_ui.console_size == 2 ? 4 : 6;
@@ -633,27 +611,37 @@ void App::UpdateConsole(u64 down, u64 held) {
         }
         return;
     }
-    if (down & HidNpadButton_Minus) {
-        bool base = false;
-        for (size_t i = 0; i < items.size(); i++) {
-            if (m_console_marks[i] && items[i].type == NcmContentMetaType_Application) base = true;
-        }
-        m_console_remove.clear();
-        for (size_t i = 0; i < items.size(); i++) {
-            if (m_console_marks[i] || base) m_console_remove.push_back(items[i]);
-        }
-        if (m_console_remove.empty()) {
-            Notice(TrM().ic_nothing);
-            return;
-        }
-        if (m_space->Busy() || (m_queue && (m_queue->Busy() || m_queue->Undoing()))) {
-            Notice(TrM().cz_busy);
-            return;
-        }
-        m_dialog = Dialog{};
-        m_dialog.kind = DialogKind::ConsoleRemove;
-        m_dialog.text = found->name;
+}
+
+void App::AskConsoleRemoveMarked() {
+    if (!m_space || !m_console_app) return;
+    const auto v = m_space->Snapshot();
+    const InstalledApp* found = nullptr;
+    for (const auto& a : v.apps) {
+        if (a.app_id == m_console_app) found = &a;
     }
+    if (!found) return;
+    const auto items = Items(*found);
+    if (m_console_marks.size() != items.size()) m_console_marks.assign(items.size(), 0);
+    bool base = false;
+    for (size_t i = 0; i < items.size(); i++) {
+        if (m_console_marks[i] && items[i].type == NcmContentMetaType_Application) base = true;
+    }
+    m_console_remove.clear();
+    for (size_t i = 0; i < items.size(); i++) {
+        if (m_console_marks[i] || base) m_console_remove.push_back(items[i]);
+    }
+    if (m_console_remove.empty()) {
+        Notice(TrM().ic_nothing);
+        return;
+    }
+    if (m_space->Busy() || (m_queue && (m_queue->Busy() || m_queue->Undoing()))) {
+        Notice(TrM().cz_busy);
+        return;
+    }
+    m_dialog = Dialog{};
+    m_dialog.kind = DialogKind::ConsoleRemove;
+    m_dialog.text = found->name;
 }
 
 // ---- what is missing (6A) ----
@@ -857,5 +845,8 @@ void App::ConsoleVersionReset() {
         Notice(TrT().cd_version_fail);
     }
 }
+
+// The lines of a game on the console, for the menu of actions (more_actions.cpp).
+std::vector<InstalledApp::Content> ConsoleItems(const InstalledApp& a) { return Items(a); }
 
 } // namespace nxdock

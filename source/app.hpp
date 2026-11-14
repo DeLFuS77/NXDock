@@ -74,7 +74,8 @@ private:
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
                          OpenBubble, QuickRow, QuickBack, StyleCard,
-                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow };
+                         FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
+                         ActRow, ActBack, DialogTick };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -411,6 +412,29 @@ private:
     void ActivateMenu(int row);
     void AskUpdateAll();
     bool m_menu = false;
+    // The menu of actions of + on every other screen (1A, 14/11): the same rows as its buttons, with
+    // the button of each at its right (2A); - opens it too.
+    enum class ActScreen { None, Detail, ConsoleList, ConsoleGame, Session, History, Queue, Shops, SpacePick, Compress };
+    struct ActRow {
+        int id = 0;            // what it does (more_actions.cpp)
+        std::string label, right;
+        bool enabled = true;
+        u64 button = 0;        // the button that does the same, shown at its right; 0: none
+        bool danger = false;   // it deletes or takes off: in amber
+        int icon = 0;
+    };
+    ActScreen CurrentActScreen();
+    std::vector<ActRow> ActRows(ActScreen screen, std::string& title);
+    void OpenActions(ActScreen screen);
+    void UpdateActions(u64 down, u64 held);
+    void DrawActions(NVGcontext* vg);
+    void ActDo(const ActRow& row);
+    void ActPress(u64 button);
+    bool ConsoleRemoveTakesGame();
+    bool m_act = false;
+    ActScreen m_act_screen = ActScreen::None;
+    int m_act_focus = 0;
+    double m_act_at = -100;
     int m_menu_focus = 0;
     double m_menu_at = 0; // when the Options menu opened
     bool m_az_touch = false;
@@ -647,6 +671,7 @@ private:
     std::vector<HistoryEntry> m_console_done;             // what goes in the history when it is done
     std::string m_console_done_text;                      // the green notice then
     void AskConsoleRemoveMany(const Space::View& v);
+    void AskConsoleRemoveMarked();
     void PickedText(const Space::View& v, char* out, size_t size);
     std::vector<ui::Hint> ConsoleHints();
     unsigned m_console_scanned_for = ~0u;                 // the version of the queue last read for
@@ -674,6 +699,7 @@ private:
         bool to_nand = false;           // SpaceMove: the way it goes
         unsigned long long size = 0;    // SpaceMove: how much moves
         std::vector<UpdateCheck> checks; // UpdateStops: each job, read from the console once
+        bool keep_saves = true;          // ConsoleRemove: the saves are copied first (3A)
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;

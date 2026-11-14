@@ -365,6 +365,11 @@ bool Vault::StartList(const std::string& url, const std::string& key) {
     return true;
 }
 
+namespace {
+Result BackupToSd(const Vault::User& user, int kind, unsigned long long app_id, unsigned version, const std::string& note, bool automatic,
+                  const std::function<void(unsigned long long, unsigned long long)>& progress);
+} // namespace
+
 std::string CopySavesBefore(const std::string& url, const std::string& key, unsigned long long app_id, unsigned current,
                             const std::string& note, const std::function<void(unsigned long long, unsigned long long)>& progress) {
     const More& m = TrM();
@@ -393,6 +398,15 @@ std::string CopySavesBefore(const std::string& url, const std::string& key, unsi
         std::string name;
         for (const auto& u : users) {
             if (std::memcmp(u.uid, uid.data(), 16) == 0) name = u.name;
+        }
+        if (url.empty()) {
+            // no library linked: to the SD card, where More > Saves shows it (3A)
+            Vault::User user{};
+            std::memcpy(user.uid, uid.data(), 16);
+            user.name = name;
+            const Result rc = BackupToSd(user, 0, app_id, current, note, false, [&progress](u64 d, u64 t) { if (progress) progress(d, t); });
+            if (R_FAILED(rc)) return VaultError(m.v_copy_failed, m.v_copy_failed_d, rc);
+            continue;
         }
         Result rc = SaveToZip(uid.data(), app_id, zip_path, [&progress](u64 d, u64 t) { if (progress) progress(d, t); });
         if (R_FAILED(rc)) {

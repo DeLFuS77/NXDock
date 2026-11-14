@@ -1121,11 +1121,11 @@ void App::ReadTouch(u64& down) {
             m_touch_at = m_time;
             m_drag_scroll0 = m_scroll;
             // a list drawn last frame under the finger: dragged, it moves its focus row by row
-            m_list_drag = m_list_pitch > 0 && m_dialog.kind == DialogKind::None && !m_menu && !m_wifi_open && m_quick < 0 &&
+            m_list_drag = m_list_pitch > 0 && m_dialog.kind == DialogKind::None && !m_menu && !m_act && !m_wifi_open && m_quick < 0 &&
                           m_list_area.Contains(x, y);
             m_drag_steps = 0;
             // the A-Z bar on the right edge: tapped or dragged along, it jumps to the letter
-            m_az_touch = AzBarShown() && m_dialog.kind == DialogKind::None && !m_menu && m_quick < 0 && x >= g_az_x - 22 &&
+            m_az_touch = AzBarShown() && m_dialog.kind == DialogKind::None && !m_menu && !m_act && m_quick < 0 && x >= g_az_x - 22 &&
                          x < g_az_x + kAzW + 12 && y >= kAzTop - 8 && y < kAzTop + g_az_height + 8;
             // what is under the finger reacts at once (15A)
             m_press_live = false;
@@ -1177,7 +1177,7 @@ void App::ReadTouch(u64& down) {
         }
         // held still on a cover: its quick menu (18A)
         if (!moved && !m_long_fired && m_press_cover >= 0 && m_press_kind == HitKind::Cover && GridTab() && !m_detail &&
-            m_dialog.kind == DialogKind::None && !m_menu && m_quick < 0 && m_time - m_press_at >= 0.45) {
+            m_dialog.kind == DialogKind::None && !m_menu && !m_act && m_quick < 0 && m_time - m_press_at >= 0.45) {
             m_long_fired = true;
             m_press_live = false;
             m_release_at = m_time;
@@ -1189,7 +1189,7 @@ void App::ReadTouch(u64& down) {
                              m_touch_x0 < g_az_x - 22;
         if (!m_dragging && !m_swipe && moved && !m_long_fired) {
             // sideways: the tab beside, or back from a page (20A); up and down: the grid or the list
-            const bool calm = !m_wizard && m_dialog.kind == DialogKind::None && !m_menu && m_quick < 0 && !m_wifi_open;
+            const bool calm = !m_wizard && m_dialog.kind == DialogKind::None && !m_menu && !m_act && m_quick < 0 && !m_wifi_open;
             if (std::fabs(dx) > std::fabs(dy) * 1.2f && calm) {
                 m_swipe = true;
             } else if (std::fabs(dy) > kDragSlop && (in_grid || m_list_drag)) {
@@ -1434,6 +1434,18 @@ bool App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::WizMusic: down |= HidNpadButton_Minus; break;
             case HitKind::MenuBack: m_menu = false; break;
+            case HitKind::ActBack: m_act = false; break;
+            case HitKind::ActRow: {
+                // a row acts at once, as a button of a question does
+                std::string title;
+                const auto rows = ActRows(m_act_screen, title);
+                if (it->index >= 0 && it->index < int(rows.size()) && rows[size_t(it->index)].enabled) {
+                    m_act_focus = it->index;
+                    ActDo(rows[size_t(it->index)]);
+                }
+                break;
+            }
+            case HitKind::DialogTick: m_dialog.keep_saves = !m_dialog.keep_saves; break;
             case HitKind::MenuRow:
                 // a row of the menu acts at once, as a button of a question does
                 m_menu_focus = it->index;
@@ -1616,6 +1628,19 @@ void App::Update(u64 down, u64 held) {
         UpdateWizard(down, held);
         return;
     }
+    // + opens the actions of the screen, − too (1A, 14/11); the library, Files and Saves have their own
+    {
+        const ActScreen act = CurrentActScreen();
+        if (m_act && act != m_act_screen) m_act = false;
+        if (m_act) {
+            UpdateActions(down, held);
+            return;
+        }
+        if (act != ActScreen::None && (down & (HidNpadButton_Plus | HidNpadButton_Minus))) {
+            OpenActions(act);
+            return;
+        }
+    }
     if (m_detail && GridTab()) {
         if (m_detail_game < 0 || m_detail_game >= int(m_games.size())) {
             m_detail = false;
@@ -1759,7 +1784,7 @@ bool App::Frame() {
         down |= HidNpadButton_Up;
         m_drag_pending++;
     }
-    if (m_dialog.kind != DialogKind::None || m_menu || m_quick >= 0) {
+    if (m_dialog.kind != DialogKind::None || m_menu || m_act || m_quick >= 0) {
         m_drag_pending = 0;
         m_list_fling = 0;
     }
@@ -1886,6 +1911,9 @@ u64 App::FocusSignature() const {
     mix(int(m_dialog.kind));
     mix(m_dialog.focus);
     mix(m_menu);
+    mix(m_act);
+    mix(m_act_focus);
+    mix(m_dialog.keep_saves);
     mix(m_menu_focus);
     mix(m_ui.sort);
     mix(m_wizard);
@@ -2054,6 +2082,9 @@ void App::Draw(NVGcontext* vg) {
     }
     if (m_quick >= 0 && GridTab() && !m_detail) {
         DrawQuick(vg);
+    }
+    if (m_act && CurrentActScreen() == m_act_screen) {
+        DrawActions(vg);
     }
     if (m_dialog.kind != DialogKind::None) {
         DrawDialog(vg);
@@ -2954,10 +2985,6 @@ void App::UpdateDetail(u64 down, u64 held) {
         } else {
             Notice(Tr().verify_wait);
         }
-    }
-    if ((down & HidNpadButton_Minus) && g.installed.base && !m_shop_active) {
-        OpenVersions(); // another version of the update (20A)
-        return;
     }
     if ((down & HidNpadButton_X) && g.installed.base && !m_shop_active) {
         // the cheats and mods of this game; B comes back here
@@ -3961,14 +3988,14 @@ void App::DrawDetail(NVGcontext* vg) {
     const float fy = cy + 62;
     for (size_t i = 0; i < facts.size(); i++) {
         const auto& f = facts[i];
-        const bool chip = versions && i + 1 == facts.size(); // the version on the console: − changes it (20A)
+        const bool chip = versions && i + 1 == facts.size(); // the version on the console: + changes it (20A, 1A)
         const float w = std::max(ui::TextWidth(vg, 14, f.label), ui::TextWidth(vg, 17, f.value.c_str())) + 28 + (chip ? 34 : 0);
         ui::FillRound(vg, fx, fy, w, 56, 10, Hex(0, t.dark ? 0.25f : 0.04f));
         ui::StrokeRound(vg, fx + .5f, fy + .5f, w - 1, 55, 10, chip ? t.work : t.line, chip ? 1.5f : 1.f);
         ui::Text(vg, fx + 14, fy + 18, 14, t.muted, f.label);
         ui::Text(vg, fx + 14, fy + 39, 17, f.color, f.value.c_str());
         if (chip) {
-            ui::Symbol(vg, t, fx + w - 22, fy + 28, 18, ui::glyph::Minus, t.work, HidNpadButton_Minus);
+            ui::Symbol(vg, t, fx + w - 22, fy + 28, 18, ui::glyph::Plus, t.work, HidNpadButton_Plus);
             AddHit(fx, fy, w, 56, HitKind::VersionChip, 0);
         }
         fx += w + 10;
@@ -4073,7 +4100,7 @@ void App::DrawDetail(NVGcontext* vg) {
     if (g.installed.base && !m_shop_active) {
         hints.push_back({ui::glyph::X, TrM().t_mods, HidNpadButton_X}); // its cheats and mods (10A)
     }
-    if (versions) hints.push_back({ui::glyph::Minus, TrM().ver_hint, HidNpadButton_Minus}); // another version (20A)
+    hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus}); // all of it, another version too (20A, 1A)
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
@@ -4840,10 +4867,6 @@ void App::UpdateQueue(u64 down, u64 held) {
         return;
     }
     const InstallJob& j = rows[m_queue_focus];
-    if (down & HidNpadButton_Minus) {
-        AskScreenOff(); // the screen off while it installs (11A)
-        return;
-    }
     if (down & HidNpadButton_X) {
         if (j.state == InstallJob::State::Running) {
             // the one installing is cancelled only after a question, Keep installing in focus
@@ -5210,10 +5233,9 @@ void App::DrawQueue(NVGcontext* vg) {
         hints.push_back({ui::glyph::A, s.retry, HidNpadButton_A});
     }
     hints.push_back({ui::glyph::X, f.state == InstallJob::State::Running ? s.cancel : s.remove, HidNpadButton_X});
-    hints.push_back({ui::glyph::Y, s.clear_done, HidNpadButton_Y});
-    if (running) hints.push_back({ui::glyph::Minus, TrM().so_button, HidNpadButton_Minus}); // the screen off (11A)
+    // clearing, pausing and the screen off (11A) are in the menu of + (1A, 14/11)
+    hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus});
     const bool paused = m_queue->Paused();
-    if (paused || m_queue->Waiting() > 0) hints.push_back({ui::glyph::ZR, paused ? TrM().qw_go_on : TrM().qw_pause, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, paused ? TrM().qw_paused : m_prefs.download_test ? s.download_test : live.merging ? TrM().qm_note : (running ? s.no_sleep : s.queue_done_hint), hints,
                 m_hint_rects);
@@ -5853,9 +5875,7 @@ void App::DrawSession(NVGcontext* vg) {
     if (Undoable(items[m_installed_focus])) {
         hints.push_back({ui::glyph::X, s.remove_this, HidNpadButton_X});
     }
-    if (!left.empty()) {
-        hints.push_back({ui::glyph::Y, s.undo_all, HidNpadButton_Y});
-    }
+    hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus}); // Undo all among them, as its button (Y)
     hints.push_back({ViewGlyphs(), s.view_switch, HidNpadButton_ZR});
     hints.push_back({ui::glyph::B, s.back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
@@ -5955,7 +5975,7 @@ void App::DrawHistory(NVGcontext* vg) {
         nvgRestore(vg);
     }
     ui::HintBar(vg, t, nullptr,
-                {{ui::glyph::A, s.details, HidNpadButton_A}, {ui::glyph::Minus, s.clear_history, HidNpadButton_Minus},
+                {{ui::glyph::A, s.details, HidNpadButton_A}, {ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus},
                  {ViewGlyphs(), s.view_switch, HidNpadButton_ZR}, {ui::glyph::B, s.back, HidNpadButton_B}},
                 m_hint_rects);
 }
@@ -6007,10 +6027,6 @@ void App::UpdateInstalled(u64 down, u64 held) {
             m_dialog.entry = m_installed_focus;
             m_dialog.single = true;
         }
-        if (down & HidNpadButton_Minus) {
-            m_dialog = Dialog{};
-            m_dialog.kind = DialogKind::ClearHistory;
-        }
     }
 }
 
@@ -6035,6 +6051,7 @@ void App::DrawDialog(NVGcontext* vg) {
     std::vector<Line> lines;
     bool can = true, bar = false;
     bool verify_bar = false, verify_running = false;
+    bool tick = false; // ConsoleRemove: the box of the saves (3A)
     std::string cancel_label = s.cancel;
     float verify_frac = 0;
     std::string verify_text;
@@ -6286,7 +6303,9 @@ void App::DrawDialog(NVGcontext* vg) {
             }
             std::snprintf(text, sizeof(text), m.ic_rm_body_fmt, SizeText(size).c_str());
             body = text;
-            primary = m.ic_rm_go;
+            // the saves can be copied first, when the game itself goes (3A, 14/11)
+            tick = ConsoleRemoveTakesGame();
+            primary = tick && m_dialog.keep_saves ? m.ic_rm_copy_go : m.ic_rm_go;
             break;
         }
         case DialogKind::ShopRemove: {
@@ -6546,6 +6565,7 @@ void App::DrawDialog(NVGcontext* vg) {
 
     // the layout, from the top
     const float w = 740, pad = 32, iw = w - 2 * pad;
+    const float tick_h = tick ? 84.f + 14 : 0.f;
     const int shown = std::min<int>(int(lines.size()), m_dialog.kind == DialogKind::HistoryInfo ? 8 : 5);
     const bool more = int(lines.size()) > shown;
     // rows a finger chooses are 48 px high; the others 40
@@ -6555,7 +6575,7 @@ void App::DrawDialog(NVGcontext* vg) {
     const float note_h = note.empty() ? 0 : TextBoxHeight(vg, iw, 15, note.c_str()) + 14;
     const float list_h = lines.empty() ? 0 : shown * lp + (more ? 30 : 0) + 12 + 16;
     const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
-    h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + 60 + pad - 8;
+    h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + tick_h + 60 + pad - 8;
     const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
     // it grows out of the middle with a soft spring
     const float pop = ui::EaseOutBack(ui::Appear(m_dialog_at, 0.32f));
@@ -6707,6 +6727,24 @@ void App::DrawDialog(NVGcontext* vg) {
         TextBox(vg, x + pad, cy, iw, 15, t.muted, note.c_str());
         cy += note_h;
     }
+    if (tick) {
+        // a big box to tick, on by default: the saves copied before (3A); a tap or Y changes it
+        const bool on = m_dialog.keep_saves;
+        const More& m = TrM();
+        const float th = tick_h - 14;
+        NVGcolor fill = t.work;
+        fill.a = on ? 0.12f : 0.04f;
+        ui::FillRound(vg, x + pad, cy, iw, th, 14, fill);
+        NVGcolor edge = t.work;
+        edge.a = 0.6f;
+        ui::StrokeRound(vg, x + pad + 1, cy + 1, iw - 2, th - 2, 14, on ? edge : t.line, 2);
+        draw::TickBox(vg, t, x + pad + 22, cy + th / 2, on, "keep-saves");
+        ui::Text(vg, x + pad + 62, cy + th / 2 - 13, 18, t.text, m.ic_rm_keep);
+        ui::Text(vg, x + pad + 62, cy + th / 2 + 14, 14, t.muted, m_link.CurrentConfig().Linked() ? m.ic_rm_keep_lib : m.ic_rm_keep_sd);
+        ui::Symbol(vg, t, x + pad + iw - 30, cy + th / 2, 24, ui::glyph::Y, t.muted, HidNpadButton_Y);
+        AddHit(x + pad, cy, iw, th, HitKind::DialogTick);
+        cy += tick_h;
+    }
 
     // the buttons: Cancel (or Close) first in focus, the action on the right
     const bool info = m_dialog.single;
@@ -6769,6 +6807,10 @@ void App::DrawDialog(NVGcontext* vg) {
 
 void App::UpdateDialog(u64 down, u64 held) {
     if (ToolDialogInput(down, held)) return;
+    if (m_dialog.kind == DialogKind::ConsoleRemove && (down & HidNpadButton_Y) && ConsoleRemoveTakesGame()) {
+        m_dialog.keep_saves = !m_dialog.keep_saves; // the box of the saves (3A)
+        return;
+    }
     const bool info = m_dialog.single;
     if (m_dialog.kind == DialogKind::Verify && (down & (HidNpadButton_B | HidNpadButton_A)) && m_queue->GetVerify().running) {
         // stops the check; the question closes
@@ -7074,7 +7116,27 @@ void App::ConfirmDialog() {
             AddJobs(std::move(jobs));
             return;
         }
-        case DialogKind::ConsoleRemove:
+        case DialogKind::ConsoleRemove: {
+            // the saves first, when asked (3A): to the library when one is linked, else to the SD
+            // card; a copy that fails stops the removal of that game, and nothing of it goes
+            std::function<std::string(unsigned long long)> before;
+            if (m_dialog.keep_saves && ConsoleRemoveTakesGame()) {
+                const Config c = m_link.CurrentConfig();
+                const std::string url = c.Linked() ? c.url : std::string{}, key = c.Linked() ? c.key : std::string{};
+                const std::string note = TrM().sc_note_remove;
+                std::map<unsigned long long, unsigned> versions; // the version installed, kept with the copy
+                if (m_space) {
+                    for (const auto& a : m_space->Snapshot().apps) {
+                        for (const auto& ct : a.contents) {
+                            if (ct.type == NcmContentMetaType_Patch) versions[a.app_id] = std::max(versions[a.app_id], unsigned(ct.version));
+                        }
+                    }
+                }
+                before = [url, key, note, versions](unsigned long long app) {
+                    const auto it = versions.find(app);
+                    return CopySavesBefore(url, key, app, it == versions.end() ? 0 : it->second, note, {});
+                };
+            }
             // taking contents off while the queue installs could take those of the install going on
             if (m_queue && (m_queue->Busy() || m_queue->Undoing())) {
                 Notice(TrM().cz_busy);
@@ -7102,7 +7164,7 @@ void App::ConfirmDialog() {
                 char text[200];
                 std::snprintf(text, sizeof(text), TrM().ic_done_many_fmt, int(games.size()), SizeText(bytes).c_str());
                 m_console_done_text = text;
-                if (m_space && m_space->StartRemove(games)) {
+                if (m_space && m_space->StartRemove(games, before)) {
                     m_console_removing.clear();
                     for (const auto& g : games) m_console_removing.insert(g.first);
                     m_console_picked.clear();
@@ -7110,7 +7172,7 @@ void App::ConfirmDialog() {
                     m_console_done.clear();
                     Notice(TrM().cz_busy);
                 }
-            } else if (m_space && m_space->StartRemove(m_console_app, m_console_remove)) {
+            } else if (m_space && m_space->StartRemove(m_console_app, m_console_remove, before)) {
                 // one game, or a part of it
                 u64 bytes = 0;
                 bool base = false;
@@ -7137,6 +7199,7 @@ void App::ConfirmDialog() {
                 Notice(TrM().cz_busy);
             }
             break;
+        }
         case DialogKind::ShopRemove:
             if (m_dialog.entry >= 0 && m_dialog.entry < int(m_shops.size())) {
                 m_shops.erase(m_shops.begin() + m_dialog.entry);
@@ -7204,5 +7267,9 @@ void App::DrawSaver(NVGcontext* vg) {
     }
     ui::Text(vg, kWidth / 2, 384, 16, nvgRGBAf(1, 1, 1, 0.45f), Tr().saver_text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 }
+
+// For the menu of actions (more_actions.cpp): the queue as shown, and what can be undone.
+std::vector<InstallJob> QueueAsShown(std::vector<InstallJob> jobs) { return QueueOrder(std::move(jobs)); }
+bool CanUndo(const SessionItem& item) { return Undoable(item); }
 
 } // namespace nxdock
