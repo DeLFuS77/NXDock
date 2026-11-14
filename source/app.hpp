@@ -402,6 +402,9 @@ private:
     void ScreenOn();
     bool FollowScreenOff(u64& down, bool new_touch);
     void DrawScreenOff(NVGcontext* vg);
+    // The screen off can show nothing: only black is drawn then, not the whole interface.
+    bool ScreenDark() const;
+    void DrawDark(NVGcontext* vg);
     double m_screen_off_at = -100; // the countdown started
     // the animation pass: when the dialog, the notice, a list or a screen of More appeared
     double m_dialog_at = -100, m_notice_at = -100, m_more_at = -100, m_list_at = -100;

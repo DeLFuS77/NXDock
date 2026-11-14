@@ -668,7 +668,11 @@ bool App::Frame() {
     SeeQueue(); // what Update changed in the queue, drawn in this frame
     perf::Count(m_covers.Upload(vg));
     perf::Lap(perf::kUpload);
-    Draw(vg);
+    if (ScreenDark()) {
+        DrawDark(vg); // nothing of the screen can be seen: the install keeps the CPU
+    } else {
+        Draw(vg);
+    }
     perf::Lap(perf::kDraw);
     m_gfx.EndFrame();
     perf::Lap(perf::kPresent);
