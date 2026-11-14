@@ -59,6 +59,7 @@ void App::OpenCompress() {
     m_compress_started = false;
     m_compress_ask = 0;
     m_compress_return = false;
+    m_compress_to_tiles = false;
 }
 
 bool App::CanCompress(const InstalledApp& a) const {
@@ -68,13 +69,16 @@ bool App::CanCompress(const InstalledApp& a) const {
 }
 
 void App::CompressFromConsole(unsigned long long app) {
+    // app 0: the whole list, from the menu of + of In the console
     const MoreScreen back = m_more;
     m_tab = Tab::More;
     if (!m_space) m_space = std::make_unique<Space>();
     m_more = MoreScreen::Space;
     OpenCompress();
-    m_compress_app = app;
-    m_compress_all = true; // in sight whatever it is
+    if (app) {
+        m_compress_app = app;
+        m_compress_all = true; // in sight whatever it is
+    }
     m_compress_ask = app;
     m_compress_return = true;
     m_compress_back_more = back;
@@ -486,6 +490,10 @@ void App::UpdateCompress(u64 down, u64 held) {
     if (down & HidNpadButton_B) {
         m_space_mode = 0; // a compression that runs goes on
         m_compress_ask = 0;
+        if (m_compress_to_tiles) {
+            m_compress_to_tiles = false;
+            m_more = MoreScreen::Tiles;
+        }
         if (m_compress_return) {
             // opened from In the console: back there, as it was
             m_compress_return = false;

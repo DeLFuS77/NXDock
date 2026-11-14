@@ -344,6 +344,7 @@ private:
     void CompressFromConsole(unsigned long long app);
     unsigned long long m_compress_ask = 0; // the game whose question opens once it is checked
     bool m_compress_return = false;        // B goes back to In the console
+    bool m_compress_to_tiles = false;      // opened from its tile of More: B goes back to the tiles
     MoreScreen m_compress_back_more = MoreScreen::Tiles;
     void FollowCompress(const Compressor::View& c);
     void CompressDialogText(std::string& title, std::string& body, std::string& note, std::string& primary);

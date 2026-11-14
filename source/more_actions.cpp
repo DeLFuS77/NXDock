@@ -35,7 +35,7 @@ constexpr float kActW = 470, kActRow = 56;
 // What a row does when it has no button of its own (kButton: as its button)
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
-             kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kSortBase = 100 };
+             kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
@@ -310,6 +310,8 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 if (CanCompress(a)) rows.push_back({kCompress, m.cz_menu_row, {}, true, 0, false, kIconPress});
             }
             rows.push_back({kMissing, m_console_missing ? tt.ms_hint_all : tt.ms_hint_filter, {}, true, 0, false, kIconFunnel});
+            // every game, in Compress games (14/11)
+            rows.push_back({kCompressAll, m.cz_menu_all, {}, true, 0, false, kIconPress});
             // those without their game (5C), when there are some
             {
                 const auto all = m_space->Snapshot();
@@ -602,6 +604,7 @@ void App::ActDo(const ActRow& row) {
             break;
         }
         case kRandom: RollRandom(); break; // 21A
+        case kCompressAll: CompressFromConsole(0); break; // 14/11
         case kCompress: {
             // the game in focus of the list, or the one whose page is open
             unsigned long long app = m_console_app;
