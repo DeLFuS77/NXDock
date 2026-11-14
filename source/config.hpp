@@ -65,6 +65,7 @@ struct UiPrefs {
     int mtp_units = 15;               // the folders the computer sees over MTP: 1 installed games, 2 saves, 4 album, 8 USB disk (8A)
     int save_auto_days = 0;           // copies of the saves every so many days, at start; 0 off (9A)
     long long save_auto_last = 0;     // when they were last made
+    bool text_wrap = false;           // the text viewer of the explorer wraps long lines (20A)
 
     static UiPrefs Load();
     bool Save() const;

@@ -40,6 +40,7 @@
 #include "ui.hpp"
 #include "file_match.hpp"
 #include "text_view.hpp"
+#include "usb30.hpp"
 
 namespace nxdock {
 
@@ -82,7 +83,7 @@ private:
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
                          ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, TicketRow,
-                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea };
+                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -148,6 +149,31 @@ private:
     void FollowUsb();
     void DrawArrival(NVGcontext* vg);
     void UpdateArrival(u64 down, u64 held);
+    // USB 3.0 (USB A of 14/11, more_usb3.cpp): a chip with the speed of the cable once it is in, its
+    // sheet (what it gives, the risk, how), system_settings.ini changed with a copy kept, the reboot
+    enum Usb3Chip { kU3None, kU3Slow, kU3Fast, kU3Pending, kU3Cable };
+    void FollowUsb3(bool connected);
+    int Usb3ChipKind() const;
+    float Usb3ChipWidth(NVGcontext* vg, bool short_form) const;
+    void DrawUsb3Chip(NVGcontext* vg, float x, float y, bool focused, bool short_form);
+    const char* Usb3ChipText() const;
+    const char* Usb3RowText() const; // the state, short, for the menu of +
+    void OpenUsb3();
+    void DrawUsb3Sheet(NVGcontext* vg);
+    void UpdateUsb3Sheet(u64 down, u64 held);
+    void Usb3Do(int action);
+    void RebootWhenIdle();
+    void FollowReboot();
+    Usb30State m_usb3;
+    bool m_usb3_read = false;
+    int m_usb_speed = 0;               // 0 not known, 2 USB 2.0, 3 USB 3.0 (usb30.hpp)
+    double m_usb_speed_at = -100;
+    int m_usb3_shown = kU3None;        // the chip of the last frame, to start its entrance
+    double m_usb3_at = -100;
+    bool m_usb_chip_focus = false;     // NS-USBloader: the focus on the chip (MTP: m_mtp_unit -1)
+    bool m_usb3_backed = false, m_usb3_written_on = false; // the last change: a copy kept, on or off
+    std::string m_usb3_error;
+    bool m_reboot_waiting = false;     // "Reboot now" while something installs: when it ends
     MoreScreen m_more = MoreScreen::Tiles;
     MoreScreen m_after_risk = MoreScreen::Tiles; // a screen to open once the warning is accepted
     int m_tile = 0;
@@ -422,7 +448,7 @@ private:
     bool m_menu = false;
     // The menu of actions of + on every other screen (1A, 14/11): the same rows as its buttons, with
     // the button of each at its right (2A); - opens it too.
-    enum class ActScreen { None, Detail, ConsoleList, ConsoleGame, Session, History, Queue, Shops, SpacePick, Compress, ConsoleSort, Tickets, Viewer };
+    enum class ActScreen { None, Detail, ConsoleList, ConsoleGame, Session, History, Queue, Shops, SpacePick, Compress, ConsoleSort, Tickets, Viewer, Arrival };
     struct ActRow {
         int id = 0;            // what it does (more_actions.cpp)
         std::string label, right;
@@ -522,6 +548,11 @@ private:
     void FollowQueue();
     void DrawSettings(NVGcontext* vg);
     void DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h);
+    // what the row in focus does, its value now, and a few lines (S2 A of 14/11)
+    void DrawSettingHelp(NVGcontext* vg, float x, float y, float w, float h, const char* name, const char* value, bool accent,
+                         const char* help, float alpha);
+    int m_help_row = -1, m_help_prev = -1; // the row the panel on the right is of, and the one before
+    double m_help_at = -100;               // when it changed, for its fade
     // the four styles as cards with a small picture of each, while the row Style is in focus
     void DrawStylePanel(NVGcontext* vg, float x, float y, float w, float h);
     Theme m_style_from{}, m_style_to{};
@@ -753,8 +784,7 @@ private:
     TextFile m_text;
     std::string m_text_name, m_text_path;
     std::vector<TextRow> m_text_rows;
-    int m_text_cols = 0, m_text_top = 0;
-    bool m_text_wrap = true;
+    int m_text_cols = 0, m_text_top = 0; // wrapping is kept in m_ui.text_wrap
     // 21A: a game at random, with a short roll of dice over the covers
     void RollRandom();
     void DrawDice(NVGcontext* vg);
@@ -789,7 +819,8 @@ private:
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressIntro, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
-                            UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro };
+                            UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
+                            Usb3, Usb3Reboot };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -807,7 +838,7 @@ private:
         bool to_nand = false;           // SpaceMove: the way it goes
         unsigned long long size = 0;    // SpaceMove: how much moves
         std::vector<UpdateCheck> checks; // UpdateStops: each job, read from the console once
-        bool keep_saves = true;          // ConsoleRemove: the saves are copied first (3A)
+        bool keep_saves = true;          // ConsoleRemove: the saves are copied first (3A); set from m_ui.save_copy
         bool remove_extra = false;       // ConsoleRemove: its mods and its tickets go too (7A)
         int extra_mods = 0;              // ConsoleRemove: the folders of mods found
         int extra_common = 0, extra_personal = 0; // ConsoleRemove: the tickets found

@@ -29,6 +29,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   /tmp/file_match_test
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/text_view_test tests/text_view_test.cpp source/text_view.cpp
   /tmp/text_view_test /tmp
+  # USB 3.0 in system_settings.ini: added, replaced, uncommented, a section made, CRLF kept
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/usb30_test tests/usb30_test.cpp source/usb30_ini.cpp
+  /tmp/usb30_test
   # what titledb knows of updates and DLC, for the games not in the library
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/versions_test tests/versions_test.cpp source/versions_list.cpp -lpthread
   /tmp/versions_test

@@ -35,6 +35,10 @@ struct Tools {
     const char *mu_title, *mu_installed, *mu_installed_sub, *mu_saves, *mu_saves_sub, *mu_album, *mu_album_sub, *mu_usb, *mu_usb_sub, *mu_usb_none, *mu_device, *mu_note;
     // more of the saves (9A)
     const char *sv_user, *sv_device, *sv_bcat, *sv_kind, *sv_more, *sv_copy_all, *sv_games_fmt, *sv_delete, *sv_lib, *sv_sd, *sv_copies, *sv_sd_note, *sv_del_title_fmt, *sv_del_body, *sv_del_go, *sv_del_note, *sv_deleted, *sv_all_done_fmt, *sv_all_note, *sv_auto_row, *sv_auto_fmt, *sv_auto_note, *sv_auto_done_fmt, *sv_none_kind;
+    // USB 3.0 in MTP and NS-USBloader (USB A of 14/11): the chip, its sheet, the reboot
+    const char *u3_chip_slow, *u3_chip_fast, *u3_chip_pending, *u3_chip_cable, *u3_title, *u3_now_20, *u3_now_30, *u3_now_on_pending, *u3_now_off_pending, *u3_gives, *u3_risk, *u3_how_off, *u3_how_on, *u3_manual, *u3_step1, *u3_step2, *u3_step3, *u3_not_now, *u3_turn_on, *u3_turn_off, *u3_undo, *u3_reboot_now, *u3_later, *u3_done_on, *u3_done_off, *u3_until, *u3_until_off, *u3_copy_saved, *u3_line_on, *u3_line_off, *u3_waits, *u3_toast, *u3_toast_off, *u3_failed, *u3_waiting, *u3_reboot_failed, *u3_undone, *u3_row, *u3_r_fast, *u3_r_slow, *u3_r_pending, *u3_r_cable;
+    // Settings: the group Saves (S1 A) and the help of the row in focus (S2 A)
+    const char *st_g_saves, *st_now_fmt, *h_updates, *h_versions, *h_dest, *h_pick, *h_save_copy, *h_save_auto, *h_screen, *h_compress, *h_finish, *h_battery, *h_notify, *h_language, *h_theme, *h_sounds, *h_anim, *h_focus_view, *h_touch_rumble, *h_wizard, *h_self_update, *h_self_notice, *h_self_back, *h_home, *h_home_remove;
 };
 
 const Tools& TrT();

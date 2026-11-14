@@ -232,11 +232,12 @@ bool AskText(const char* guide, const std::string& initial, bool secret, std::st
     return true;
 }
 
-// Settings, in groups: the library, installing, notices, the look, the wizard, the HOME menu,
-// connecting by hand.
+// Settings, in groups: the library, installing, the saves, notices, the look, the wizard, the HOME
+// menu, connecting by hand.
 enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
-    kRowDest, kRowPick, kRowSaveCopy, kRowSaveAuto, kRowScreen, kRowCompress,
+    kRowDest, kRowPick, kRowScreen, kRowCompress,
+    kRowSaveCopy, kRowSaveAuto, // a group of their own (S1 A of 14/11)
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowStyle, kRowSounds, kRowAnim, kRowFocusView, kRowTouchRumble,
     kRowWizard,
@@ -246,8 +247,40 @@ enum SettingRow {
     kSettingRows
 };
 // the first row of each group
-constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowFinish, kRowLanguage, kRowWizard, kRowSelfUpdate, kRowHome, kRowAddress};
+constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowSaveCopy, kRowFinish, kRowLanguage, kRowWizard, kRowSelfUpdate, kRowHome, kRowAddress};
 constexpr int kGroups = int(std::size(kGroupStarts));
+
+// What a row of Settings does, for the panel on the right while it is in focus (S2 A of 14/11);
+// nullptr for the rows of the network, which keep the speed test there, and for Style, its cards.
+const char* SettingHelp(int row) {
+    const Tools& tt = TrT();
+    switch (row) {
+        case kRowUpdates: return tt.h_updates;
+        case kRowVersionsList: return tt.h_versions;
+        case kRowDest: return tt.h_dest;
+        case kRowPick: return tt.h_pick;
+        case kRowScreen: return tt.h_screen;
+        case kRowCompress: return tt.h_compress;
+        case kRowSaveCopy: return tt.h_save_copy;
+        case kRowSaveAuto: return tt.h_save_auto;
+        case kRowFinish: return tt.h_finish;
+        case kRowBattery: return tt.h_battery;
+        case kRowNotifyDone: return tt.h_notify;
+        case kRowLanguage: return tt.h_language;
+        case kRowTheme: return tt.h_theme;
+        case kRowSounds: return tt.h_sounds;
+        case kRowAnim: return tt.h_anim;
+        case kRowFocusView: return tt.h_focus_view;
+        case kRowTouchRumble: return tt.h_touch_rumble;
+        case kRowWizard: return tt.h_wizard;
+        case kRowSelfUpdate: return tt.h_self_update;
+        case kRowSelfNotice: return tt.h_self_notice;
+        case kRowSelfBack: return tt.h_self_back;
+        case kRowHome: return tt.h_home;
+        case kRowHomeRemove: return tt.h_home_remove;
+        default: return nullptr;
+    }
+}
 // the levels of the notice of little battery; 0 is off
 constexpr int kBatterySteps[] = {0, 10, 15, 20, 30};
 
@@ -1632,6 +1665,12 @@ bool App::Tap(float x, float y, u64& down) {
                 m_mtp_unit = it->index;
                 ToggleMtpUnit(it->index);
                 break;
+            case HitKind::UsbChip:
+                // the chip of USB 3.0 opens its sheet at once (USB A)
+                if (m_more == MoreScreen::Mtp) m_mtp_unit = -1;
+                else m_usb_chip_focus = true;
+                OpenUsb3();
+                break;
             case HitKind::ConsoleMissing:
                 m_console_missing = !m_console_missing;
                 m_console_orphans = false;
@@ -1974,6 +2013,7 @@ bool App::Frame() {
     { perf::Timer t_("frame: FollowFilesWork"); FollowFilesWork(); }
     { perf::Timer t_("frame: FollowSelfUpdate"); FollowSelfUpdate(); }
     { perf::Timer t_("frame: FollowSaveAuto"); FollowSaveAuto(); }
+    FollowReboot(); // "Reboot now" of USB 3.0 waits for the queue
     { perf::Timer t_("frame: FollowFinish"); FollowFinish(); }
     { perf::Timer t_("frame: FollowUsb"); FollowUsb(); }
     { perf::Timer t_("frame: FollowPush"); FollowPush(); }
@@ -5452,10 +5492,10 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.speed_test, running ? s.cancel : s.start, linked},
         {m.st_dest, m_ui.dest == 2 ? s.wiz_ask_each : s.sd_card, true},
         {m.st_pick, picks[std::clamp(m_ui.pick, 0, 2)], true},
-        {m.sc_row, yes(m_ui.save_copy), m_ui.save_copy},
-        {TrT().sv_auto_row, save_auto, m_ui.save_auto_days > 0},
         {m.st_screen, screens[m_ui.screen_off_auto ? 2 : m_ui.saver ? 1 : 0], m_ui.saver || m_ui.screen_off_auto},
         {m.cz_row, yes(m_ui.compress_on), m_ui.compress_on},
+        {m.sc_row, yes(m_ui.save_copy), m_ui.save_copy},
+        {TrT().sv_auto_row, save_auto, m_ui.save_auto_days > 0},
         {m.st_finish, yes(m_ui.finish_effect), m_ui.finish_effect},
         {m.st_battery, battery, m_ui.battery_notice},
         {m.qw_notify_row, yes(m_ui.notify_done), m_ui.notify_done},
@@ -5475,7 +5515,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
     };
-    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, m.st_g_notices, m.st_g_look, m.st_g_wizard, TrT().st_g_nxdock, m.st_g_home, m.st_g_manual};
+    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, TrT().st_g_saves, m.st_g_notices, m.st_g_look, m.st_g_wizard, TrT().st_g_nxdock, m.st_g_home, m.st_g_manual};
     const float x = 48, w = 540, h = 56, gap = 8, head = 34;
     // where each row goes: a title before the first of each group
     float top_of[kSettingRows];
@@ -5539,8 +5579,52 @@ void App::DrawSettings(NVGcontext* vg) {
     }
     nvgRestore(vg);
 
-    if (m_setting == kRowStyle) DrawStylePanel(vg, 620, 96, kWidth - 620 - 48, 548);
-    else DrawSpeedPanel(vg, 620, 96, kWidth - 620 - 48, 548);
+    // on the right: the cards of Style, the help of the row in focus (S2 A), or the speed test for
+    // the rows of the network; a short fade when it changes
+    if (m_setting != m_help_row) {
+        m_help_prev = m_help_row;
+        m_help_row = m_setting;
+        m_help_at = m_time;
+    }
+    const auto panel_of = [](int row) { return row == kRowStyle ? 1 : SettingHelp(row) ? 2 : 0; };
+    const auto draw_panel = [&](int row, float alpha) {
+        const float px = 620, py = 96, pw = kWidth - 620 - 48, ph = 548;
+        switch (panel_of(row)) {
+            case 1: DrawStylePanel(vg, px, py, pw, ph); break;
+            case 2: {
+                // "Now: …" for a choice; the rows that do something say their state as it is, or nothing
+                std::string pill = rows[row].value;
+                const bool action = row == kRowWizard || row == kRowSelfUpdate || row == kRowSelfBack || row == kRowHome || row == kRowHomeRemove;
+                if (row == kRowWizard) pill.clear();
+                if (!action && !pill.empty()) {
+                    char now[200];
+                    std::snprintf(now, sizeof(now), TrT().st_now_fmt, pill.c_str());
+                    pill = now;
+                }
+                DrawSettingHelp(vg, px, py, pw, ph, rows[row].label, pill.c_str(), rows[row].accent, SettingHelp(row), alpha);
+                break;
+            }
+            default: DrawSpeedPanel(vg, px, py, pw, ph); break;
+        }
+    };
+    const float change = ui::EaseOut(ui::Appear(m_help_at, 0.3f));
+    const bool plain = m_help_prev < 0 || m_help_prev >= kSettingRows ||
+                       (panel_of(m_help_prev) != 2 && panel_of(m_help_prev) == panel_of(m_setting));
+    if (change >= 1 || plain) {
+        draw_panel(m_setting, 1);
+    } else {
+        nvgSave(vg);
+        nvgTranslate(vg, 0, -12 * change);
+        nvgGlobalAlpha(vg, 1 - change);
+        draw_panel(m_help_prev, 1 - change);
+        nvgRestore(vg);
+        nvgSave(vg);
+        nvgTranslate(vg, 0, 14 * (1 - change));
+        nvgGlobalAlpha(vg, change);
+        draw_panel(m_setting, change);
+        nvgRestore(vg);
+        nvgGlobalAlpha(vg, 1);
+    }
 
     // A changes a choice; the rows that open something say what they do
     const char* act = m.st_change;
@@ -5748,6 +5832,47 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
                  {ui::glyph::X, code_shown ? s.new_code : s.search_again, HidNpadButton_X},
                  {ui::glyph::Y, TrM().pr_remember, HidNpadButton_Y}},
                 m_hint_rects);
+}
+
+void App::DrawSettingHelp(NVGcontext* vg, float x, float y, float w, float h, const char* name, const char* value, bool accent,
+                          const char* help, float alpha) {
+    const Theme& t = m_theme;
+    nvgGlobalAlpha(vg, alpha);
+    draw::Panel(vg, t, x, y, w, h, 16);
+    const float px = x + 28, pw = w - 56;
+    // the mark of help, then the name of the row
+    NVGcolor ring = t.work;
+    ring.a = 0.16f;
+    nvgBeginPath(vg);
+    nvgCircle(vg, px + 18, y + 42, 18);
+    nvgFillColor(vg, ring);
+    nvgFill(vg);
+    ui::Text(vg, px + 18, y + 43, 20, t.work, "i", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgFontFace(vg, "ui");
+    nvgFontSize(vg, 21);
+    nvgTextLineHeight(vg, 1.3f);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    float b[4];
+    nvgTextBoxBounds(vg, px + 50, y + 28, pw - 50, name, nullptr, b);
+    nvgFillColor(vg, t.text);
+    nvgTextBox(vg, px + 50, y + 28, pw - 50, name, nullptr);
+    nvgTextBox(vg, px + 50.5f, y + 28, pw - 50, name, nullptr); // drawn twice, as titles are
+    float cy = std::max(y + 66, b[3]) + 18;
+    if (value && value[0]) {
+        // what it is now, in a pill
+        const char* now = value;
+        const float nw = std::min(pw, ui::TextWidth(vg, 15, now) + 28);
+        NVGcolor fill = accent ? t.work : t.muted;
+        fill.a = 0.16f;
+        ui::FillRound(vg, px, cy, nw, 30, 15, fill);
+        nvgSave(vg);
+        nvgIntersectScissor(vg, px, cy, nw, 30);
+        ui::Text(vg, px + 14, cy + 15, 15, accent ? t.work : t.muted, now);
+        nvgRestore(vg);
+        cy += 52;
+    }
+    draw::Box(vg, px, cy, pw, 18, t.text, help);
+    nvgGlobalAlpha(vg, 1);
 }
 
 void App::DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h) {
@@ -6195,6 +6320,10 @@ void App::UpdateInstalled(u64 down, u64 held) {
 }
 
 void App::DrawDialog(NVGcontext* vg) {
+    if (m_dialog.kind == DialogKind::Usb3) {
+        DrawUsb3Sheet(vg); // a sheet of its own, wider (more_usb3.cpp)
+        return;
+    }
     const Theme& t = m_theme;
     const auto& s = Tr();
     // everything behind goes dark; a tap there is Cancel
@@ -6813,6 +6942,18 @@ void App::DrawDialog(NVGcontext* vg) {
             if (e.result == HistoryEntry::Result::Failed) error = e.error;
             break;
         }
+        case DialogKind::Usb3Reboot: {
+            // USB 3.0 written (USB A): reboot now or later
+            const Tools& tt = TrT();
+            title = m_usb3_written_on ? tt.u3_done_on : tt.u3_done_off;
+            body = m_usb3_written_on ? tt.u3_until : tt.u3_until_off;
+            if (m_usb3_backed) lines.push_back({tt.u3_copy_saved, "", "", t.text, 1});
+            lines.push_back({m_usb3_written_on ? tt.u3_line_on : tt.u3_line_off, "", "", t.text, 1});
+            note = tt.u3_waits;
+            primary = tt.u3_reboot_now;
+            cancel_label = tt.u3_later;
+            break;
+        }
         case DialogKind::None: return;
         default: {
             ToolDialog d;
@@ -7124,6 +7265,10 @@ void App::DrawDialog(NVGcontext* vg) {
 }
 
 void App::UpdateDialog(u64 down, u64 held) {
+    if (m_dialog.kind == DialogKind::Usb3) {
+        UpdateUsb3Sheet(down, held);
+        return;
+    }
     if (ToolDialogInput(down, held)) return;
     if (m_dialog.kind == DialogKind::ConsoleRemove && (down & HidNpadButton_Y) && ConsoleRemoveTakesGame()) {
         m_dialog.keep_saves = !m_dialog.keep_saves; // the box of the saves (3A)
@@ -7200,6 +7345,9 @@ void App::UpdateDialog(u64 down, u64 held) {
             return;
         } else if (m_dialog.kind == DialogKind::SaveCopyAsk || m_dialog.kind == DialogKind::ModsAsk) {
             m_queue->Answer(false);
+        } else if (m_dialog.kind == DialogKind::Usb3Reboot) {
+            // later: the chip stays orange until the console reboots
+            NoticeOk(m_usb3_written_on ? TrT().u3_toast : TrT().u3_toast_off);
         } else if (m_dialog.kind == DialogKind::Push) {
             for (const auto& id : m_dialog.push) m_push->Answer(id, false);
         } else if (m_dialog.kind == DialogKind::Share) {
@@ -7336,6 +7484,7 @@ void App::ConfirmDialog() {
         case DialogKind::SaveCopyAsk:
             m_queue->Answer(true);
             break;
+        case DialogKind::Usb3Reboot: RebootWhenIdle(); break; // waits for the queue
         case DialogKind::Versions: {
             const Game& g = m_games[std::clamp(m_dialog.game, 0, int(m_games.size()) - 1)];
             const auto rows = VersionRows(g);

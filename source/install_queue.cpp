@@ -549,8 +549,9 @@ void InstallQueue::Answer(bool go_on) {
     m_cv.notify_all();
 }
 
-// Before a change to a game: the saves of its users to the library (18A). False when the copy
-// failed and the user chose not to go on.
+// Before a change to a game: all its saves (of its users, of the console and BCAT) to the library,
+// or to the SD card when none is linked (18A). False when the copy failed and the user chose not to
+// go on.
 bool InstallQueue::CopyBefore(u64 app, int why, u32 to, const std::string& game) {
     SaveCopy fn;
     u32 current = 0;

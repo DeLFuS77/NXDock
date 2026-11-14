@@ -11,6 +11,7 @@
 
 #include "console_order.hpp"
 #include "file_match.hpp"
+#include "mtp.hpp"
 
 #include "draw.hpp"
 #include "i18n.hpp"
@@ -34,7 +35,7 @@ constexpr float kActW = 470, kActRow = 56;
 // What a row does when it has no button of its own (kButton: as its button)
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
-             kViewTop, kViewClose, kUpdateShop, kSortBase = 100 };
+             kViewTop, kViewClose, kUpdateShop, kUsb3, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
@@ -239,6 +240,7 @@ App::ActScreen App::CurrentActScreen() {
         case Tab::More:
             if (m_more == MoreScreen::Shops) return ActScreen::Shops;
             if (m_more == MoreScreen::Viewer) return ActScreen::Viewer; // the text viewer (20A)
+            if (m_more == MoreScreen::Mtp || m_more == MoreScreen::Usb) return ActScreen::Arrival; // USB 3.0 there
             if (m_more == MoreScreen::Space && m_space) {
                 if (m_space_mode == 1 && m_pick_kind == 0) return ActScreen::SpacePick;
                 if (m_space_mode == 4) return ActScreen::Tickets;
@@ -447,10 +449,20 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             // the text viewer (20A): wrap, the end, the top, close
             const auto& s2 = Tr();
             title = m_text_name;
-            rows.push_back({kViewWrap, m.tv_wrap, m_text_wrap ? s2.yes_word : s2.no_word, true, 0, false, kIconWrap});
+            rows.push_back({kViewWrap, m.tv_wrap, m_ui.text_wrap ? s2.yes_word : s2.no_word, true, 0, false, kIconWrap});
             rows.push_back({kViewEnd, m.tv_end, {}, true, 0, false, kIconEnd});
             rows.push_back({kViewTop, m.tv_top, {}, true, 0, false, kIconTop});
             rows.push_back({kViewClose, s2.close, {}, true, HidNpadButton_B, false, kIconCross});
+            break;
+        }
+        case ActScreen::Arrival: {
+            // MTP and NS-USBloader: where it goes, USB 3.0 once the cable is in (USB A), stop
+            const bool mtp = m_more == MoreScreen::Mtp;
+            title = mtp ? m.t_mtp : m.t_usb;
+            if (mtp) rows.push_back({kButton, MtpSnapshot().nand_allowed ? m.mtp_sd_only : m.allow_nand, {}, true, HidNpadButton_X, false, kIconCard});
+            else rows.push_back({kButton, m.dc_switch, m_files_nand ? s.internal : s.sd_card, true, HidNpadButton_ZR, false, kIconCard});
+            if (Usb3ChipKind() != kU3None) rows.push_back({kUsb3, tt.u3_row, Usb3RowText(), true, 0, Usb3ChipKind() == kU3Pending, kIconInfo});
+            rows.push_back({kButton, m.stop_back, {}, true, HidNpadButton_B, false, kIconCross});
             break;
         }
         case ActScreen::Tickets: {
@@ -517,6 +529,7 @@ void App::ActPress(u64 button) {
         case ActScreen::SpacePick:
         case ActScreen::Compress: UpdateSpace(button, 0); break;
         case ActScreen::Viewer: UpdateViewer(button, 0); break;
+        case ActScreen::Arrival: UpdateArrival(button, 0); break;
         default: break;
     }
 }
@@ -571,8 +584,10 @@ void App::ActDo(const ActRow& row) {
         }
         case kRandom: RollRandom(); break; // 21A
         case kUpdateShop: UpdateFromShop(m_shop_focus); break; // 15A
+        case kUsb3: OpenUsb3(); break;                         // USB A
         case kViewWrap:
-            m_text_wrap = !m_text_wrap;
+            m_ui.text_wrap = !m_ui.text_wrap;
+            m_ui.Save();
             m_text_cols = 0; // the rows made again
             break;
         case kViewEnd: m_text_top = 1 << 30; break; // clamped when drawn

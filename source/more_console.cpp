@@ -779,6 +779,7 @@ void App::AskConsoleRemoveMany(const Space::View& v) {
         return;
     }
     m_dialog.kind = DialogKind::ConsoleRemove;
+    m_dialog.keep_saves = m_ui.save_copy; // the box starts as Settings › Saves says
     ConsoleRemoveExtras(m_dialog.ids);
 }
 
@@ -938,6 +939,7 @@ void App::AskConsoleRemoveMarked() {
     }
     m_dialog = Dialog{};
     m_dialog.kind = DialogKind::ConsoleRemove;
+    m_dialog.keep_saves = m_ui.save_copy; // the box starts as Settings › Saves says
     m_dialog.text = found->name;
     if (base) ConsoleRemoveExtras({m_console_app});
 }

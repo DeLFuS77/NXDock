@@ -108,6 +108,9 @@ void App::OpenMoreScreen(MoreScreen screen) {
         return;
     }
     m_more = screen;
+    m_usb3_read = false; // USB 3.0: read again for these screens (USB A)
+    m_usb_chip_focus = false;
+    m_usb_speed = 0;
     m_files_nand = false; // the SD card, always, unless chosen for this install
     m_files_after = false; // and the files are kept unless chosen for this install (4A)
     m_files_menu = false;
@@ -724,13 +727,15 @@ void App::DrawFiles(NVGcontext* vg) {
         const char* state_label = nullptr;
         NVGcolor state_col = t.muted;
         bool state_tick = false;
+        // a version as the rest of NXDock says it ("Update 3"); a DLC has no updates: its number
+        const auto said = [kind](unsigned v) { return kind == 2 ? "v" + std::to_string((v >> 16) ? v >> 16 : v) : VersionText(v); };
         if (tag_in > 0) {
             state_label = state_text;
             if (match.state == FileState::Installed) {
-                std::snprintf(state_text, sizeof(state_text), m.fs_installed_fmt, std::to_string(kind == 0 ? match.running : match.installed).c_str());
+                std::snprintf(state_text, sizeof(state_text), m.fs_installed_fmt, said(kind == 0 ? match.running : match.installed).c_str());
                 state_tick = true;
             } else if (match.state == FileState::Older) {
-                std::snprintf(state_text, sizeof(state_text), m.fs_older_fmt, std::to_string(match.installed).c_str());
+                std::snprintf(state_text, sizeof(state_text), m.fs_older_fmt, said(match.installed).c_str());
             } else {
                 state_label = kind == 2 ? m.fs_dlc : m.fs_update;
                 state_col = t.ok;
@@ -952,8 +957,18 @@ void App::DrawArrival(NVGcontext* vg) {
     const float px = 48, py = 98, pw = (kWidth - 96 - 36) / 2, ph = 540;
     // what to do on the computer
     draw::Panel(vg, t, px, py, pw, ph, 16);
-    ui::Text(vg, px + 26, py + 36, 22, t.text, mtp ? m.mtp_title : m.usb_title);
+    const float title_w = ui::Text(vg, px + 26, py + 36, 22, t.text, mtp ? m.mtp_title : m.usb_title) - (px + 26);
+    // the speed of the cable once it is in (USB A of 14/11)
+    FollowUsb3(connected);
+    const bool chip = Usb3ChipKind() != kU3None;
+    if (!chip && m_mtp_unit < 0) m_mtp_unit = 0;
+    if (!chip) m_usb_chip_focus = false;
     float y = py + 64;
+    if (mtp && chip) {
+        // in the row of the title, as the panel is full; short when the title leaves little room
+        const bool short_form = Usb3ChipWidth(vg, false) > pw - 52 - title_w - 16;
+        DrawUsb3Chip(vg, px + pw - 22 - Usb3ChipWidth(vg, short_form), py + 14, m_mtp_unit < 0, short_form);
+    }
     if (mtp) {
         y += draw::Box(vg, px + 26, y, pw - 52, 16, t.muted, m.mtp_hint) + 18;
         struct Folder { const char* name; const char* sub; bool off; };
@@ -994,7 +1009,8 @@ void App::DrawArrival(NVGcontext* vg) {
             y += 50;
         }
     } else {
-        draw::Box(vg, px + 26, y, pw - 52, 17, t.muted, m.usb_steps);
+        const float steps_h = draw::Box(vg, px + 26, y, pw - 52, 17, t.muted, m.usb_steps);
+        if (chip) DrawUsb3Chip(vg, px + 26, y + steps_h + 22, m_usb_chip_focus, false);
         // where what arrives goes, in large: the SD card unless chosen
         DestCards(vg, px + 20, py + ph - 84, pw - 40, 64, m_files_nand, 0, HitKind::FilesDest);
     }
@@ -1090,9 +1106,11 @@ void App::DrawArrival(NVGcontext* vg) {
 
     std::vector<ui::Hint> hints;
     // the internal memory allowed can be turned off again: only the SD card
-    if (mtp) hints.push_back({ui::glyph::A, m.st_change, HidNpadButton_A});
+    if (mtp) hints.push_back({ui::glyph::A, m_mtp_unit < 0 ? m.open : m.st_change, HidNpadButton_A});
+    if (!mtp && m_usb_chip_focus) hints.push_back({ui::glyph::A, m.open, HidNpadButton_A});
     if (mtp) hints.push_back({ui::glyph::X, mv.nand_allowed ? m.mtp_sd_only : m.allow_nand, HidNpadButton_X});
     if (!mtp) hints.push_back({ui::glyph::ZR, m.dc_switch, HidNpadButton_ZR});
+    hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus}); // USB 3.0 among them
     hints.push_back({ui::glyph::B, m.stop_back, HidNpadButton_B});
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
@@ -1109,11 +1127,23 @@ void App::ToggleMtpUnit(int unit) {
 }
 
 void App::UpdateArrival(u64 down, u64 held) {
+    const bool chip = Usb3ChipKind() != kU3None;
     if (m_more == MoreScreen::Mtp) {
-        if (Repeat(down, held, HidNpadButton_AnyUp) && m_mtp_unit > 0) m_mtp_unit--;
+        // the chip of USB 3.0 is above the folders (-1)
+        if (Repeat(down, held, HidNpadButton_AnyUp) && m_mtp_unit > (chip ? -1 : 0)) m_mtp_unit--;
         if (Repeat(down, held, HidNpadButton_AnyDown) && m_mtp_unit < 3) m_mtp_unit++;
         if (down & HidNpadButton_A) {
-            ToggleMtpUnit(m_mtp_unit);
+            if (m_mtp_unit < 0) OpenUsb3();
+            else ToggleMtpUnit(m_mtp_unit);
+            return;
+        }
+    }
+    if (m_more == MoreScreen::Usb) {
+        // up to the chip, down back to the cards
+        if (Repeat(down, held, HidNpadButton_AnyUp) && chip) m_usb_chip_focus = true;
+        if (Repeat(down, held, HidNpadButton_AnyDown)) m_usb_chip_focus = false;
+        if ((down & HidNpadButton_A) && m_usb_chip_focus && chip) {
+            OpenUsb3();
             return;
         }
     }

@@ -82,7 +82,7 @@ void App::DrawViewer(NVGcontext* vg) {
     if (cols != m_text_cols) {
         // made again at a new width, or with wrapping changed: the line at the top stays there
         const int line = m_text_top < int(m_text_rows.size()) ? m_text_rows[size_t(m_text_top)].line : 0;
-        m_text_rows = TextRows(m_text.lines, cols, m_text_wrap);
+        m_text_rows = TextRows(m_text.lines, cols, m_ui.text_wrap);
         m_text_cols = cols;
         m_text_top = 0;
         for (size_t i = 0; i < m_text_rows.size(); i++) {

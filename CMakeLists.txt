@@ -232,6 +232,9 @@ add_executable(nxdock
     source/more_here.cpp
     source/more_card.cpp
     source/more_text.cpp
+    source/usb30.cpp
+    source/usb30_ini.cpp
+    source/more_usb3.cpp
     source/perf.cpp
 )
 
