@@ -809,12 +809,12 @@ void App::UpdateConsole(u64 down, u64 held) {
                 m_console_focus = std::min(n - 1, m_console_focus + cols);
             }
         } else {
-            if (Repeat(down, held, HidNpadButton_AnyUp) && m_console_focus > 0) m_console_focus--;
-            if (Repeat(down, held, HidNpadButton_AnyDown) && m_console_focus < n - 1) m_console_focus++;
+            if (Repeat(ListDown(down), ListHeld(held), HidNpadButton_AnyUp) && m_console_focus > 0) m_console_focus--;
+            if (Repeat(ListDown(down), ListHeld(held), HidNpadButton_AnyDown) && m_console_focus < n - 1) m_console_focus++;
         }
         // by first letter, for long lists (when they are in the order of their names)
-        const bool left = m_ui.console_size == 0 && Repeat(down, held, HidNpadButton_AnyLeft),
-                   right = m_ui.console_size == 0 && Repeat(down, held, HidNpadButton_AnyRight);
+        const bool left = m_ui.console_size == 0 && Repeat(ListDown(down), ListHeld(held), HidNpadButton_AnyLeft),
+                   right = m_ui.console_size == 0 && Repeat(ListDown(down), ListHeld(held), HidNpadButton_AnyRight);
         if ((left || right) && m_ui.console_sort == kSortName) {
             std::vector<std::string> names;
             for (const auto& a : v.apps) names.push_back(a.name);

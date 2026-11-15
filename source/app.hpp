@@ -645,6 +645,10 @@ private:
 
     // Repeats a held direction like the HOME menu does.
     bool Repeat(u64 down, u64 held, u64 mask);
+    // for the lists that jump by letter: the d-pad, and the left stick only when it is pushed clearly
+    // (past 80 % and along that axis); the right stick and a stick that drifts a little do nothing
+    u64 ListDown(u64 down) const;
+    u64 ListHeld(u64 held) const;
     // Library grid scrolling.
     void KeepFocusVisible();
     float MaxScroll() const;
@@ -966,6 +970,7 @@ private:
     double m_next_repeat = 0;
     double m_held_since = 0;
     u64 m_held_dir = 0;
+    u64 m_stick_firm = 0, m_stick_firm_down = 0; // the left stick pushed clearly, this frame and since the last
     bool m_quit = false;
 #ifdef NXDOCK_PERF
     u64 m_perf_held = 0; // the buttons the timing script held last frame

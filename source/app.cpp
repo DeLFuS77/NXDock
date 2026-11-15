@@ -363,6 +363,24 @@ void App::CoverLoading(NVGcontext* vg, float x, float y, float size, const std::
     ui::Spinner(vg, cx, cy, r, m_theme.work, m_time);
 }
 
+namespace {
+constexpr u64 kStickDirs = HidNpadButton_StickLLeft | HidNpadButton_StickLRight | HidNpadButton_StickLUp | HidNpadButton_StickLDown |
+                           HidNpadButton_StickRLeft | HidNpadButton_StickRRight | HidNpadButton_StickRUp | HidNpadButton_StickRDown;
+
+// the left stick past 80 % of its way, along the axis it leans most to
+u64 FirmStick(const HidAnalogStickState& s) {
+    const int x = s.x, y = s.y, edge = 32767 * 8 / 10;
+    u64 bits = 0;
+    if (std::abs(x) > edge && std::abs(x) > std::abs(y)) bits |= x < 0 ? HidNpadButton_StickLLeft : HidNpadButton_StickLRight;
+    if (std::abs(y) > edge && std::abs(y) > std::abs(x)) bits |= y > 0 ? HidNpadButton_StickLUp : HidNpadButton_StickLDown;
+    return bits;
+}
+} // namespace
+
+u64 App::ListDown(u64 down) const { return (down & ~kStickDirs) | m_stick_firm_down; }
+
+u64 App::ListHeld(u64 held) const { return (held & ~kStickDirs) | m_stick_firm; }
+
 bool App::Repeat(u64 down, u64 held, u64 mask) {
     if (down & mask) {
         m_held_dir = down & mask;
@@ -518,6 +536,11 @@ bool App::Frame() {
     padUpdate(&m_pad);
     u64 down = padGetButtonsDown(&m_pad);
     u64 held = padGetButtons(&m_pad);
+    {
+        const u64 firm = FirmStick(padGetStickPos(&m_pad, 0));
+        m_stick_firm_down = firm & ~m_stick_firm;
+        m_stick_firm = firm;
+    }
 #ifdef NXDOCK_PERF
     {
         u64 scripted = 0;
@@ -542,18 +565,21 @@ bool App::Frame() {
     }
     if (FollowScreenOff(down, new_touch)) {
         // the input that lit the screen, or stopped the countdown, does nothing else
+        m_stick_firm_down = 0;
     } else if (m_boot_at > 0 && m_time - m_boot_at < 1.5 && (down || new_touch)) {
         // the opening is skipped by any button or touch, which does nothing else (4A)
         m_boot_at = -100;
         m_wave_at = -100;
         m_wake_touch = new_touch;
         down = 0;
+        m_stick_firm_down = 0;
     } else if ((m_saver_on || TourActive()) && (down || new_touch)) {
         // the input that lights the screen again, or ends the walk, does nothing else
         m_saver_on = false;
         if (TourActive()) EndTour();
         m_wake_touch = new_touch;
         down = 0;
+        m_stick_firm_down = 0;
     }
     const u64 focus_before = FocusSignature();
     { perf::Timer t_("frame: ReadTouch"); ReadTouch(down); }

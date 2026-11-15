@@ -1061,10 +1061,11 @@ void App::UpdateCompress(u64 down, u64 held) {
     const auto rows = CompressVisible(v, c);
     const More& m = TrM();
     const bool busy = c.running || !m_compress_queue.empty();
-    if (Repeat(down, held, HidNpadButton_AnyUp) && m_compress_focus > 0) m_compress_focus--;
-    if (Repeat(down, held, HidNpadButton_AnyDown) && m_compress_focus < int(rows.size()) - 1) m_compress_focus++;
+    const u64 ld = ListDown(down), lh = ListHeld(held);
+    if (Repeat(ld, lh, HidNpadButton_AnyUp) && m_compress_focus > 0) m_compress_focus--;
+    if (Repeat(ld, lh, HidNpadButton_AnyDown) && m_compress_focus < int(rows.size()) - 1) m_compress_focus++;
     // by first letter, for long lists
-    const bool left = Repeat(down, held, HidNpadButton_AnyLeft), right = Repeat(down, held, HidNpadButton_AnyRight);
+    const bool left = Repeat(ld, lh, HidNpadButton_AnyLeft), right = Repeat(ld, lh, HidNpadButton_AnyRight);
     if ((left || right) && !rows.empty()) {
         std::vector<std::string> names;
         for (int r : rows) names.push_back(v.apps[size_t(r)].name);

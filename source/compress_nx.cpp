@@ -16,6 +16,7 @@
 #include "merge_meta.hpp"
 #include "merge_recipe.hpp"
 #include "romfs_lz4.hpp"
+#include "work_thread.hpp"
 #include "yati/nx/crypto.hpp"
 #include "yati/nx/es.hpp"
 #include "yati/nx/keys.hpp"
@@ -1905,6 +1906,7 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
     Join();
     m_stop = false;
     m_thread = std::thread([this, apps] {
+        WorkThread(-1); // below the thread that draws
         // what each game is found to be, and why, in sdmc:/switch/NXDock/compress.log
         nxdock_log_open("sdmc:/switch/NXDock/compress.log");
         const auto note = [](unsigned long long app, const GameEstimate& e) {
@@ -2129,6 +2131,7 @@ bool Compressor::StartCompress(unsigned long long app) {
     Join();
     m_stop = false;
     m_thread = std::thread([this, app, dlcs] {
+        WorkThread(-1); // below the thread that draws, so the screen stays smooth
         net::Boost awake; // the console stays awake while a game is written again
         // the queue does not install nor remove while a game is written again
         std::lock_guard titles(TitlesLock());

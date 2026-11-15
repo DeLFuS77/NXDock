@@ -3,6 +3,7 @@
 #include "merge_pack.hpp"
 
 #include "lz4nintendo.h"
+#include "work_thread.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -222,7 +223,12 @@ bool Pack(uint64_t virt_size, const std::vector<Run>& runs_in, int level, uint32
         };
         if (threads > 1 && count > 1) {
             std::vector<std::thread> helpers;
-            for (unsigned t = 1; t < threads && t < count; t++) helpers.emplace_back(run, t);
+            for (unsigned t = 1; t < threads && t < count; t++) {
+                helpers.emplace_back([&run, t] {
+                    nxdock::WorkThread(int(t)); // below the screen, each on its core
+                    run(t);
+                });
+            }
             run(0);
             for (auto& h : helpers) h.join();
         } else {
