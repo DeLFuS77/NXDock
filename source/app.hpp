@@ -82,7 +82,7 @@ private:
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, CompressMark, CompressFilter, Wifi, SearchChip,
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
-                         ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, TicketRow,
+                         ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, RemoveStop, TicketRow,
                          NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip };
     struct Hit {
         ui::HitRect rect;
@@ -576,6 +576,7 @@ private:
     void DrawConsolePage(NVGcontext* vg, const Space::View& v);
     void DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library);
     void DrawRemoveProgress(NVGcontext* vg, const Space::View& v);
+    void StopRemove();
     void InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s);
     // Where it installs, in large: the SD card and the internal memory side by side, each with its
     // free space; `kind` is the touch that chooses one (Dest for a game, FilesDest for the files).
@@ -799,6 +800,8 @@ private:
     std::set<unsigned long long> m_console_picked;       // games marked with X, to take off together
     std::set<unsigned long long> m_console_removing;     // games being taken off: dimmed meanwhile
     std::vector<HistoryEntry> m_console_done;             // what goes in the history when it is done
+    std::vector<unsigned long long> m_console_done_ids;   // several games: the game of each entry above
+    bool m_console_rm_stop = false;                       // Cancel asked: it stops before the next game
     std::string m_console_done_text;                      // the green notice then
     void AskConsoleRemoveMany(const Space::View& v);
     void AskConsoleRemoveMarked();
@@ -908,7 +911,7 @@ private:
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, CompressDone, CompressStop, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
                             UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
-                            Usb3, Usb3Reboot };
+                            Usb3, Usb3Reboot, RemoveStopped };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -928,6 +931,10 @@ private:
         std::vector<UpdateCheck> checks; // UpdateStops: each job, read from the console once
         bool keep_saves = true;          // ConsoleRemove: the saves are copied first (3A); set from m_ui.save_copy
         bool remove_extra = false;       // ConsoleRemove: its mods and its tickets go too (7A)
+        // the boxes to tick, reached with up and down too: the one in focus (0 the first, 1 the
+        // second), -1 the buttons; which boxes there are, as last drawn
+        int tick_focus = -1;
+        bool has_tick = false, has_tick2 = false;
         int extra_mods = 0;              // ConsoleRemove: the folders of mods found
         int extra_common = 0, extra_personal = 0; // ConsoleRemove: the tickets found
         std::vector<char> marks;         // UpdateHere: the jobs ticked (15A)

@@ -840,9 +840,18 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
         {
             std::lock_guard lock(m_mutex);
             m_view.removed.clear();
+            m_view.removed_done.clear();
+            m_view.remove_cancelled = false;
             m_view.remove_count = int(games.size());
         }
+        bool cancelled = false;
         for (const auto& [app, items] : games) {
+            // Cancel stops before the next game, never inside one: the game at work, its saves and
+            // its contents, ends whole
+            if (m_cancel) {
+                cancelled = true;
+                break;
+            }
             const bool whole = std::any_of(items.begin(), items.end(),
                                            [](const InstalledApp::Content& c) { return c.type == NcmContentMetaType_Application; });
             {
@@ -882,9 +891,14 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
             if (base) {
                 std::lock_guard lock(m_mutex);
                 m_view.removed.push_back(app);
+                m_view.removed_done.push_back(app);
             }
         }
-        Progress(total, total);
+        if (!cancelled) Progress(total, total);
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.remove_cancelled = cancelled;
+        }
         if (R_FAILED(rc)) {
             if (rc == Result_GameRunning) return Packed(m.ic_rm_running_t, m.ic_rm_running_d, rc);
             return Packed(m.ic_rm_failed_t, m.ic_rm_failed_d, rc);

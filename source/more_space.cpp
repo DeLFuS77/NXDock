@@ -201,6 +201,8 @@ void App::FollowSpace() {
         if (v.last == Space::Task::Remove) {
             if (m_queue) m_queue->ReadInstalledAgain(); // part of it may be gone
             m_console_done.clear();
+            m_console_done_ids.clear();
+            m_console_rm_stop = false;
             m_console_done_text.clear();
             m_console_removing.clear();
         }
@@ -233,7 +235,39 @@ void App::FollowSpace() {
             break;
         }
         case Space::Task::Remove: {
-            NoticeOk(m_console_done_text.empty() ? std::string(m.ic_done_remove) : m_console_done_text);
+            const bool stopped = v.remove_cancelled && m_console_done_ids.size() == m_console_done.size();
+            if (stopped) {
+                // Cancel: how many went, which were not touched (still marked); in the history only
+                // those that went
+                std::vector<HistoryEntry> went;
+                std::string names;
+                int left = 0;
+                for (size_t i = 0; i < m_console_done.size(); i++) {
+                    const auto app = m_console_done_ids[i];
+                    if (std::find(v.removed_done.begin(), v.removed_done.end(), app) != v.removed_done.end()) {
+                        went.push_back(m_console_done[i]);
+                        continue;
+                    }
+                    m_console_picked.insert(app);
+                    if (left < 3) names += (left ? m.ic_list_sep : "") + m_console_done[i].game;
+                    left++;
+                }
+                if (left > 3) {
+                    char more[64];
+                    std::snprintf(more, sizeof(more), Tr().more_count, left - 3);
+                    names += std::string(" ") + more;
+                }
+                m_console_done = std::move(went);
+                char text[600];
+                std::snprintf(text, sizeof(text), m.ic_rm_stopped_fmt, int(v.removed_done.size()), int(m_console_done_ids.size()), left, names.c_str());
+                OpenDialog(DialogKind::RemoveStopped);
+                m_dialog.single = true;
+                m_dialog.text = text;
+            } else {
+                NoticeOk(m_console_done_text.empty() ? std::string(m.ic_done_remove) : m_console_done_text);
+            }
+            m_console_rm_stop = false;
+            m_console_done_ids.clear();
             // a line "Removed" for each in the history
             if (!m_console_done.empty()) {
                 History h(HistoryPath());

@@ -455,6 +455,11 @@ App::Fill App::DialogConsoleText(DialogContent& dc) {
             dc.tick2 = dc.tick && (m_dialog.extra_mods > 0 || m_dialog.extra_common + m_dialog.extra_personal > 0);
             break;
         }
+        case DialogKind::RemoveStopped:
+            // Cancel while games were taken off: how many went, which were not touched
+            dc.title = TrM().ic_rm_stopped_t;
+            dc.body = m_dialog.text;
+            break;
         case DialogKind::Play: {
             const More& m = TrM();
             char text[300];

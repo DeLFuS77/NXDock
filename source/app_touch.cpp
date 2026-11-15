@@ -371,8 +371,15 @@ bool App::Tap(float x, float y, u64& down) {
                 }
                 break;
             }
-            case HitKind::DialogTick: m_dialog.keep_saves = !m_dialog.keep_saves; break;
-            case HitKind::DialogTickExtra: m_dialog.remove_extra = !m_dialog.remove_extra; break;
+            case HitKind::RemoveStop: StopRemove(); break;
+            case HitKind::DialogTick:
+                m_dialog.keep_saves = !m_dialog.keep_saves;
+                m_dialog.tick_focus = 0;
+                break;
+            case HitKind::DialogTickExtra:
+                m_dialog.remove_extra = !m_dialog.remove_extra;
+                m_dialog.tick_focus = 1;
+                break;
             case HitKind::ConsoleButton:
                 // Play or Repair on the page of a game: they act at once, as buttons do
                 m_console_btn = it->index;

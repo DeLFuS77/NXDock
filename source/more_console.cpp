@@ -357,6 +357,13 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
     ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
 }
 
+// Cancel while several games are taken off: it stops before the next game (never inside one).
+void App::StopRemove() {
+    if (!m_space || m_console_rm_stop) return;
+    m_console_rm_stop = true;
+    m_space->Cancel();
+}
+
 // While games are taken off: which one, of how many, copying its saves or deleting it, over the
 // hint bar, where it is seen.
 void App::DrawRemoveProgress(NVGcontext* vg, const Space::View& v) {
@@ -368,16 +375,30 @@ void App::DrawRemoveProgress(NVGcontext* vg, const Space::View& v) {
         if (a.app_id == v.remove_app) name = a.name;
     }
     char text[300];
-    if (v.remove_saving) std::snprintf(text, sizeof(text), m.ic_rm_saving_fmt, name.c_str());
+    if (m_console_rm_stop) std::snprintf(text, sizeof(text), m.ic_rm_stopping_fmt, name.c_str());
+    else if (v.remove_saving) std::snprintf(text, sizeof(text), m.ic_rm_saving_fmt, name.c_str());
     else std::snprintf(text, sizeof(text), m.ic_rm_progress_fmt, name.c_str(), v.remove_index, v.remove_count);
-    const float w = 720, h = 70, x = (kWidth - w) / 2, y = kHeight - 56 - h - 14;
+    const float w = 760, h = 70, x = (kWidth - w) / 2, y = kHeight - 56 - h - 14;
     const float in = ui::EaseOut(ui::Appear(m_console_list_at, 0.3f));
     nvgSave(vg);
     nvgGlobalAlpha(vg, in);
     draw::Popup(vg, t, x, y, w, h, 16);
     ui::Spinner(vg, x + 32, y + 26, 9, t.work, m_time);
+    // Cancel, several games only: B, or a tap anywhere on its side of the card
+    float bw = 0;
+    if (v.remove_count > 1 && !m_console_rm_stop) {
+        const auto& s = Tr();
+        bw = ui::TextWidth(vg, 16, s.cancel) + 64;
+        const float bx = x + w - bw - 12, by = y + 9, bh = 34;
+        ui::FillRound(vg, bx, by, bw, bh, 10, t.panel2);
+        ui::StrokeRound(vg, bx + 1, by + 1, bw - 2, bh - 2, 10, t.line, 2);
+        ui::Symbol(vg, t, bx + 22, by + bh / 2, 20, ui::glyph::B, t.text, HidNpadButton_B);
+        ui::Text(vg, bx + 38, by + bh / 2, 16, t.text, s.cancel);
+        AddHit(bx - 12, y, bw + 24, h, HitKind::RemoveStop);
+        bw += 24;
+    }
     nvgSave(vg);
-    nvgIntersectScissor(vg, x + 52, y + 8, w - 72, 36);
+    nvgIntersectScissor(vg, x + 52, y + 8, w - 72 - bw, 36);
     ui::Text(vg, x + 52, y + 26, 17, t.text, text);
     nvgRestore(vg);
     const float frac = v.total ? float(double(v.done) / double(v.total)) : 0.f;
@@ -810,12 +831,18 @@ void App::AskConsoleRemoveMany(const Space::View& v) {
     }
     m_dialog.kind = DialogKind::ConsoleRemove;
     m_dialog.keep_saves = m_ui.save_copy; // the box starts as Settings › Saves says
+    m_dialog.tick_focus = -1;              // the focus on the buttons, Cancel first
     ConsoleRemoveExtras(m_dialog.ids);
 }
 
 void App::UpdateConsole(u64 down, u64 held) {
     if (!m_space) return;
     const auto all = m_space->Snapshot();
+    // while several games are taken off, B stops before the next one
+    if (all.task == Space::Task::Remove && all.remove_count > 1 && (down & HidNpadButton_B)) {
+        StopRemove();
+        return;
+    }
     if (!m_console_app) {
         // the filter of what is missing (6A), the size and deleting what is marked are in the menu
         // of + (1A, 14/11)
@@ -969,6 +996,7 @@ void App::AskConsoleRemoveMarked() {
     }
     OpenDialog(DialogKind::ConsoleRemove);
     m_dialog.keep_saves = m_ui.save_copy; // the box starts as Settings › Saves says
+    m_dialog.tick_focus = -1;              // the focus on the buttons, Cancel first
     m_dialog.text = found->name;
     if (base) ConsoleRemoveExtras({m_console_app});
 }
