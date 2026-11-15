@@ -10,6 +10,8 @@
   failed. Before, each game emptied it.
 - Compress games: the summary at the end says "2 of 3 games compressed" when one failed, shows that game in grey
   among the covers, and its line in red fits inside the box.
+- Compress games: a game whose installed data cannot be read says so, with what to do, whether it is the base game or
+  the update, and its code, instead of "The game could not be compressed". Games that fail are in the history too.
 
 ## 0.9.0-beta.5
 
