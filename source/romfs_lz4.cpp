@@ -3,6 +3,7 @@
 #include "romfs_lz4.hpp"
 
 #include "lz4nintendo.h"
+#include "work_thread.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -108,7 +109,12 @@ bool Pack(uint64_t virt_size, int level, uint32_t min_gain, const ReadFn& read, 
     std::vector<std::thread> workers;
     const auto start = [&](std::vector<Job>& jobs, size_t count) {
         if (threads > 1 && count > 1) {
-            for (unsigned t = 0; t < threads && t < count; t++) workers.emplace_back(compress, std::ref(jobs), t, count, threads);
+            for (unsigned t = 0; t < threads && t < count; t++) {
+                workers.emplace_back([&compress, &jobs, t, count, threads] {
+                    nxdock::WorkThread(int(t)); // below the screen, each on its core
+                    compress(jobs, t, count, threads);
+                });
+            }
         } else {
             compress(jobs, 0, count, 1);
         }
