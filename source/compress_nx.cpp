@@ -2087,7 +2087,7 @@ std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, c
     keys::Keys k;
     Result rc = splCryptoInitialize();
     if (R_FAILED(rc)) {
-        log_write("[NXDock] %016llX: merge: the crypto service, 0x%X\n",(unsigned long long)app, rc);
+        log_write("[NXDock] %016llX: merge: the crypto service, 0x%X\n", (unsigned long long)app, rc);
         return Packed(m.cz_failed_t, m.cz_failed_d, rc);
     }
     rc = keys::parse_keys(k, true);
