@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Lists that jump by letter (Compress games, In the console, Space): a stick that drifts a little no longer jumps
+  to another letter or moves the chosen game. Only the d-pad and the left stick pushed clearly move them.
+- Compress games: the screen stays smooth while it compresses. The work runs below the drawing of the screen, spread
+  over the cores.
+
 ## 0.9.0-beta.5
 
 These changes have not been tested in depth yet, so some bugs may remain.
@@ -13,10 +20,6 @@ These changes have not been tested in depth yet, so some bugs may remain.
   0.9.0-beta.4 only games without an update were done in one pass. It measures first only when there is no room to do
   it in one go, and the screen says so.
 - Compress games: it says "Getting ready" at the start, instead of "Measuring".
-- Lists that jump by letter (Compress games, In the console, Space): a stick that drifts a little no longer jumps
-  to another letter or moves the chosen game. Only the d-pad and the left stick pushed clearly move them.
-- Compress games: the screen stays smooth while it compresses. The work runs below the drawing of the screen, spread
-  over the cores.
 
 ## 0.9.0-beta.4
 
