@@ -463,10 +463,11 @@ void App::UpdateSpace(u64 down, u64 held) {
     const auto v = m_space->Snapshot();
     if (m_space_mode == 1) {
         SortPickRows(v);
-        if (Repeat(down, held, HidNpadButton_AnyUp) && m_pick_focus > 0) m_pick_focus--;
-        if (Repeat(down, held, HidNpadButton_AnyDown) && m_pick_focus < int(m_pick_rows.size()) - 1) m_pick_focus++;
+        const u64 ld = ListDown(down), lh = ListHeld(held);
+        if (Repeat(ld, lh, HidNpadButton_AnyUp) && m_pick_focus > 0) m_pick_focus--;
+        if (Repeat(ld, lh, HidNpadButton_AnyDown) && m_pick_focus < int(m_pick_rows.size()) - 1) m_pick_focus++;
         // by first letter, for long lists
-        const bool left = Repeat(down, held, HidNpadButton_AnyLeft), right = Repeat(down, held, HidNpadButton_AnyRight);
+        const bool left = Repeat(ld, lh, HidNpadButton_AnyLeft), right = Repeat(ld, lh, HidNpadButton_AnyRight);
         if (left || right) {
             std::vector<std::string> names;
             for (const auto& r : m_pick_rows) names.push_back(v.apps[size_t(r.first)].name);
