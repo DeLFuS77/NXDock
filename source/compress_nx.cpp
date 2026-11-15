@@ -16,6 +16,7 @@
 #include "merge_meta.hpp"
 #include "merge_recipe.hpp"
 #include "romfs_lz4.hpp"
+#include "read_note.hpp"
 #include "work_thread.hpp"
 #include "yati/nx/crypto.hpp"
 #include "yati/nx/es.hpp"
@@ -522,12 +523,16 @@ int RomfsIndex(const nca::Header& h) {
     return -1;
 }
 
-// What the merger reads: an NCA of the storage, in pieces the storage takes.
-patchview::RawRead NcaReader(NcmContentStorage& cs, const NcmContentId& id) {
-    return [&cs, id](u64 o, u8* b, size_t n) {
+// What the merger reads: an NCA of the storage, in pieces the storage takes. `who`: "base" or
+// "update", for the log of a read that fails.
+patchview::RawRead NcaReader(NcmContentStorage& cs, const NcmContentId& id, const char* who = "update") {
+    return [&cs, id, who](u64 o, u8* b, size_t n) {
         while (n) {
             const size_t k = std::min<size_t>(n, 4 * 1024 * 1024);
-            if (R_FAILED(ncmContentStorageReadContentIdFile(&cs, b, k, &id, s64(o)))) return false;
+            if (const Result rc = ncmContentStorageReadContentIdFile(&cs, b, k, &id, s64(o)); R_FAILED(rc)) {
+                readnote::Note("%s NCA: reading %zu bytes at %llu from the storage, 0x%X", who, k, (unsigned long long)o, rc);
+                return false;
+            }
             o += k;
             b += k;
             n -= k;
@@ -542,9 +547,10 @@ void CtrCrypt(const u8 key[16], const u8 ctr[16], u8* data, size_t n) {
     aes128CtrCrypt(&ctx, data, data, n);
 }
 
-patchview::NcaSection SectionOf(NcmContentStorage& cs, const NcmContentId& id, const nca::Header& h, int i, const u8 key[16]) {
+patchview::NcaSection SectionOf(NcmContentStorage& cs, const NcmContentId& id, const nca::Header& h, int i, const u8 key[16],
+                                const char* who = "update") {
     patchview::NcaSection s;
-    s.raw = NcaReader(cs, id);
+    s.raw = NcaReader(cs, id, who);
     s.ctr = CtrCrypt;
     std::memcpy(s.key.data(), key, 16);
     std::memcpy(s.fsh.data(), &h.fs_header[i], 0x200);
@@ -712,7 +718,7 @@ bool OpenMerger(Storage& s, const keys::Keys& k, const Pair& p, Opened& o, merge
     }
     mergegame::Input in;
     if (o.from_merged) in.base_section = o.rebuilt.get();
-    else in.base = SectionOf(s.cs, p.base_program, o.base_h, bi, o.base_key.key);
+    else in.base = SectionOf(s.cs, p.base_program, o.base_h, bi, o.base_key.key, "base");
     in.update = SectionOf(s.cs, p.patch_program, o.patch_h, ui, o.patch_key.key);
     in.update_index = ui;
     in.update_header.assign(reinterpret_cast<const u8*>(&o.patch_h), reinterpret_cast<const u8*>(&o.patch_h) + 0xC00);
