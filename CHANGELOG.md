@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.6
+
+These changes have not been tested in depth yet, so some bugs may remain.
 
 - Lists that jump by letter (Compress games, In the console, Space): a stick that drifts a little no longer jumps
   to another letter or moves the chosen game. Only the d-pad and the left stick pushed clearly move them.
