@@ -52,6 +52,7 @@ struct UiPrefs {
     int pick = 0;               // what the page of a game ticks: 0 what is missing, 1 the game only, 2 the game and its update
     int sort = 0;               // the order of the library: 0 A-Z, 1 size, 2 not installed first, 3 recent
     int library_size = 0;       // the covers of the library: 0 large (7 in a row), 1 medium (9), 2 small (12)
+    int show_shortcuts = 0;     // In the console: the shortcuts of homebrew on the HOME menu shown too (off: games only)
     int console_size = 0;       // In the console, of the Installed tab: 0 list, 1 medium covers, 2 large covers
     int console_sort = 0;       // its order: 0 name, 1 size, 2 last played, 3 play time, 4 where it is (4A)
     int focus_view = 0;         // the game in focus in the library: 0 a band under the covers, 1 a panel on the right

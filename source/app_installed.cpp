@@ -78,8 +78,9 @@ void App::DrawInstalled(NVGcontext* vg) {
     const int session = int(m_queue->Session().size());
     ReadConsole();
     const auto console = m_space ? m_space->Snapshot() : Space::View{};
+    const auto listed = ConsoleApps(console); // its count: the games, without the shortcuts of homebrew
     const char* names[] = {TrM().ic_console, s.this_session, s.history};
-    const int counts[] = {int(console.apps.size()), session, int(m_history.size())};
+    const int counts[] = {int(listed.apps.size()), session, int(m_history.size())};
     float x = 48;
     for (int i = 0; i < 3; i++) {
         char chip[64];

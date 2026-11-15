@@ -5,6 +5,10 @@
 - In the console: deleting many games at once, the question fits on the screen (fewer games listed, "and N more"
   grows) and its long lines end in "…". While it deletes, a bar says which game, of how many, and when it copies its
   saves; each game leaves the list as soon as it is gone. "1 update", not "1 updates", and no "0 DLC".
+- In the console: up and down reach the boxes of the question to delete, and A ticks them. While several games are
+  deleted, Cancel stops before the next one, never in the middle of one, and says which were not touched.
+- In the console, Space and their counts: only games by default; the shortcuts of homebrew on the HOME menu show again
+  with "Also show homebrew shortcuts" in the + menu.
 
 ## 0.9.0-beta.6
 

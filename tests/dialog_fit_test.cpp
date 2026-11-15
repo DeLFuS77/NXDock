@@ -3,6 +3,7 @@
 //
 // The rows a dialog shows so its buttons stay on a 720 p screen, and "1 update, 2 DLC".
 #include "dialog_fit.hpp"
+#include "shortcut_filter.hpp"
 
 #include <cstdio>
 #include <string>
@@ -38,6 +39,17 @@ int main() {
     Check(es(0, 3) == "3 DLC", "no \"0 actualizaciones\"");
     Check(es(1, 1) == "1 actualización, 1 DLC", "both, joined");
     Check(es(0, 0).empty(), "nothing for none");
+    // the shortcuts of homebrew: by their ID, or a forwarder with an ID of 01… (tiny, nothing else)
+    using nxdock::ShortcutOf;
+    using nxdock::ShortcutSign;
+    const unsigned long long mib = 1ull << 20;
+    Check(ShortcutOf(0x0500000000001000ull, 2 * mib, false, false) == ShortcutSign::Id, "NXDock's own shortcut (05...) is hidden");
+    Check(ShortcutOf(0x0400000000010000ull, 3000 * mib, false, false) == ShortcutSign::Id, "any ID not of 01... is hidden");
+    Check(ShortcutOf(0x01000320000CC000ull, 1400 * mib, true, false) == ShortcutSign::None, "a game stays");
+    Check(ShortcutOf(0x0100000000010000ull, 90 * mib, false, false) == ShortcutSign::None, "a small game of the eShop stays");
+    Check(ShortcutOf(0x0100000000010000ull, 2 * mib, false, false) == ShortcutSign::Small, "a forwarder with an ID of 01... is hidden");
+    Check(ShortcutOf(0x0100000000010000ull, 2 * mib, true, false) == ShortcutSign::None, "but not with an update");
+    Check(ShortcutOf(0x0100000000010000ull, 0, false, true) == ShortcutSign::None, "nor a DLC alone");
     if (g_failed) {
         std::printf("%d failed\n", g_failed);
         return 1;

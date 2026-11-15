@@ -427,6 +427,14 @@ void App::Update(u64 down, u64 held) {
         UpdateWizard(down, held);
         return;
     }
+    // while several games are taken off In the console, B stops before the next one: it is not Back
+    if ((down & HidNpadButton_B) && m_tab == Tab::Installed && m_installed_view == 0 && !m_console_app && m_space && !m_act && !m_menu) {
+        const auto v = m_space->Snapshot();
+        if (v.task == Space::Task::Remove && v.remove_count > 1) {
+            StopRemove();
+            return;
+        }
+    }
     // + opens the actions of the screen, − too (1A, 14/11); the library, Files and Saves have their own
     {
         const ActScreen act = CurrentActScreen();

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
+#include "shortcut_filter.hpp"
 #include "space.hpp"
 #include "compress_nx.hpp"
 
@@ -691,6 +692,23 @@ void Space::ScanNow() {
         fsDeviceOperatorClose(&op);
     }
     std::sort(apps.begin(), apps.end(), [](const InstalledApp& a, const InstalledApp& b) { return a.name < b.name; });
+    // the shortcuts of homebrew In the console hides, and why, to check against the console's list
+    if (FILE* f = std::fopen("sdmc:/switch/NXDock/shortcuts.log", "w")) {
+        for (const auto& a : apps) {
+            unsigned long long program = 0;
+            bool update = false, dlc = false;
+            for (const auto& c : a.contents) {
+                if (c.type == NcmContentMetaType_Application) program += c.bytes;
+                update = update || c.type == NcmContentMetaType_Patch;
+                dlc = dlc || c.type == NcmContentMetaType_AddOnContent;
+            }
+            const ShortcutSign sign = ShortcutOf(a.app_id, program, update, dlc);
+            if (sign != ShortcutSign::None) {
+                std::fprintf(f, "%016llX %s: hidden, %s (program %llu bytes)\n", a.app_id, a.name.c_str(), ShortcutWhy(sign), program);
+            }
+        }
+        std::fclose(f);
+    }
     std::lock_guard lock(m_mutex);
     m_view.apps = std::move(apps);
     m_view.removed.clear(); // read again: those gone are not there any more
@@ -840,9 +858,18 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
         {
             std::lock_guard lock(m_mutex);
             m_view.removed.clear();
+            m_view.removed_done.clear();
+            m_view.remove_cancelled = false;
             m_view.remove_count = int(games.size());
         }
+        bool cancelled = false;
         for (const auto& [app, items] : games) {
+            // Cancel stops before the next game, never inside one: the game at work, its saves and
+            // its contents, ends whole
+            if (m_cancel) {
+                cancelled = true;
+                break;
+            }
             const bool whole = std::any_of(items.begin(), items.end(),
                                            [](const InstalledApp::Content& c) { return c.type == NcmContentMetaType_Application; });
             {
@@ -882,9 +909,14 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
             if (base) {
                 std::lock_guard lock(m_mutex);
                 m_view.removed.push_back(app);
+                m_view.removed_done.push_back(app);
             }
         }
-        Progress(total, total);
+        if (!cancelled) Progress(total, total);
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.remove_cancelled = cancelled;
+        }
         if (R_FAILED(rc)) {
             if (rc == Result_GameRunning) return Packed(m.ic_rm_running_t, m.ic_rm_running_d, rc);
             return Packed(m.ic_rm_failed_t, m.ic_rm_failed_d, rc);

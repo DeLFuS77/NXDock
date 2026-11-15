@@ -79,6 +79,9 @@ void App::DrawDialog(NVGcontext* vg) {
     std::vector<DialogLine>& lines = dc.lines;
     bool &can = dc.can, &bar = dc.bar, &verify_bar = dc.verify_bar, &verify_running = dc.verify_running;
     bool &tick = dc.tick, &tick2 = dc.tick2;
+    m_dialog.has_tick = tick;
+    m_dialog.has_tick2 = tick2;
+    if ((m_dialog.tick_focus == 0 && !tick) || (m_dialog.tick_focus == 1 && !tick2)) m_dialog.tick_focus = -1;
     std::string &cancel_label = dc.cancel_label, &verify_text = dc.verify_text;
     float& verify_frac = dc.verify_frac;
     u64& size = dc.size;
@@ -264,6 +267,7 @@ void App::DrawDialog(NVGcontext* vg) {
         edge.a = 0.6f;
         ui::StrokeRound(vg, x + pad + 1, cy + 1, iw - 2, th - 2, 14, on ? edge : t.line, 2);
         draw::TickBox(vg, t, x + pad + 22, cy + th / 2, on, "keep-saves");
+        if (m_dialog.tick_focus == 0) ui::Focus(vg, t, x + pad, cy, iw, th, 14, m_time);
         ui::Text(vg, x + pad + 62, cy + th / 2 - 13, 18, t.text, m.ic_rm_keep);
         ui::Text(vg, x + pad + 62, cy + th / 2 + 14, 14, t.muted, m_link.CurrentConfig().Linked() ? m.ic_rm_keep_lib : m.ic_rm_keep_sd);
         ui::Symbol(vg, t, x + pad + iw - 30, cy + th / 2, 24, ui::glyph::Y, t.muted, HidNpadButton_Y);
@@ -287,6 +291,7 @@ void App::DrawDialog(NVGcontext* vg) {
         edge.a = 0.6f;
         ui::StrokeRound(vg, x + pad + 1, cy + 1, iw - 2, th - 2, 14, on ? edge : t.line, 2);
         draw::TickBox(vg, t, x + pad + 22, cy + th / 2, on, "remove-extra");
+        if (m_dialog.tick_focus == 1) ui::Focus(vg, t, x + pad, cy, iw, th, 14, m_time);
         ui::Text(vg, x + pad + 62, cy + th / 2 - 13, 18, t.text, m_dialog.ids.size() > 1 ? m.rx_title_many : m.rx_title);
         // what was found: "Mods: 2 folders · common ticket"
         std::string found;
@@ -342,7 +347,7 @@ void App::DrawDialog(NVGcontext* vg) {
         bx -= bw;
         const bool enabled = !it->primary || can;
         nvgGlobalAlpha(vg, (enabled ? 1.f : 0.4f) * std::min(1.f, pop * 1.4f));
-        if (m_dialog.focus == it->index) {
+        if (m_dialog.focus == it->index && m_dialog.tick_focus < 0) {
             ui::Focus(vg, t, bx, by, bw, bh, 12, m_time);
         }
         if (it->primary) {
@@ -387,6 +392,29 @@ void App::UpdateDialog(u64 down, u64 held) {
         (m_dialog.extra_mods > 0 || m_dialog.extra_common + m_dialog.extra_personal > 0)) {
         m_dialog.remove_extra = !m_dialog.remove_extra; // the box of its mods and its tickets (7A)
         return;
+    }
+    if (m_dialog.kind == DialogKind::ConsoleRemove && (m_dialog.has_tick || m_dialog.has_tick2)) {
+        // up and down go through the boxes to tick, then the buttons; A ticks the box in focus,
+        // left and right go back to the buttons (Y and X stay as shortcuts)
+        std::vector<int> stops;
+        if (m_dialog.has_tick) stops.push_back(0);
+        if (m_dialog.has_tick2) stops.push_back(1);
+        stops.push_back(-1);
+        int pos = int(stops.size()) - 1;
+        for (size_t i = 0; i < stops.size(); i++) {
+            if (stops[i] == m_dialog.tick_focus) pos = int(i);
+        }
+        if (Repeat(down, held, HidNpadButton_AnyUp) && pos > 0) pos--;
+        if (Repeat(down, held, HidNpadButton_AnyDown) && pos < int(stops.size()) - 1) pos++;
+        m_dialog.tick_focus = stops[size_t(pos)];
+        if (m_dialog.tick_focus >= 0 && !(down & HidNpadButton_B)) {
+            if (down & HidNpadButton_A) {
+                if (m_dialog.tick_focus == 0) m_dialog.keep_saves = !m_dialog.keep_saves;
+                else m_dialog.remove_extra = !m_dialog.remove_extra;
+            }
+            if (Repeat(down, held, HidNpadButton_AnyLeft) || Repeat(down, held, HidNpadButton_AnyRight)) m_dialog.tick_focus = -1;
+            return;
+        }
     }
     const bool info = m_dialog.single;
     if (m_dialog.kind == DialogKind::Verify && (down & (HidNpadButton_B | HidNpadButton_A)) && m_queue->GetVerify().running) {
@@ -789,6 +817,8 @@ void App::ConfirmDialog() {
                 std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games;
                 u64 bytes = 0;
                 m_console_done.clear();
+                m_console_done_ids.clear();
+                m_console_rm_stop = false;
                 for (const auto app : m_dialog.ids) {
                     for (const auto& a : v.apps) {
                         if (a.app_id != app || a.contents.empty()) continue;
@@ -802,6 +832,7 @@ void App::ConfirmDialog() {
                         e.nand = a.nand_bytes > 0 && a.sd_bytes == 0;
                         e.result = HistoryEntry::Result::Removed;
                         m_console_done.push_back(e);
+                        m_console_done_ids.push_back(app);
                     }
                 }
                 char text[200];

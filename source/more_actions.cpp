@@ -33,7 +33,7 @@ namespace {
 constexpr float kActW = 470, kActRow = 56;
 
 // What a row does when it has no button of its own (kButton: as its button)
-enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
+enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kShortcuts, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
              kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kCzGo, kCzFilter, kCzUnqueue, kSortBase = 100 };
 
@@ -310,6 +310,8 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                 if (CanCompress(a)) rows.push_back({kCompress, m.cz_menu_row, {}, true, 0, false, kIconPress});
             }
             rows.push_back({kMissing, m_console_missing ? tt.ms_hint_all : tt.ms_hint_filter, {}, true, 0, false, kIconFunnel});
+            // the shortcuts of homebrew on the HOME menu, hidden unless asked; kept for the next time
+            rows.push_back({kShortcuts, m_ui.show_shortcuts ? m.ic_hide_shortcuts : m.ic_show_shortcuts, {}, true, 0, false, kIconFunnel});
             // every game, in Compress games (14/11)
             rows.push_back({kCompressAll, m.cz_menu_all, {}, true, 0, false, kIconPress});
             // those without their game (5C), when there are some
@@ -703,6 +705,18 @@ void App::ActDo(const ActRow& row) {
             m_console_orphans = false;
             m_console_focus = 0;
             m_console_list_at = m_time;
+            break;
+        case kShortcuts:
+            m_ui.show_shortcuts = !m_ui.show_shortcuts;
+            m_ui.Save();
+            m_console_focus = 0;
+            m_console_list_at = m_time;
+            // nothing hidden stays marked
+            if (!m_ui.show_shortcuts && m_space) {
+                for (const auto& a : m_space->Snapshot().apps) {
+                    if (IsShortcut(a)) m_console_picked.erase(a.app_id);
+                }
+            }
             break;
         case kSize:
             // the size: list, medium covers, large covers; kept for the next time

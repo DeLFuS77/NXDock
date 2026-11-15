@@ -5,6 +5,7 @@
 // those not in the library (installed with DBI, from the eShop or a game card), each with its icon
 // of the console; and the page of a game with what it has (the game, its update, each DLC, told
 // apart), where what goes is marked and taken off after a question. The saves are never touched.
+#include "shortcut_filter.hpp"
 #include "app.hpp"
 
 #include "console_order.hpp"
@@ -187,18 +188,19 @@ void App::ReadConsole() {
     if (m_console_scanned_for != version && !m_space->Busy() && m_space->StartScan()) m_console_scanned_for = version;
 }
 
-void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
+void App::DrawConsole(NVGcontext* vg, const Space::View& raw) {
     const Theme& t = m_theme;
     const auto& s = Tr();
     const More& m = TrM();
     const Tools& tt = TrT();
     FollowSpace();
-    FollowMissing(all);
+    FollowMissing(raw);
     if (m_console_app) {
-        DrawConsolePage(vg, all);
+        DrawConsolePage(vg, raw);
         return;
     }
-    const Space::View v = ConsoleView(all);
+    const Space::View v = ConsoleView(raw);
+    const Space::View all = ConsoleApps(raw); // the counts of the filters, of what is listed
     if (!v.scanned) {
         ui::Spinner(vg, kWidth / 2, 320, 14, t.work, m_time);
         ui::Text(vg, kWidth / 2, 366, 18, t.muted, m.ic_reading, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -357,6 +359,18 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
     ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
 }
 
+// Cancel while several games are taken off: it stops before the next game (never inside one).
+void App::StopRemove() {
+    if (!m_space || m_console_rm_stop) return;
+    m_console_rm_stop = true;
+    m_console_rm_stop_name.clear();
+    const auto v = m_space->Snapshot();
+    for (const auto& a : v.apps) {
+        if (a.app_id == v.remove_app) m_console_rm_stop_name = a.name;
+    }
+    m_space->Cancel();
+}
+
 // While games are taken off: which one, of how many, copying its saves or deleting it, over the
 // hint bar, where it is seen.
 void App::DrawRemoveProgress(NVGcontext* vg, const Space::View& v) {
@@ -368,16 +382,30 @@ void App::DrawRemoveProgress(NVGcontext* vg, const Space::View& v) {
         if (a.app_id == v.remove_app) name = a.name;
     }
     char text[300];
-    if (v.remove_saving) std::snprintf(text, sizeof(text), m.ic_rm_saving_fmt, name.c_str());
+    if (m_console_rm_stop) std::snprintf(text, sizeof(text), m.ic_rm_stopping_fmt, m_console_rm_stop_name.c_str());
+    else if (v.remove_saving) std::snprintf(text, sizeof(text), m.ic_rm_saving_fmt, name.c_str());
     else std::snprintf(text, sizeof(text), m.ic_rm_progress_fmt, name.c_str(), v.remove_index, v.remove_count);
-    const float w = 720, h = 70, x = (kWidth - w) / 2, y = kHeight - 56 - h - 14;
+    const float w = 760, h = 70, x = (kWidth - w) / 2, y = kHeight - 56 - h - 14;
     const float in = ui::EaseOut(ui::Appear(m_console_list_at, 0.3f));
     nvgSave(vg);
     nvgGlobalAlpha(vg, in);
     draw::Popup(vg, t, x, y, w, h, 16);
     ui::Spinner(vg, x + 32, y + 26, 9, t.work, m_time);
+    // Cancel, several games only: B, or a tap anywhere on its side of the card
+    float bw = 0;
+    if (v.remove_count > 1 && !m_console_rm_stop) {
+        const auto& s = Tr();
+        bw = ui::TextWidth(vg, 16, s.cancel) + 64;
+        const float bx = x + w - bw - 12, by = y + 9, bh = 34;
+        ui::FillRound(vg, bx, by, bw, bh, 10, t.panel2);
+        ui::StrokeRound(vg, bx + 1, by + 1, bw - 2, bh - 2, 10, t.line, 2);
+        ui::Symbol(vg, t, bx + 22, by + bh / 2, 20, ui::glyph::B, t.text, HidNpadButton_B);
+        ui::Text(vg, bx + 38, by + bh / 2, 16, t.text, s.cancel);
+        AddHit(bx - 12, y, bw + 24, h, HitKind::RemoveStop);
+        bw += 24;
+    }
     nvgSave(vg);
-    nvgIntersectScissor(vg, x + 52, y + 8, w - 72, 36);
+    nvgIntersectScissor(vg, x + 52, y + 8, w - 72 - bw, 36);
     ui::Text(vg, x + 52, y + 26, 17, t.text, text);
     nvgRestore(vg);
     const float frac = v.total ? float(double(v.done) / double(v.total)) : 0.f;
@@ -810,6 +838,7 @@ void App::AskConsoleRemoveMany(const Space::View& v) {
     }
     m_dialog.kind = DialogKind::ConsoleRemove;
     m_dialog.keep_saves = m_ui.save_copy; // the box starts as Settings › Saves says
+    m_dialog.tick_focus = -1;              // the focus on the buttons, Cancel first
     ConsoleRemoveExtras(m_dialog.ids);
 }
 
@@ -969,6 +998,7 @@ void App::AskConsoleRemoveMarked() {
     }
     OpenDialog(DialogKind::ConsoleRemove);
     m_dialog.keep_saves = m_ui.save_copy; // the box starts as Settings › Saves says
+    m_dialog.tick_focus = -1;              // the focus on the buttons, Cancel first
     m_dialog.text = found->name;
     if (base) ConsoleRemoveExtras({m_console_app});
 }
@@ -1173,7 +1203,27 @@ void App::FollowMissing(const Space::View& v) {
     }
 }
 
-Space::View App::ConsoleView(const Space::View& in) {
+bool App::IsShortcut(const InstalledApp& a) {
+    unsigned long long program = 0;
+    bool update = false, dlc = false;
+    for (const auto& c : a.contents) {
+        if (c.type == NcmContentMetaType_Application) program += c.bytes;
+        update = update || c.type == NcmContentMetaType_Patch;
+        dlc = dlc || c.type == NcmContentMetaType_AddOnContent;
+    }
+    return ShortcutOf(a.app_id, program, update, dlc) != ShortcutSign::None;
+}
+
+Space::View App::ConsoleApps(const Space::View& v) const {
+    if (m_ui.show_shortcuts) return v;
+    Space::View out = v;
+    std::erase_if(out.apps, [](const InstalledApp& a) { return IsShortcut(a); });
+    return out;
+}
+
+Space::View App::ConsoleView(const Space::View& raw) {
+    // the shortcuts of homebrew out, unless asked for in +: nothing hidden is marked nor deleted
+    const Space::View in = ConsoleApps(raw);
     // the games taken off so far, out of the list at once, not at the end of all
     Space::View trimmed;
     const Space::View* from = &in;

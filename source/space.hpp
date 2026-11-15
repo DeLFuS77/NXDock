@@ -123,6 +123,9 @@ public:
         int remove_index = 0, remove_count = 0;
         bool remove_saving = false;
         std::vector<unsigned long long> removed;
+        // the last Remove task: stopped before a game (Cancel), and every game it took off
+        bool remove_cancelled = false;
+        std::vector<unsigned long long> removed_done;
     };
 
     ~Space();
