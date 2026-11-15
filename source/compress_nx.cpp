@@ -530,7 +530,9 @@ patchview::RawRead NcaReader(NcmContentStorage& cs, const NcmContentId& id, cons
         while (n) {
             const size_t k = std::min<size_t>(n, 4 * 1024 * 1024);
             if (const Result rc = ncmContentStorageReadContentIdFile(&cs, b, k, &id, s64(o)); R_FAILED(rc)) {
-                readnote::Note("%s NCA: reading %zu bytes at %llu from the storage, 0x%X", who, k, (unsigned long long)o, rc);
+                // the code as the console shows it, and the Result as ncm gave it
+                readnote::Note("%s NCA: reading %zu bytes at %llu from the storage, %s (0x%X)", who, k, (unsigned long long)o, ErrorCode(rc).c_str(), rc);
+                readnote::NoteStorage(who, rc);
                 return false;
             }
             o += k;
@@ -862,9 +864,23 @@ Result PutContent(NcmContentStorage& cs, const std::vector<u8>& bytes, NcmConten
 void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std::atomic<bool>& stop,
               const std::function<void(int, u64, u64)>& progress, std::string& error, u64& saved, NcmContentId& new_program) {
     const More& m = TrM();
-    // every way out that fails writes where it failed first
+    // a read of the installed game the storage refused, from here on
+    {
+        const char* who = nullptr;
+        uint32_t rc = 0;
+        readnote::TakeStorage(who, rc);
+    }
+    // every way out that fails writes where it failed first; a part of the installed game that
+    // cannot be read says so, with what to do, and which part
     const auto failed = [&](const char* step, Result rc = 0) {
-        log_write("[NXDock] merge %016llX failed: %s, 0x%X\n", (unsigned long long)app, step, rc);
+        log_write("[NXDock] merge %016llX failed: %s, %s (0x%X)\n", (unsigned long long)app, step, ErrorCode(rc).c_str(), rc);
+        const char* who = nullptr;
+        uint32_t read_rc = 0;
+        if (readnote::TakeStorage(who, read_rc) && !stop) {
+            log_write("[NXDock] merge %016llX: the %s cannot be read from the storage, %s\n", (unsigned long long)app, who, ErrorCode(read_rc).c_str());
+            error = Packed(m.cz_unreadable_t, m.cz_unreadable_d, read_rc, std::strcmp(who, "base") == 0 ? m.cz_unreadable_base : m.cz_unreadable_update);
+            return;
+        }
         error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d, rc);
     };
     Opened o;

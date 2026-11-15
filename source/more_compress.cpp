@@ -882,6 +882,15 @@ void App::FollowCompress(const Compressor::View& c) {
         if (!m_compress_round.stopped) {
             m_compress_round.failed.push_back({c.app, c.error});
             m_compress_round.order.push_back(c.app);
+            // in the history too, with what was said
+            HistoryEntry entry;
+            entry.when = std::time(nullptr);
+            entry.game = name;
+            entry.label = std::string(m.cz_hist_label) + " \xC2\xB7 " + UnpackError(c.error).title;
+            entry.format = "LZ4";
+            entry.result = HistoryEntry::Result::Failed;
+            entry.error = c.error;
+            History(HistoryPath()).Append(entry);
         }
         if (alone && !m_compress_round.stopped) {
             // one game alone: its error, as before
@@ -978,7 +987,9 @@ void App::DrawCompressDone(NVGcontext* vg) {
     // the one line in red: a game by its name, more by their count
     std::string why;
     if (failed == 1) {
-        std::snprintf(text, sizeof(text), m.cz_done_failed_fmt, CompressName(v, r.failed[0].first).c_str());
+        // a game whose data cannot be read says so; any other failure as it is
+        const bool unreadable = UnpackError(r.failed[0].second).title == m.cz_unreadable_t;
+        std::snprintf(text, sizeof(text), unreadable ? m.cz_done_unreadable_fmt : m.cz_done_failed_fmt, CompressName(v, r.failed[0].first).c_str());
         why = text;
     } else if (failed > 1 && done == 0) {
         why = m.cz_done_failed_all;

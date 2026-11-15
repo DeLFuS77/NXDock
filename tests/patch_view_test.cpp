@@ -14,6 +14,7 @@
 #include "patch_view.hpp"
 
 #include <chrono>
+#include "read_note.hpp"
 #include <cstdio>
 #include <cstring>
 #include <random>
@@ -420,6 +421,33 @@ int main() {
         for (size_t i = 0; i < plain.size(); i++) plain[i] ^= uint8_t(0x5A + i);
         uint64_t table_offset = 0;
         std::memcpy(&table_offset, plain.data() + 0x400 + 0x200 + 0x178, 8);
+        // a read the storage refuses: "read", with which part, and never "stopped"; a stop is
+        // "stopped"
+        {
+            mergegame::Merger broken;
+            bool refuse = false;
+            mergegame::Input in = input();
+            const auto raw = in.base.raw;
+            in.base.raw = [&refuse, raw](uint64_t o, uint8_t* b, size_t n) {
+                if (!refuse) return raw(o, b, n);
+                readnote::Note("base NCA: reading %zu bytes at %llu from the storage, 2002-2002", n, (unsigned long long)o);
+                readnote::NoteStorage("base", 0xB4CFA402u);
+                return false;
+            };
+            CHECK(broken.Open(in, error));
+            refuse = true;
+            std::string why;
+            CHECK(!broken.Measure(go, why));
+            CHECK(why.rfind("read: base NCA", 0) == 0);
+            const char* who = nullptr;
+            uint32_t rc = 0;
+            CHECK(readnote::TakeStorage(who, rc) && std::string(who) == "base" && rc == 0xB4CFA402u);
+            std::printf("  a read refused: %s\n", why.c_str());
+            mergegame::Merger halted;
+            CHECK(halted.Open(input(), error));
+            const lz4pack::StepFn stop = [](uint64_t) { return false; };
+            CHECK(!halted.Measure(stop, why) && why == "stopped");
+        }
         std::printf("  merged in one pass: %zu bytes, the same as in two (its table at %llu, %llu into a block of 16); %.0f ms against %.0f ms\n",
                     a.size(), (unsigned long long)table_offset, (unsigned long long)(table_offset % 16), t3 - t2, t1 - t0);
     }
