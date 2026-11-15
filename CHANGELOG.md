@@ -9,6 +9,8 @@
   deleted, Cancel stops before the next one, never in the middle of one, and says which were not touched.
 - In the console, Space and their counts: only games by default; the shortcuts of homebrew on the HOME menu show again
   with "Also show homebrew shortcuts" in the + menu.
+- Compress games: the screen goes dark to save battery while it works, as when installing. Both say, small, the game
+  at work and, in a queue, which of how many.
 
 ## 0.9.0-beta.6
 

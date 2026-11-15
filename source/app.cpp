@@ -623,8 +623,11 @@ bool App::Frame() {
     }
     { perf::Timer t_("frame: PlaySounds"); PlaySounds(down, focus_before); }
     { perf::Timer t_("frame: FollowTour"); FollowTour(); }
-    // saver mode: dark after a minute without input while something installs
-    if (m_queue && !m_queue->Busy()) {
+    // saver mode: dark after a minute without input while something installs or Compress games
+    // works (its queue too), as when installing
+    const bool installing = m_queue && m_queue->Busy();
+    const bool compressing = m_compress && (m_compress->Progress().running || !m_compress_queue.empty());
+    if (!installing && !compressing) {
         m_saver_on = false;
     } else if (m_ui.saver && !m_wizard && m_time - m_last_input > 60) {
         m_saver_on = true;
@@ -1323,13 +1326,57 @@ void App::DrawSaver(NVGcontext* vg) {
     nvgRect(vg, 0, 0, kWidth, kHeight);
     nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.88f));
     nvgFill(vg);
-    const auto live = m_queue->GetLive();
     NVGcolor dim = m_theme.work;
     dim.a = 0.6f;
+    const NVGcolor faint = nvgRGBAf(1, 1, 1, 0.45f);
+    // what is at work: its name, small, cut with an ellipsis, and "2 of 5" in a queue
+    const auto named = [&](const std::string& name, int at, int of) {
+        if (name.empty()) return;
+        std::string line = name;
+        char text[400];
+        const float room = 560;
+        const auto with = [&](const std::string& n) {
+            if (of > 1) std::snprintf(text, sizeof(text), Tr().saver_of_fmt, n.c_str(), at, of);
+            else std::snprintf(text, sizeof(text), "%s", n.c_str());
+            return std::string(text);
+        };
+        std::string shown = with(line);
+        while (line.size() > 1 && ui::TextWidth(vg, 15, shown.c_str()) > room) {
+            line.pop_back();
+            while (!line.empty() && (static_cast<unsigned char>(line.back()) & 0xC0) == 0x80) line.pop_back();
+            shown = with(line + "\xE2\x80\xA6");
+        }
+        ui::Text(vg, kWidth / 2, 328, 15, faint, shown.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    };
+    const auto live = m_queue ? m_queue->GetLive() : InstallQueue::Live{};
     if (live.running) {
+        // the job at work, and where it is in the queue
+        std::string name;
+        int started = 0, all = 0;
+        for (const auto& j : m_queue->Jobs()) {
+            if (j.state == InstallJob::State::Cancelled) continue;
+            all++;
+            if (j.state != InstallJob::State::Waiting) started++;
+            if (j.id == live.job) name = j.label.empty() ? j.game : j.game + " \xC2\xB7 " + j.label;
+        }
+        named(name, std::max(1, started), all);
         ui::Progress(vg, m_theme, kWidth / 2 - 200, 352, 400, 6, JobFraction(live), dim, m_time);
+        ui::Text(vg, kWidth / 2, 384, 16, faint, Tr().saver_text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        return;
     }
-    ui::Text(vg, kWidth / 2, 384, 16, nvgRGBAf(1, 1, 1, 0.45f), Tr().saver_text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    if (m_compress) {
+        const auto c = m_compress->Progress();
+        if (c.running) {
+            // the game Compress games is at, and where it is in its round
+            const std::string name = m_space ? CompressName(m_space->Snapshot(), c.app) : std::string{};
+            const int at = int(m_compress_round.done.size() + m_compress_round.failed.size()) + 1;
+            named(name, at, std::max(at, m_compress_round.total));
+            ui::Progress(vg, m_theme, kWidth / 2 - 200, 352, 400, 6, std::clamp(m_compress_frac, 0.f, 1.f), dim, m_time);
+        }
+        ui::Text(vg, kWidth / 2, 384, 16, faint, Tr().saver_compress_text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        return;
+    }
+    ui::Text(vg, kWidth / 2, 384, 16, faint, Tr().saver_text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 }
 
 } // namespace nxdock
