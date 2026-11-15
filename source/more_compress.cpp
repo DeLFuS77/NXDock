@@ -274,8 +274,15 @@ void App::FollowCompressSpeed(const Compressor::View& c) {
     const int piece = int((c.app & 0xFFFFF) * 16 + unsigned(c.dlc));
     if (piece != m_compress_piece) {
         m_compress_piece = piece;
-        m_compress_measuring = c.phase <= 1;
+        m_compress_measuring = false;
         m_compress_frac = 0;
+    }
+    // measured first only when it is not done in one pass: then its bar has three steps
+    if (c.phase == 1) m_compress_measuring = true;
+    if (c.measure_why == 2 && !m_compress_measuring) {
+        // packed once already, and written again in order: that pass was the measure
+        m_compress_measuring = true;
+        m_compress_frac = 0.45f;
     }
     const int step = piece * 4 + c.phase;
     if (step != m_compress_sample_step || (!m_compress_samples.empty() && c.done < m_compress_samples.back().second)) {
@@ -291,7 +298,7 @@ void App::FollowCompressSpeed(const Compressor::View& c) {
             m_compress_speed = m_compress_speed > 0 ? m_compress_speed * 0.7 + now * 0.3 : now;
         }
     }
-    const float part = c.total ? std::clamp(float(double(c.done) / double(c.total)), 0.f, 1.f) : 0.f;
+    const float part = c.total && c.phase > 0 ? std::clamp(float(double(c.done) / double(c.total)), 0.f, 1.f) : 0.f;
     float f;
     if (m_compress_measuring) f = c.phase <= 1 ? 0.45f * part : c.phase == 2 ? 0.45f + 0.45f * part : 0.9f + 0.1f * part;
     else f = c.phase <= 2 ? 0.88f * part : 0.88f + 0.12f * part;
@@ -758,7 +765,10 @@ void App::DrawCompressCard(NVGcontext* vg, const Space::View& v, const Compresso
     const double mbs = m_compress_speed / double(1 << 20);
     ui::Title(vg, x + w, 272, 22, t.work, appui::SpeedText(mbs).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     const bool timed = m_compress_speed > 0 && m_time - m_compress_round.game_at > 3;
-    if (timed) {
+    if (c.phase == 0) {
+        // opening the game, making room: nothing measured nor written yet
+        std::snprintf(text, sizeof(text), "%s", m.cz_preparing);
+    } else if (timed) {
         // what is left of this step, and the steps after it read about as much again
         const double rest = double(c.total > c.done ? c.total - c.done : 0);
         const double after = double(c.after ? c.after : c.before * 7 / 10);
@@ -778,7 +788,8 @@ void App::DrawCompressCard(NVGcontext* vg, const Space::View& v, const Compresso
         if (m_compress_measuring) steps.push_back(m.cz_step_measure);
         steps.push_back(m.cz_step_write);
         steps.push_back(m.cz_step_check);
-        const int now = m_compress_measuring ? std::clamp(c.phase, 1, 3) - 1 : std::clamp(c.phase, 2, 3) - 2;
+        // getting ready (phase 0): none of them yet
+        const int now = c.phase == 0 ? -1 : m_compress_measuring ? std::clamp(c.phase, 1, 3) - 1 : std::clamp(c.phase, 2, 3) - 2;
         float sx = x;
         for (int i = 0; i < int(steps.size()); i++) {
             const float pw = ui::TextWidth(vg, 13, steps[size_t(i)]) + 40;
@@ -802,6 +813,13 @@ void App::DrawCompressCard(NVGcontext* vg, const Space::View& v, const Compresso
             ui::Text(vg, sx + 26, 366, 13, i == now ? t.text : t.muted, steps[size_t(i)]);
             sx += pw + 6;
         }
+        // why it measures first, when it does
+        if (m_compress_measuring && c.measure_why) {
+            nvgSave(vg);
+            nvgIntersectScissor(vg, x, 386, w, 18);
+            ui::Text(vg, x, 395, 12, t.muted, c.measure_why == 2 ? m.cz_measure_big : m.cz_measure_room);
+            nvgRestore(vg);
+        }
     }
 
     // the figures: before, after, saved so far, time so far
@@ -813,8 +831,8 @@ void App::DrawCompressCard(NVGcontext* vg, const Space::View& v, const Compresso
     unsigned long long round_saved = 0;
     for (const auto& d : m_compress_round.done) round_saved += d.second;
     const bool after_known = c.after && c.before;
-    figure(x, 408, m.cz_before, c.before ? draw::Size(c.before) : std::string("\xE2\x80\x94"), t.text);
-    figure(c2, 408, c.after_exact ? m.cz_after : m.cz_after_estimate,
+    figure(x, 414, m.cz_before, c.before ? draw::Size(c.before) : std::string("\xE2\x80\x94"), t.text);
+    figure(c2, 414, c.after_exact ? m.cz_after : m.cz_after_estimate,
            after_known ? std::string(c.after_exact ? "" : "\xE2\x89\x88 ") + draw::Size(c.after) : std::string("\xE2\x80\x94"), t.text);
     // what this piece saves, as far as it was written, and the games done before it
     unsigned long long now_saved = 0;
@@ -822,8 +840,8 @@ void App::DrawCompressCard(NVGcontext* vg, const Space::View& v, const Compresso
         const float written = m_compress_measuring ? std::clamp((m_compress_frac - 0.45f) / 0.45f, 0.f, 1.f) : std::clamp(m_compress_frac / 0.88f, 0.f, 1.f);
         now_saved = (unsigned long long)(double(c.before - c.after) * written);
     }
-    figure(x, 466, m.cz_saved_so_far, "\xE2\x88\x92" + draw::Size(round_saved + now_saved), t.ok);
-    figure(c2, 466, m.cz_elapsed, appui::Duration(m_time - m_compress_round.game_at), t.text);
+    figure(x, 470, m.cz_saved_so_far, "\xE2\x88\x92" + draw::Size(round_saved + now_saved), t.ok);
+    figure(c2, 470, m.cz_elapsed, appui::Duration(m_time - m_compress_round.game_at), t.text);
 
     // what comes next in the queue, and the total of the round
     nvgBeginPath(vg);

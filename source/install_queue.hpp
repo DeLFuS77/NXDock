@@ -111,6 +111,7 @@ public:
         // write, 3 check), how far, how fast; and what the install itself took
         bool merging = false;
         int merge_phase = 0;
+        bool merge_measured = false; // it measured first (two passes): its bar has three steps
         u64 merge_done = 0, merge_total = 0;
         double merge_rate = 0;
         u64 installed_bytes = 0;
@@ -241,6 +242,7 @@ private:
     std::atomic<bool> m_merge_stop{false};
     bool m_merging = false;
     int m_merge_phase = 0;
+    bool m_merge_measured = false;
     u64 m_merge_done = 0, m_merge_total = 0, m_merge_sample = 0;
     double m_merge_t = 0, m_merge_rate = 0;
     u64 m_installed_bytes = 0;

@@ -95,7 +95,7 @@ public:
         std::map<unsigned long long, GameEstimate> games;
         int check_done = 0, check_total = 0;     // the headers read (every game)
         int measure_done = 0, measure_total = 0; // the samples read (those that can be compressed)
-        int phase = 0; // 1 measuring, 2 writing, 3 registering
+        int phase = 0; // 0 getting ready, 1 measuring, 2 writing, 3 checking and registering
         unsigned long long done = 0, total = 0;
         unsigned long long app = 0;   // the game being compressed, or the last one
         unsigned long long saved = 0; // of the last one, when it went well
@@ -106,6 +106,9 @@ public:
         unsigned long long before = 0, after = 0;
         bool after_exact = false;
         int dlc = 0, dlc_count = 0; // the DLC being compressed after the game (1..n); 0: the game
+        // Why it measures before it writes (phase 1): 0 it does not; 1 no room for a placeholder
+        // to write it in one pass; 2 what it stores came out bigger than the game read
+        int measure_why = 0;
     };
 
     ~Compressor();

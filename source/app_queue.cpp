@@ -815,7 +815,9 @@ void App::DrawQueue(NVGcontext* vg) {
                 return std::string(v);
             };
             const auto unit = [&](int phase) { return std::string(live.merge_phase == phase ? "MB/s" : live.merge_phase > phase ? "%" : ""); };
-            lanes.push_back({TrM().qm_read, t.work, rate(1), unit(1), step(1), -1});
+            // in one pass it reads as it packs: the reading goes with the writing
+            const int read = live.merge_measured ? 1 : 2;
+            lanes.push_back({TrM().qm_read, t.work, rate(read), unit(read), step(read), -1});
             lanes.push_back({TrM().qm_pack, t.violet, rate(2), unit(2), step(2), -1});
             lanes.push_back({TrM().qm_check, t.ok, live.merge_phase >= 3 ? rate(3) : "\u2014", live.merge_phase >= 3 ? "MB/s" : TrM().qm_at_end, step(3), -1});
         } else {
