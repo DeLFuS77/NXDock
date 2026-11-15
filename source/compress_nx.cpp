@@ -54,6 +54,18 @@ constexpr uint32_t kMinGain = 64;  // a block must get this much smaller to be k
 // those of its HC levels (5, 16) are as small as LZ4 gets.
 constexpr double kRepackShare = 0.5;
 
+// What the piece being compressed takes before and after, for the screen (only one is compressed
+// at a time): while it is packed, the bytes read and those that came out give an estimate.
+struct Meter {
+    std::atomic<u64> before{0}, virt{0}, in{0}, out{0}, exact{0};
+    void Start(u64 now, u64 romfs) {
+        in = out = exact = 0;
+        virt = romfs;
+        before = now;
+    }
+};
+Meter g_meter;
+
 std::string Hex(const void* p, size_t n) {
     static const char* d = "0123456789ABCDEF";
     std::string s;
@@ -805,6 +817,8 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         return failed();
     }
     const u64 new_size = merger.NcaSize();
+    g_meter.Start(p.before, 0);
+    g_meter.exact = new_size;
     if (new_size >= p.before) {
         error = Packed(m.cz_low_t, m.cz_low_d);
         return;
@@ -1151,13 +1165,20 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     lz4pack::BlockHasher hasher(data_block, Sha256);
     lz4pack::Packed sizes;
     Result stream_rc = 0;
+    g_meter.Start(u64(h.size), virt);
     bool packed = lz4pack::Pack(virt, kLevel, kMinGain, read,
         [&](u64, const u8* d, size_t n) {
             hasher.Feed(d, n);
+            g_meter.out += n;
             if (stream) stream_rc = stream->Write(d, n);
             return R_SUCCEEDED(stream_rc);
         },
-        [&](u64 d) { progress(once ? 2 : 1, d, virt); return !stop; }, sizes, kThreads);
+        [&](u64 d) {
+            g_meter.in = d;
+            progress(once ? 2 : 1, d, virt);
+            return !stop;
+        },
+        sizes, kThreads);
     if (packed && stream) packed = R_SUCCEEDED(stream_rc = stream->Flush());
     if (!packed) {
         drop_once();
@@ -1212,6 +1233,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     sha256CalculateHash(nh.fs_header_hash[r].sha256, &nfh, sizeof(nfh));
     const u64 new_size = u64(s64(h.size) + shift);
     nh.size = new_size;
+    g_meter.exact = new_size;
     u8 enc_header[0xC00];
     sphaira::crypto::cryptoAes128Xts(&nh, enc_header, k.header_key, 0, 0x200, sizeof(nh), true);
 
@@ -1644,10 +1666,12 @@ void Mark(u64 id, const NcmContentId& content, u64 saved) {
 // A DLC that fails stays as it was (the game is already done): it is only written in the log.
 // Gives what they saved.
 u64 CompressDlcs(const keys::Keys& k, const std::vector<u64>& dlcs, const std::atomic<bool>& stop,
-                 const std::function<void(int, u64, u64)>& progress) {
+                 const std::function<void(int, u64, u64)>& progress, const std::function<void(int)>& piece) {
     u64 total = 0;
-    for (const u64 id : dlcs) {
+    for (size_t i = 0; i < dlcs.size(); i++) {
+        const u64 id = dlcs[i];
         if (stop) break;
+        piece(int(i) + 1);
         for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
             Storage s(sid);
             GameContents g;
@@ -1687,9 +1711,44 @@ bool Compressor::Busy() {
 
 void Compressor::Stop() { m_stop = true; }
 
+// The figures of the meter, in the view.
+static void Measured(Compressor::View& v) {
+    v.before = g_meter.before;
+    v.after = g_meter.exact;
+    v.after_exact = v.after != 0;
+    const u64 in = g_meter.in, out = g_meter.out, virt = g_meter.virt;
+    // an estimate once enough was packed to say something (32 MiB)
+    if (!v.after_exact && v.before && virt && in >= (32ull << 20) && out < in) {
+        const u64 less = u64(double(virt) * double(in - out) / double(in));
+        v.after = less < v.before ? v.before - less : 0;
+    }
+}
+
 Compressor::View Compressor::Snapshot() {
     std::lock_guard lock(m_mutex);
-    return m_view;
+    View v = m_view;
+    Measured(v);
+    return v;
+}
+
+Compressor::View Compressor::Progress() {
+    std::lock_guard lock(m_mutex);
+    View v;
+    v.running = m_view.running;
+    v.analyzing = m_view.analyzing;
+    v.check_done = m_view.check_done;
+    v.check_total = m_view.check_total;
+    v.phase = m_view.phase;
+    v.done = m_view.done;
+    v.total = m_view.total;
+    v.app = m_view.app;
+    v.saved = m_view.saved;
+    v.error = m_view.error;
+    v.finished = m_view.finished;
+    v.dlc = m_view.dlc;
+    v.dlc_count = m_view.dlc_count;
+    Measured(v);
+    return v;
 }
 
 std::vector<CompressedGame> Compressor::Marks() {
@@ -1934,6 +1993,9 @@ bool Compressor::StartCompress(unsigned long long app) {
         m_view.done = m_view.total = 0;
         m_view.error.clear();
         m_view.saved = 0;
+        m_view.dlc = 0;
+        m_view.dlc_count = 0;
+        g_meter.Start(0, 0);
     }
     // its DLC, from the check: compressed after the game (4A)
     std::vector<u64> dlcs;
@@ -1941,6 +2003,7 @@ bool Compressor::StartCompress(unsigned long long app) {
         std::lock_guard lock(m_mutex);
         const auto it = m_view.games.find(app);
         if (it != m_view.games.end()) dlcs.assign(it->second.dlcs.begin(), it->second.dlcs.end());
+        m_view.dlc_count = int(dlcs.size());
     }
     Join();
     m_stop = false;
@@ -1983,7 +2046,10 @@ bool Compressor::StartCompress(unsigned long long app) {
                 }
                 if (!error.empty()) return;
                 // its DLC, one after another (4A): a DLC that fails stays as it was
-                saved += CompressDlcs(k, dlcs, m_stop, progress);
+                saved += CompressDlcs(k, dlcs, m_stop, progress, [this](int n) {
+                    std::lock_guard lock(m_mutex);
+                    m_view.dlc = n;
+                });
                 return;
             }
             error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);

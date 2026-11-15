@@ -101,6 +101,11 @@ public:
         unsigned long long saved = 0; // of the last one, when it went well
         std::string error;            // packed (errors.hpp); empty when it went well
         int finished = 0;             // counts the compressions that ended
+        // What the piece being written takes now and after: estimated while it is packed (from
+        // what came out so far), exact once it is measured; 0 while not known.
+        unsigned long long before = 0, after = 0;
+        bool after_exact = false;
+        int dlc = 0, dlc_count = 0; // the DLC being compressed after the game (1..n); 0: the game
     };
 
     ~Compressor();
@@ -110,6 +115,8 @@ public:
     bool StartCompress(unsigned long long app);
     void Stop();
     View Snapshot();
+    // The same without the list of games: cheap, for every frame.
+    View Progress();
     bool Busy();
     // The marks of the games NXDock compressed, checked against what is installed now.
     static std::vector<CompressedGame> Marks();
