@@ -260,9 +260,12 @@ inline std::string Duration(double seconds) {
 }
 
 // Of what the install writes: how far, from the live counters.
-// The merge after an install (25G): measuring, then compressing and writing, then the check.
+// The merge after an install (25G): compressing and writing, then the check; measuring first only
+// when it is done in two passes.
 inline float MergeFraction(const InstallQueue::Live& l) {
     const float part = l.merge_total ? std::clamp(float(double(l.merge_done) / double(l.merge_total)), 0.f, 1.f) : 0.f;
+    if (l.merge_phase == 0) return 0.f;
+    if (!l.merge_measured) return l.merge_phase <= 2 ? 0.9f * part : 0.9f + 0.1f * part;
     return l.merge_phase <= 1 ? 0.45f * part : l.merge_phase == 2 ? 0.45f + 0.45f * part : 0.9f + 0.1f * part;
 }
 

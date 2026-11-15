@@ -689,6 +689,7 @@ InstallQueue::Live InstallQueue::GetLive() {
     l.copy_total = m_copy_total;
     l.merging = m_merging;
     l.merge_phase = m_merge_phase;
+    l.merge_measured = m_merge_measured;
     l.merge_done = m_merge_done;
     l.merge_total = m_merge_total;
     l.merge_rate = m_merge_rate;
@@ -1044,7 +1045,8 @@ void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaK
     {
         std::lock_guard lock(m_mutex);
         m_merging = true;
-        m_merge_phase = 1;
+        m_merge_phase = 0; // getting ready
+        m_merge_measured = false;
         m_merge_done = m_merge_total = m_merge_sample = 0;
         m_merge_t = Now();
         m_merge_rate = 0;
@@ -1064,6 +1066,7 @@ void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaK
             m_merge_rate = 0;
         }
         m_merge_phase = phase;
+        if (phase == 1) m_merge_measured = true;
         m_merge_done = done;
         m_merge_total = total;
         const double now = Now();

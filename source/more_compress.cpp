@@ -7,7 +7,7 @@
 // measured before, the user chooses and sees it when it ends (14/11). A game is compressed only
 // after a window with everything that changes; one compressed by NXDock can be undone (installed
 // again from the library).
-#include "app.hpp"
+#include "app_shared.hpp"
 
 #include "draw.hpp"
 #include "history.hpp"
@@ -133,44 +133,221 @@ std::vector<int> App::CompressRows(const Space::View& v) const {
     return rows;
 }
 
+// ---- several at once: the marks and the queue (15/11, 1A-4A)
+
+// What can go into the queue: a game the check found can be compressed, or one merged before whose
+// newer update waits to be merged in the same way.
+bool App::CompressCanQueue(const GameEstimate& e) {
+    if (e.why == GameEstimate::Why::Stops || e.why == GameEstimate::Why::Redo) return false;
+    const bool waiting = e.merge && e.merged && e.state == GameEstimate::State::Low;
+    return e.state == GameEstimate::State::Possible || e.state == GameEstimate::State::Worth || waiting;
+}
+
+// A row can be marked when its game can go into the queue and is not there yet.
+bool App::CompressMarkable(const Compressor::View& c, unsigned long long app) const {
+    const auto it = c.games.find(app);
+    if (it == c.games.end() || !CompressCanQueue(it->second)) return false;
+    if (c.running && c.app == app) return false;
+    return std::find(m_compress_queue.begin(), m_compress_queue.end(), app) == m_compress_queue.end();
+}
+
+// The games of the list that can be marked now, in its order (Mark all, Invert marks).
+std::vector<unsigned long long> App::CompressMarkableApps() {
+    std::vector<unsigned long long> out;
+    if (!m_space || !m_compress) return out;
+    const auto v = m_space->Snapshot();
+    const auto c = m_compress->Snapshot();
+    for (int r : CompressVisible(v, c)) {
+        const auto app = v.apps[size_t(r)].app_id;
+        if (CompressMarkable(c, app)) out.push_back(app);
+    }
+    return out;
+}
+
+std::string App::CompressName(const Space::View& v, unsigned long long app) const {
+    for (const auto& a : v.apps) {
+        if (a.app_id == app) return a.name;
+    }
+    return {};
+}
+
+int App::CompressImage(unsigned long long app) {
+    // the cover of the library, or the icon the game has on the console, as In the console
+    const Game* g = LibraryGame(app);
+    if (g && !g->cover.empty()) {
+        if (const int image = m_covers.Get(g->cover)) return image;
+    }
+    char path[24];
+    std::snprintf(path, sizeof(path), "ns:%016llX", app);
+    return m_covers.Get(path);
+}
+
+// The question before compressing: one game, or every one marked.
+void App::AskCompress(const std::vector<unsigned long long>& apps) {
+    const More& m = TrM();
+    if (apps.empty()) return;
+    if (!hosversionAtLeast(12, 0, 0)) {
+        OpenDialog(DialogKind::CompressInfo);
+        m_dialog.single = true;
+        m_dialog.text = m.cz_fw_title;
+        m_dialog.from = m.cz_fw_body;
+        return;
+    }
+    if (!m_sigpatches.found) {
+        // never without them: the game would not start
+        OpenDialog(DialogKind::CompressInfo);
+        m_dialog.single = true;
+        m_dialog.text = m.cz_nosig_title;
+        m_dialog.from = m.cz_nosig_body;
+        return;
+    }
+    const auto c = m_compress->Snapshot();
+    OpenDialog(DialogKind::CompressGo);
+    m_dialog.ids = apps;
+    if (apps.size() == 1) {
+        const auto it = c.games.find(apps[0]);
+        if (it != c.games.end()) m_dialog.size = it->second.saved;
+        m_dialog.text = m_space ? CompressName(m_space->Snapshot(), apps[0]) : std::string{};
+    }
+}
+
+void App::CompressEnqueue(const std::vector<unsigned long long>& apps) {
+    if (!m_compress) return;
+    const auto p = m_compress->Progress();
+    const bool busy = p.running || !m_compress_queue.empty();
+    if (!busy) {
+        // a new round: what it does is counted from here
+        m_compress_round = CompressRound{};
+        m_compress_round.started = m_time;
+        m_compress_card_at = m_time;
+    }
+    int added = 0;
+    for (const auto app : apps) {
+        if (p.running && p.app == app) continue;
+        if (std::find(m_compress_queue.begin(), m_compress_queue.end(), app) != m_compress_queue.end()) continue;
+        m_compress_queue.push_back(app);
+        m_compress_picked.erase(app);
+        added++;
+    }
+    m_compress_round.total += added;
+    if (busy && added) {
+        char text[120];
+        std::snprintf(text, sizeof(text), TrM().cz_added_fmt, added);
+        NoticeOk(text);
+    }
+    CompressStartNext();
+}
+
+// The next of the queue, once nothing else is at work (the check of the list, or installs).
+void App::CompressStartNext() {
+    if (!m_compress || m_compress_queue.empty()) return;
+    const auto p = m_compress->Progress();
+    if (p.running || p.analyzing || (m_queue && m_queue->Busy())) return;
+    const unsigned long long app = m_compress_queue.front();
+    if (!m_compress->StartCompress(app)) return;
+    m_compress_queue.erase(m_compress_queue.begin());
+    m_compress_round.game_at = m_time;
+    m_compress_samples.clear();
+    m_compress_sample_step = -1;
+    m_compress_speed = 0;
+    m_compress_frac = 0;
+    m_compress_piece = -1;
+}
+
+// Every frame, on any screen: what ended, and the next one (the queue goes on when you leave).
+void App::FollowCompressQueue() {
+    if (!m_compress) return;
+    const auto p = m_compress->Progress();
+    if (p.finished != m_compress_finished) FollowCompress(p);
+    if (p.running) FollowCompressSpeed(p);
+    CompressStartNext();
+    if (m_compress_summary_pending && m_dialog.kind == DialogKind::None && !m_act) {
+        m_compress_summary_pending = false;
+        OpenDialog(DialogKind::CompressDone);
+        m_compress_summary_at = m_time;
+    }
+}
+
+// How fast it goes, from what was read over the last four seconds of the same step, and how far
+// the piece at work is with all its steps together (measuring, writing, the check).
+void App::FollowCompressSpeed(const Compressor::View& c) {
+    const int piece = int((c.app & 0xFFFFF) * 16 + unsigned(c.dlc));
+    if (piece != m_compress_piece) {
+        m_compress_piece = piece;
+        m_compress_measuring = false;
+        m_compress_frac = 0;
+    }
+    // measured first only when it is not done in one pass: then its bar has three steps
+    if (c.phase == 1) m_compress_measuring = true;
+    if (c.measure_why == 2 && !m_compress_measuring) {
+        // packed once already, and written again in order: that pass was the measure
+        m_compress_measuring = true;
+        m_compress_frac = 0.45f;
+    }
+    const int step = piece * 4 + c.phase;
+    if (step != m_compress_sample_step || (!m_compress_samples.empty() && c.done < m_compress_samples.back().second)) {
+        m_compress_sample_step = step;
+        m_compress_samples.clear();
+    }
+    if (m_compress_samples.empty() || m_compress_samples.back().second != c.done) m_compress_samples.push_back({m_time, c.done});
+    while (m_compress_samples.size() > 2 && m_time - m_compress_samples.front().first > 4) m_compress_samples.erase(m_compress_samples.begin());
+    if (m_compress_samples.size() >= 2) {
+        const double span = m_compress_samples.back().first - m_compress_samples.front().first;
+        if (span >= 1) {
+            const double now = double(m_compress_samples.back().second - m_compress_samples.front().second) / span;
+            m_compress_speed = m_compress_speed > 0 ? m_compress_speed * 0.7 + now * 0.3 : now;
+        }
+    }
+    const float part = c.total && c.phase > 0 ? std::clamp(float(double(c.done) / double(c.total)), 0.f, 1.f) : 0.f;
+    float f;
+    if (m_compress_measuring) f = c.phase <= 1 ? 0.45f * part : c.phase == 2 ? 0.45f + 0.45f * part : 0.9f + 0.1f * part;
+    else f = c.phase <= 2 ? 0.88f * part : 0.88f + 0.12f * part;
+    m_compress_frac = std::max(m_compress_frac, f);
+}
+
 void App::DrawCompress(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
     const More& m = TrM();
     const auto v = m_space->Snapshot();
     const auto c = m_compress->Snapshot();
-    FollowCompress(c);
+    const bool busy = c.running || !m_compress_queue.empty();
     const float lx = 48, lw = 440, rx = 516, rw = kWidth - 48 - rx;
-    const float in = ui::EaseOut(ui::Appear(m_compress_opened, 0.35));
     char text[300];
 
-    // ---- the left: what it is, and whether the console can start a compressed game
-    nvgSave(vg);
-    nvgTranslate(vg, -24 * (1 - in), 0);
-    nvgGlobalAlpha(vg, in);
-    ui::Text(vg, lx, 116, 26, t.text, m.cz_title);
-    float y = 146;
-    y += draw::Box(vg, lx, y, lw, 15, t.muted, m.cz_explain) + 18;
-    const bool fw = hosversionAtLeast(12, 0, 0);
-    const auto line = [&](bool ok, const char* str) {
-        nvgBeginPath(vg);
-        nvgCircle(vg, lx + 9, y + 10, 9);
-        nvgFillColor(vg, ok ? t.ok : t.err);
-        nvgFill(vg);
-        if (ok) ui::CheckMark(vg, lx + 9, y + 10, 6, t.on_work, 2.f);
-        else ui::Text(vg, lx + 9, y + 10, 13, t.on_work, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        y += draw::Box(vg, lx + 28, y + 1, lw - 28, 15, ok ? t.text : t.err, str) + 12;
-    };
-    line(fw, fw ? m.cz_fw_ok : m.cz_fw_old);
-    if (m_sigpatches.found) {
-        std::snprintf(text, sizeof(text), m.cz_sig_ok_fmt, m_sigpatches.how.c_str());
-        line(true, text);
+    if (busy) {
+        // ---- the left: the game at work (2A)
+        DrawCompressCard(vg, v, c, lx, lw);
     } else {
-        line(false, m.cz_sig_missing);
+        // ---- the left: what it is, and whether the console can start a compressed game
+        const float in = ui::EaseOut(ui::Appear(m_compress_opened, 0.35));
+        nvgSave(vg);
+        nvgTranslate(vg, -24 * (1 - in), 0);
+        nvgGlobalAlpha(vg, in);
+        ui::Text(vg, lx, 116, 26, t.text, m.cz_title);
+        float y = 146;
+        y += draw::Box(vg, lx, y, lw, 15, t.muted, m.cz_explain) + 18;
+        const bool fw = hosversionAtLeast(12, 0, 0);
+        const auto line = [&](bool ok, const char* str) {
+            nvgBeginPath(vg);
+            nvgCircle(vg, lx + 9, y + 10, 9);
+            nvgFillColor(vg, ok ? t.ok : t.err);
+            nvgFill(vg);
+            if (ok) ui::CheckMark(vg, lx + 9, y + 10, 6, t.on_work, 2.f);
+            else ui::Text(vg, lx + 9, y + 10, 13, t.on_work, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            y += draw::Box(vg, lx + 28, y + 1, lw - 28, 15, ok ? t.text : t.err, str) + 12;
+        };
+        line(fw, fw ? m.cz_fw_ok : m.cz_fw_old);
+        if (m_sigpatches.found) {
+            std::snprintf(text, sizeof(text), m.cz_sig_ok_fmt, m_sigpatches.how.c_str());
+            line(true, text);
+        } else {
+            line(false, m.cz_sig_missing);
+        }
+        // the keys of the tickets come from the user's prod.keys, read only here
+        line(m_prodkeys, m_prodkeys ? m.cz_keys_ok : m.cz_keys_missing);
+        nvgRestore(vg);
     }
-    // the keys of the tickets come from the user's prod.keys, read only here
-    line(m_prodkeys, m_prodkeys ? m.cz_keys_ok : m.cz_keys_missing);
-    nvgRestore(vg);
 
     // ---- the right: the games, checked as soon as the console is read
     if (v.scanned && !m_compress_started && !c.running) {
@@ -208,7 +385,9 @@ void App::DrawCompress(NVGcontext* vg) {
             if (m_compress_told) break;
         }
     }
-    draw::Panel(vg, t, rx, 92, rw, 460, 16);
+    // taller while it works: the card on the left takes the place of the bar under it
+    const float top = 92, ph = busy ? 558 : 460, bottom = top + ph;
+    draw::Panel(vg, t, rx, top, rw, ph, 16);
     if (v.scanned) {
         // what the check found so far, and how far it got
         int can = 0, already = 0, cannot = 0;
@@ -229,9 +408,26 @@ void App::DrawCompress(NVGcontext* vg) {
             const float frac = float(c.check_done) / float(std::max(1, c.check_total));
             ui::Progress(vg, t, rx + 22, 132, rw - 44, 6, frac, t.work, m_time);
         } else {
-            std::snprintf(text, sizeof(text), m.cz_counts_fmt, can, already, cannot);
-            ui::Text(vg, rx + 22, 114, 14, t.muted, text);
-            ui::Text(vg, rx + rw - 22, 114, 14, t.work, m_compress_all ? m.cz_show_all : m.cz_only_some, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            if (busy) {
+                const int at = int(m_compress_round.done.size() + m_compress_round.failed.size()) + (c.running ? 1 : 0);
+                std::snprintf(text, sizeof(text), m.cz_working_fmt, std::max(1, at), std::max(at, m_compress_round.total));
+                ui::Title(vg, rx + 22, 114, 15, t.text, text);
+            } else if (!m_compress_picked.empty()) {
+                unsigned long long bytes = 0;
+                for (const auto& a : v.apps) {
+                    if (m_compress_picked.count(a.app_id)) bytes += a.Bytes();
+                }
+                std::snprintf(text, sizeof(text), m.cz_marked_fmt, int(m_compress_picked.size()), draw::Size(bytes).c_str());
+                ui::Title(vg, rx + 22, 114, 15, t.text, text);
+            } else {
+                std::snprintf(text, sizeof(text), m.cz_counts_fmt, can, already, cannot);
+                ui::Text(vg, rx + 22, 114, 14, t.muted, text);
+            }
+            // the filter, which a finger can tap too (4A)
+            const char* filter = m_compress_all ? m.cz_show_all : m.cz_only_some;
+            const float fw = ui::TextWidth(vg, 14, filter);
+            ui::Text(vg, rx + rw - 22, 114, 14, t.work, filter, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            AddHit(rx + rw - 34 - fw, 92, fw + 24, 46, HitKind::CompressFilter);
         }
         if (!c.analyzing && rows.empty() && !m_compress_all) {
             draw::Box(vg, rx + 40, 260, rw - 80, 16, t.muted, m.cz_none_possible);
@@ -255,21 +451,19 @@ void App::DrawCompress(NVGcontext* vg) {
     }
     m_compress_focus = std::clamp(m_compress_focus, 0, std::max(0, int(rows.size()) - 1));
     if (!rows.empty()) m_compress_app = v.apps[size_t(rows[size_t(m_compress_focus)])].app_id;
-    const float rh = 56;
-    const int visible = int((552 - 148 - 8) / rh);
+    // rows of 64: a cover, and the marks at the right once one is marked (1A)
+    const float rh = 64, list_top = 148;
+    const int visible = int((bottom - list_top - 4) / rh);
     const int first = std::clamp(m_compress_focus - visible / 2, 0, std::max(0, int(rows.size()) - visible));
+    const bool marking = !m_compress_picked.empty();
+    ListArea(rx, list_top, rw, visible * rh, rh);
     nvgSave(vg);
-    nvgScissor(vg, rx, 146, rw, 404);
+    nvgScissor(vg, rx, list_top - 2, rw, bottom - list_top);
     for (int r = first; r < int(rows.size()) && r < first + visible; r++) {
         const auto& a = v.apps[size_t(rows[size_t(r)])];
-        const float ry = 150 + (r - first) * rh;
+        const float ry = list_top + 2 + (r - first) * rh, bh = rh - 6;
         const float enter = ui::EaseOut(ui::Appear(m_compress_opened + 0.03 * (r - first), 0.3));
         nvgGlobalAlpha(vg, enter);
-        if (r == m_compress_focus) {
-            ui::FillRound(vg, rx + 8, ry, rw - 16, rh - 6, 10, t.panel2);
-            ui::StrokeRound(vg, rx + 8, ry, rw - 16, rh - 6, 10, t.work, 2.5f);
-        }
-        AddHit(rx + 8, ry, rw - 16, rh - 6, HitKind::CompressRow, r);
         // what it would save, or what it is
         GameEstimate e;
         const auto it = c.games.find(a.app_id);
@@ -282,6 +476,50 @@ void App::DrawCompress(NVGcontext* vg) {
                 known = true;
             }
         }
+        // in this round: at work, waiting, done or failed
+        const bool working = c.running && c.app == a.app_id;
+        const auto queued = std::find(m_compress_queue.begin(), m_compress_queue.end(), a.app_id);
+        const int queue_pos = queued == m_compress_queue.end() ? 0 : int(queued - m_compress_queue.begin()) + 1;
+        unsigned long long done_saved = 0;
+        bool done = false, failed = false;
+        for (const auto& [app, saved] : m_compress_round.done) {
+            if (app == a.app_id) {
+                done = true;
+                done_saved = saved;
+            }
+        }
+        for (const auto& f : m_compress_round.failed) failed |= f.first == a.app_id;
+        if (working) {
+            // the row fills with blue as it goes, with a glowing line under it
+            NVGcolor wash = t.work;
+            wash.a = 0.08f;
+            ui::FillRound(vg, rx + 8, ry, rw - 16, bh, 10, wash);
+        }
+        if (r == m_compress_focus) {
+            ui::FillRound(vg, rx + 8, ry, rw - 16, bh, 10, t.panel2);
+            ui::Focus(vg, t, rx + 8, ry, rw - 16, bh, 10, m_time);
+        }
+        if (working) {
+            nvgSave(vg);
+            nvgIntersectScissor(vg, rx + 8, ry, (rw - 16) * m_compress_frac, bh);
+            NVGcolor wash = t.work;
+            wash.a = 0.16f;
+            ui::FillRound(vg, rx + 8, ry, rw - 16, bh, 10, wash);
+            ui::FillRound(vg, rx + 8, ry + bh - 4, rw - 16, 4, 2, t.work);
+            nvgRestore(vg);
+        }
+        AddHit(rx + 8, ry, rw - 16, bh, HitKind::CompressRow, r);
+        // the cover, filling with blue while it is compressed (as in NXPress)
+        const float cs = 44, cx = rx + 22, cy = ry + (bh - cs) / 2;
+        ui::Cover(vg, t, cx, cy, cs, PlaceholderColor(a.name), Initial(a.name).c_str(), nullptr, false, false, 8, CompressImage(a.app_id));
+        if (working) {
+            nvgSave(vg);
+            nvgIntersectScissor(vg, cx, cy + cs * (1 - m_compress_frac), cs, cs * m_compress_frac);
+            NVGcolor fill = t.work;
+            fill.a = 0.45f;
+            ui::FillRound(vg, cx, cy, cs, cs, 8, fill);
+            nvgRestore(vg);
+        }
         const bool merged_ours = e.state == GameEstimate::State::Ours && IsMergedGame(a.app_id);
         // a newer update over a game NXDock merged: it waits to be merged in the same way
         const bool redo = e.why == GameEstimate::Why::Redo;
@@ -289,9 +527,10 @@ void App::DrawCompress(NVGcontext* vg) {
         const bool stops = e.why == GameEstimate::Why::Stops;
         const bool waiting = e.merge && e.merged &&
                              (e.state == GameEstimate::State::Possible || e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low || redo);
+        const float nx = cx + cs + 14;
         nvgSave(vg);
-        nvgScissor(vg, rx + 24, ry, rw * 0.56f, rh);
-        ui::Text(vg, rx + 24, ry + 18, 16, t.text, a.name.c_str());
+        nvgIntersectScissor(vg, nx, ry, rw * 0.56f - (nx - rx) + 24, bh);
+        ui::Text(vg, nx, ry + 18, 16, t.text, a.name.c_str());
         {
             // under the name: its size, then the game with its update (and a tag), then its DLC
             std::string sub = draw::Size(a.Bytes());
@@ -314,7 +553,7 @@ void App::DrawCompress(NVGcontext* vg) {
             } else if (merged_ours) {
                 sub += std::string(" \xC2\xB7 ") + m.cz_merged_sub;
             }
-            float x = ui::Text(vg, rx + 24, ry + 38, 13, t.muted, sub.c_str());
+            float x = ui::Text(vg, nx, ry + 38, 13, t.muted, sub.c_str());
             if (tag) {
                 const float w = ui::TextWidth(vg, 11, tag) + 12;
                 ui::StrokeRound(vg, x + 8, ry + 30, w, 16, 8, tag_col, 1.f);
@@ -327,6 +566,50 @@ void App::DrawCompress(NVGcontext* vg) {
             }
         }
         nvgRestore(vg);
+        // the mark, at the right, while something is marked (1A); a finger taps it there
+        float right = rx + rw - 24;
+        if (marking) {
+            if (CompressMarkable(c, a.app_id) || m_compress_picked.count(a.app_id)) {
+                draw::TickBox(vg, t, rx + rw - 48, ry + bh / 2, m_compress_picked.count(a.app_id) > 0, "czpick:" + std::to_string(a.app_id));
+            }
+            right -= 40;
+        }
+        if (CompressMarkable(c, a.app_id)) AddHit(rx + rw - 84, ry, 76, bh, HitKind::CompressMark, r);
+        const float mid = ry + bh / 2;
+        if (working) {
+            std::snprintf(text, sizeof(text), "%d %%", int(m_compress_frac * 100));
+            ui::Title(vg, right, ry + 18, 17, t.work, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            ui::Text(vg, right, ry + 39, 13, t.muted, appui::SpeedText(m_compress_speed / double(1 << 20)).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            continue;
+        }
+        if (queue_pos) {
+            // waiting its turn, with its place
+            std::snprintf(text, sizeof(text), m.cz_queued_fmt, queue_pos);
+            const float w = ui::TextWidth(vg, 13, text) + 22;
+            ui::StrokeRound(vg, right - w, mid - 12, w, 24, 12, t.work, 1.4f);
+            ui::Text(vg, right - w / 2, mid, 13, t.work, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            continue;
+        }
+        if (done) {
+            // done in this round: what it saved, in green, with a tick
+            // the list is read again when the round ends: until then its size is the one before
+            const unsigned long long was = a.Bytes();
+            std::snprintf(text, sizeof(text), "\xE2\x88\x92%s \xC2\xB7 %d %%", draw::Size(done_saved).c_str(),
+                          was ? int(double(done_saved) * 100 / double(was) + 0.5) : 0);
+            ui::Title(vg, right, mid, 15, t.ok, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            const float tx = right - ui::TextWidth(vg, 15, text) - 16;
+            nvgBeginPath(vg);
+            nvgCircle(vg, tx, mid, 9);
+            nvgFillColor(vg, t.ok);
+            nvgFill(vg);
+            ui::CheckMark(vg, tx, mid, 6, t.on_work, 2.f);
+            continue;
+        }
+        if (failed) {
+            // red only for this: it could not be done
+            ui::Text(vg, right, mid, 15, t.err, m.cz_failed_row, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            continue;
+        }
         NVGcolor col = t.muted;
         switch (e.state) {
             case GameEstimate::State::Pending: std::snprintf(text, sizeof(text), "%s", m.cz_pending); break;
@@ -385,40 +668,29 @@ void App::DrawCompress(NVGcontext* vg) {
                 break;
         }
         const bool spin = known && e.state == GameEstimate::State::Pending && c.analyzing;
-        if (spin) ui::Spinner(vg, rx + rw - 30, ry + 25, 8, t.muted, m_time);
-        ui::Text(vg, rx + rw - (spin ? 48 : 24), ry + 25, 15, col, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        // the share it saves, as a small bar under the name
+        if (spin) ui::Spinner(vg, right - 6, mid, 8, t.muted, m_time);
+        ui::Text(vg, right - (spin ? 24 : 0), mid, 15, col, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        // the share it saves, as a small bar under the text
         if ((e.state == GameEstimate::State::Worth || e.state == GameEstimate::State::Low) && !waiting) {
             NVGcolor track = t.text;
             track.a = 0.08f;
-            const float bw = rw * 0.3f, bx = rx + rw - 24 - bw;
-            ui::FillRound(vg, bx, ry + 38, bw, 5, 2.5f, track);
-            ui::FillRound(vg, bx, ry + 38, bw * float(std::clamp(e.gain, 0.0, 1.0)), 5, 2.5f, col);
+            const float bw = rw * 0.26f, bx = right - bw;
+            ui::FillRound(vg, bx, mid + 14, bw, 5, 2.5f, track);
+            ui::FillRound(vg, bx, mid + 14, bw * float(std::clamp(e.gain, 0.0, 1.0)), 5, 2.5f, col);
         }
-        nvgGlobalAlpha(vg, 1.f);
     }
+    nvgGlobalAlpha(vg, 1.f);
     nvgRestore(vg);
-
-    // ---- the work going on
-    if (c.running) {
-        const char* what = c.phase <= 1 ? m.cz_phase1 : c.phase == 2 ? m.cz_phase2 : m.cz_phase3;
-        draw::Panel(vg, t, lx, 566, kWidth - 96, 84, 12);
-        std::string name;
-        for (const auto& a : v.apps) {
-            if (a.app_id == c.app) name = a.name;
-        }
-        ui::Text(vg, lx + 22, 590, 16, t.text, (std::string(what) + " \xC2\xB7 " + name).c_str());
-        const float frac = c.total ? float(double(c.done) / double(c.total)) : 0.f;
-        ui::Progress(vg, t, lx + 22, 614, kWidth - 140, 12, frac, t.work, m_time);
-    }
 
     DrawListLetter(vg, rx + rw / 2, 322);
     std::vector<ui::Hint> hints;
-    if (c.running) {
+    if (busy) {
+        hints.push_back({ui::glyph::Y, m.mark, HidNpadButton_Y});
+        hints.push_back({ui::glyph::Plus, TrT().fm_actions, HidNpadButton_Plus});
         hints.push_back({ui::glyph::X, s.cancel, HidNpadButton_X});
     } else if (!rows.empty()) {
         hints.push_back({ui::glyph::DPad, m.jump_letters, HidNpadButton_AnyRight});
-        hints.push_back({ui::glyph::Y, m_compress_all ? m.cz_only_some : m.cz_show_all, HidNpadButton_Y});
+        hints.push_back({ui::glyph::Y, m.mark, HidNpadButton_Y}); // as in the other lists (4A)
         const auto focused = c.games.find(m_compress_app);
         if (focused != c.games.end() && focused->second.why == GameEstimate::Why::Stops) {
             // the two ways out of a game that does not start with the update over it (2A)
@@ -433,47 +705,362 @@ void App::DrawCompress(NVGcontext* vg) {
     ui::HintBar(vg, t, nullptr, hints, m_hint_rects);
 }
 
+// The card of the game at work, in the place of the left column (2A): its cover filling with
+// blue, the share in big, the speed and the time left, the steps, the sizes and what comes next.
+void App::DrawCompressCard(NVGcontext* vg, const Space::View& v, const Compressor::View& c, float lx, float lw) {
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    char text[200];
+    const float in = ui::EaseOut(ui::Appear(m_compress_card_at, 0.4f));
+    nvgSave(vg);
+    nvgTranslate(vg, -24 * (1 - in), 0);
+    nvgGlobalAlpha(vg, in);
+    draw::Panel(vg, t, lx, 92, lw, 558, 16);
+    const float pad = 24, x = lx + pad, w = lw - 2 * pad;
+    if (!c.running) {
+        // between two games, or waiting for the installs to end
+        ui::Spinner(vg, lx + lw / 2, 300, 14, t.work, m_time);
+        ui::Text(vg, lx + lw / 2, 340, 16, t.muted, (m_queue && m_queue->Busy()) ? m.cz_busy : m.cz_pending, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
+        return;
+    }
+    const std::string name = CompressName(v, c.app);
+    // the cover, with a soft blue light behind, filling from below
+    const float cs = 120, cy = 116;
+    NVGcolor glow = t.work;
+    glow.a = 0.35f;
+    NVGcolor clear = glow;
+    clear.a = 0;
+    nvgBeginPath(vg);
+    nvgRect(vg, x - 30, cy - 30, cs + 60, cs + 60);
+    nvgFillPaint(vg, nvgBoxGradient(vg, x, cy, cs, cs, 14, 30, glow, clear));
+    nvgFill(vg);
+    ui::Cover(vg, t, x, cy, cs, PlaceholderColor(name), Initial(name).c_str(), nullptr, false, false, 14, CompressImage(c.app));
+    {
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x, cy + cs * (1 - m_compress_frac), cs, cs * m_compress_frac);
+        NVGcolor fill = t.work;
+        fill.a = 0.45f;
+        ui::FillRound(vg, x, cy, cs, cs, 14, fill);
+        nvgRestore(vg);
+    }
+    // which game, its name and what goes with it
+    const float tx = x + cs + 18, tw = x + w - tx;
+    const int at = int(m_compress_round.done.size() + m_compress_round.failed.size()) + 1;
+    std::snprintf(text, sizeof(text), m.cz_game_n_fmt, at, std::max(at, m_compress_round.total));
+    ui::Text(vg, tx, cy + 12, 14, t.muted, text);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, tx, cy + 26, tw, 64);
+    const float nh = draw::Box(vg, tx, cy + 28, tw, 20, t.text, name.c_str());
+    nvgRestore(vg);
+    const float sy = cy + 28 + std::min(nh, 56.f) + 12;
+    if (c.dlc > 0) std::snprintf(text, sizeof(text), m.cz_dlc_n_fmt, c.dlc, c.dlc_count);
+    else if (c.dlc_count > 0) std::snprintf(text, sizeof(text), m.cz_with_dlc_fmt, c.dlc_count);
+    else text[0] = 0;
+    if (text[0]) ui::Text(vg, tx, sy, 14, c.dlc > 0 ? t.work : t.muted, text);
+
+    // the share in big, the speed and the time left
+    std::snprintf(text, sizeof(text), "%d %%", int(m_compress_frac * 100));
+    ui::Title(vg, x, 290, 54, t.text, text);
+    const double mbs = m_compress_speed / double(1 << 20);
+    ui::Title(vg, x + w, 272, 22, t.work, appui::SpeedText(mbs).c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    const bool timed = m_compress_speed > 0 && m_time - m_compress_round.game_at > 3;
+    if (c.phase == 0) {
+        // opening the game, making room: nothing measured nor written yet
+        std::snprintf(text, sizeof(text), "%s", m.cz_preparing);
+    } else if (timed) {
+        // what is left of this step, and the steps after it read about as much again
+        const double rest = double(c.total > c.done ? c.total - c.done : 0);
+        const double after = double(c.after ? c.after : c.before * 7 / 10);
+        double left = rest;
+        if (m_compress_measuring && c.phase <= 1) left += double(c.total) + after;
+        else if (c.phase <= 2) left += after;
+        std::snprintf(text, sizeof(text), m.cz_left_fmt, appui::Duration(left / m_compress_speed).c_str());
+    } else {
+        std::snprintf(text, sizeof(text), "%s", m.cz_timing);
+    }
+    ui::Text(vg, x + w, 300, 15, t.muted, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    ui::Progress(vg, t, x, 324, w, 12, m_compress_frac, t.work, m_time);
+
+    // the steps: the one at work in blue and breathing, those done with a tick
+    {
+        std::vector<const char*> steps;
+        if (m_compress_measuring) steps.push_back(m.cz_step_measure);
+        steps.push_back(m.cz_step_write);
+        steps.push_back(m.cz_step_check);
+        // getting ready (phase 0): none of them yet
+        const int now = c.phase == 0 ? -1 : m_compress_measuring ? std::clamp(c.phase, 1, 3) - 1 : std::clamp(c.phase, 2, 3) - 2;
+        float sx = x;
+        for (int i = 0; i < int(steps.size()); i++) {
+            const float pw = ui::TextWidth(vg, 13, steps[size_t(i)]) + 40;
+            if (sx + pw > x + w + 1) break;
+            NVGcolor bg = t.work;
+            bg.a = 0.2f;
+            ui::FillRound(vg, sx, 352, pw, 28, 14, i == now ? bg : t.panel2);
+            if (i < now) {
+                nvgBeginPath(vg);
+                nvgCircle(vg, sx + 14, 366, 7);
+                nvgFillColor(vg, t.ok);
+                nvgFill(vg);
+                ui::CheckMark(vg, sx + 14, 366, 5, t.on_work, 1.6f);
+            } else {
+                const float r = i == now && ui::Lively() ? 4 + float(std::sin(m_time * 6)) : 4;
+                nvgBeginPath(vg);
+                nvgCircle(vg, sx + 14, 366, r);
+                nvgFillColor(vg, i == now ? t.work : t.muted);
+                nvgFill(vg);
+            }
+            ui::Text(vg, sx + 26, 366, 13, i == now ? t.text : t.muted, steps[size_t(i)]);
+            sx += pw + 6;
+        }
+        // why it measures first, when it does
+        if (m_compress_measuring && c.measure_why) {
+            nvgSave(vg);
+            nvgIntersectScissor(vg, x, 386, w, 18);
+            ui::Text(vg, x, 395, 12, t.muted, c.measure_why == 2 ? m.cz_measure_big : m.cz_measure_room);
+            nvgRestore(vg);
+        }
+    }
+
+    // the figures: before, after, saved so far, time so far
+    const auto figure = [&](float fx, float fy, const char* label, const std::string& value, NVGcolor col) {
+        ui::Text(vg, fx, fy, 13, t.muted, label);
+        ui::Title(vg, fx, fy + 24, 20, col, value.c_str());
+    };
+    const float c2 = x + w / 2 + 8;
+    unsigned long long round_saved = 0;
+    for (const auto& d : m_compress_round.done) round_saved += d.second;
+    const bool after_known = c.after && c.before;
+    figure(x, 414, m.cz_before, c.before ? draw::Size(c.before) : std::string("\xE2\x80\x94"), t.text);
+    figure(c2, 414, c.after_exact ? m.cz_after : m.cz_after_estimate,
+           after_known ? std::string(c.after_exact ? "" : "\xE2\x89\x88 ") + draw::Size(c.after) : std::string("\xE2\x80\x94"), t.text);
+    // what this piece saves, as far as it was written, and the games done before it
+    unsigned long long now_saved = 0;
+    if (after_known && c.after < c.before) {
+        const float written = m_compress_measuring ? std::clamp((m_compress_frac - 0.45f) / 0.45f, 0.f, 1.f) : std::clamp(m_compress_frac / 0.88f, 0.f, 1.f);
+        now_saved = (unsigned long long)(double(c.before - c.after) * written);
+    }
+    figure(x, 470, m.cz_saved_so_far, "\xE2\x88\x92" + draw::Size(round_saved + now_saved), t.ok);
+    figure(c2, 470, m.cz_elapsed, appui::Duration(m_time - m_compress_round.game_at), t.text);
+
+    // what comes next in the queue, and the total of the round
+    nvgBeginPath(vg);
+    nvgRect(vg, x, 524, w, 1);
+    nvgFillColor(vg, t.line);
+    nvgFill(vg);
+    if (!m_compress_queue.empty()) {
+        const unsigned long long next = m_compress_queue.front();
+        const std::string next_name = CompressName(v, next);
+        ui::Text(vg, x, 546, 13, t.muted, m.cz_next);
+        ui::Cover(vg, t, x, 562, 44, PlaceholderColor(next_name), Initial(next_name).c_str(), nullptr, false, false, 8, CompressImage(next));
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x + 56, 560, w * 0.55f, 48);
+        ui::Text(vg, x + 56, 576, 15, t.text, next_name.c_str());
+        if (m_compress_queue.size() > 1) {
+            std::snprintf(text, sizeof(text), m.cz_and_more_fmt, int(m_compress_queue.size()) - 1);
+            ui::Text(vg, x + 56, 596, 13, t.muted, text);
+        }
+        nvgRestore(vg);
+    }
+    if (round_saved) {
+        std::snprintf(text, sizeof(text), m.cz_total_fmt, draw::Size(round_saved).c_str());
+        ui::Title(vg, x + w, 586, 14, t.ok, text, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    }
+    nvgRestore(vg);
+}
+
 void App::FollowCompress(const Compressor::View& c) {
     if (c.finished == m_compress_finished) return;
     m_compress_finished = c.finished;
     const More& m = TrM();
     std::string name;
-    if (m_space) {
-        for (const auto& a : m_space->Snapshot().apps) {
-            if (a.app_id == c.app) name = a.name;
-        }
-    }
+    if (m_space) name = CompressName(m_space->Snapshot(), c.app);
+    const bool alone = m_compress_round.total <= 1 && m_compress_queue.empty();
     if (!c.error.empty()) {
-        OpenDialog(DialogKind::VaultError);
-        m_dialog.single = true;
-        m_dialog.from = c.error;
-        m_dialog.text = m.cz_title;
-        return;
+        if (!m_compress_round.stopped) m_compress_round.failed.push_back({c.app, c.error});
+        if (alone && !m_compress_round.stopped) {
+            // one game alone: its error, as before
+            OpenDialog(DialogKind::VaultError);
+            m_dialog.single = true;
+            m_dialog.from = c.error;
+            m_dialog.text = m.cz_title;
+            m_compress_round.failed.clear();
+        }
+    } else {
+        m_compress_round.done.push_back({c.app, c.saved});
+        // in the history, as an install of its own
+        HistoryEntry entry;
+        entry.when = std::time(nullptr);
+        entry.game = name;
+        entry.label = std::string(m.cz_hist_label) + " \xC2\xB7 -" + draw::Size(c.saved);
+        entry.format = "LZ4";
+        entry.result = HistoryEntry::Result::Installed;
+        History(HistoryPath()).Append(entry);
     }
-    char text[160];
-    std::snprintf(text, sizeof(text), m.cz_done_fmt, draw::Size(c.saved).c_str());
-    NoticeOk(text);
-    if (m_ui.sounds) m_sound.Play(synth::Effect::Finish);
-    // in the history, as an install of its own
-    HistoryEntry entry;
-    entry.when = std::time(nullptr);
-    entry.game = name;
-    entry.label = std::string(m.cz_hist_label) + " \xC2\xB7 -" + draw::Size(c.saved);
-    entry.format = "LZ4";
-    entry.result = HistoryEntry::Result::Installed;
-    History(HistoryPath()).Append(entry);
+    if (!m_compress_queue.empty() && !m_compress_round.stopped) return; // the next one starts
+    // the round ended: the summary (3A), the list read again
+    m_compress_queue.clear();
+    if (!m_compress_round.done.empty() || !m_compress_round.failed.empty()) {
+        m_compress_summary = m_compress_round;
+        m_compress_summary.started = m_time - m_compress_round.started; // how long it took
+        m_compress_summary_pending = true;
+        if (!m_compress_round.done.empty() && m_ui.sounds) m_sound.Play(synth::Effect::Finish);
+    } else if (m_compress_round.stopped) {
+        // one game alone stopped: said as before; a queue: the rest was not compressed either
+        Notice(alone && !c.error.empty() ? UnpackError(c.error).title : std::string(m.cz_done_stopped));
+    }
+    m_compress_round = CompressRound{};
+    m_compress_opened = m_time; // the left column comes back in
     m_compressed_marks = Compressor::Marks();
     if (m_space) m_space->StartScan();
+}
+
+// The summary of the round (3A): a green ring that draws itself, the total counting up, the covers
+// coming in one after another with what each one saved, how long it took, and what failed.
+void App::DrawCompressDone(NVGcontext* vg) {
+    const Theme& t = m_theme;
+    const auto& s = Tr();
+    const More& m = TrM();
+    const CompressRound& r = m_compress_summary;
+    const double since = m_time - m_compress_summary_at;
+    const bool lively = ui::Lively();
+    char text[300];
+    nvgBeginPath(vg);
+    nvgRect(vg, 0, 0, kWidth, kHeight);
+    nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.55f * ui::EaseOut(ui::Appear(m_compress_summary_at, 0.2f))));
+    nvgFill(vg);
+    AddHit(0, 0, kWidth, kHeight, HitKind::DialogBack);
+    const int lines = int(r.failed.size()) + (r.stopped ? 1 : 0);
+    const float w = 720, h = 420 + std::min(lines, 3) * 26.f - (r.done.empty() ? 110.f : 0.f);
+    const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
+    const float pop = ui::EaseOutBack(ui::Appear(m_compress_summary_at, 0.4f));
+    nvgSave(vg);
+    nvgTranslate(vg, x + w / 2, y + h / 2);
+    nvgScale(vg, 0.86f + 0.14f * pop, 0.86f + 0.14f * pop);
+    nvgTranslate(vg, -(x + w / 2), -(y + h / 2));
+    nvgGlobalAlpha(vg, std::min(1.f, pop * 1.4f));
+    draw::Popup(vg, t, x, y, w, h, 20);
+    AddHit(x, y, w, h, HitKind::Button);
+    const float cx = x + w / 2;
+    unsigned long long total = 0;
+    for (const auto& d : r.done) total += d.second;
+    const NVGcolor tone = r.done.empty() ? t.err : t.ok;
+    // the ring, drawn round, then its tick
+    {
+        const float ry = y + 66, k = lively ? ui::EaseOut(float(std::clamp((since - 0.3) / 0.7, 0.0, 1.0))) : 1.f;
+        NVGcolor halo = tone;
+        halo.a = 0.35f * k;
+        NVGcolor clear = tone;
+        clear.a = 0;
+        nvgBeginPath(vg);
+        nvgCircle(vg, cx, ry, 70);
+        nvgFillPaint(vg, nvgRadialGradient(vg, cx, ry, 20, 70, halo, clear));
+        nvgFill(vg);
+        nvgBeginPath(vg);
+        nvgArc(vg, cx, ry, 32, -NVG_PI / 2, -NVG_PI / 2 + 2 * NVG_PI * std::max(0.001f, k), NVG_CW);
+        nvgStrokeColor(vg, tone);
+        nvgStrokeWidth(vg, 6);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgStroke(vg);
+        if (k >= 1) {
+            if (r.done.empty()) ui::Title(vg, cx, ry, 30, tone, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            else ui::CheckMark(vg, cx, ry, 22 * (lively ? ui::EaseOutBack(ui::Appear(m_compress_summary_at + 1.0, 0.3f)) : 1.f), tone, 4.f);
+        }
+        // a few sparks out of the ring
+        if (lively && !r.done.empty() && since > 1.0 && since < 1.9) {
+            const float u = float((since - 1.0) / 0.9);
+            for (int i = 0; i < 12; i++) {
+                const float a = float(i) / 12 * 2 * NVG_PI;
+                const float d = 40 + ui::EaseOut(u) * 70;
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx + std::cos(a) * d, ry + std::sin(a) * d, 3.5f * (1 - 0.6f * u));
+                NVGcolor spark = i % 2 ? t.work : t.ok;
+                spark.a = 1 - u;
+                nvgFillColor(vg, spark);
+                nvgFill(vg);
+            }
+        }
+    }
+    float cy = y + 134;
+    if (r.done.empty()) std::snprintf(text, sizeof(text), "%s", m.cz_done_none);
+    else if (r.done.size() == 1) std::snprintf(text, sizeof(text), "%s", m.cz_done_one);
+    else std::snprintf(text, sizeof(text), m.cz_done_many_fmt, int(r.done.size()));
+    ui::Title(vg, cx, cy, 22, t.text, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    cy += 26;
+    if (!r.done.empty()) {
+        // the total, counting up
+        const float k = lively ? ui::EaseOut(float(std::clamp((since - 0.9) / 1.3, 0.0, 1.0))) : 1.f;
+        const std::string sum = "\xE2\x88\x92" + draw::Size((unsigned long long)(double(total) * k));
+        ui::Title(vg, cx, cy + 26, 44, t.ok, sum.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        cy += 66;
+        // the covers, one after another, with what each saved (up to five)
+        const int n = std::min<int>(5, int(r.done.size()));
+        const float cs = 72, gap = 30, row = n * cs + (n - 1) * gap;
+        const auto v = m_space ? m_space->Snapshot() : Space::View{};
+        for (int i = 0; i < n; i++) {
+            const float k2 = lively ? ui::EaseOutBack(ui::Appear(m_compress_summary_at + 1.4 + 0.18 * i, 0.4f)) : 1.f;
+            const float gx = cx - row / 2 + i * (cs + gap);
+            const std::string name = CompressName(v, r.done[size_t(i)].first);
+            nvgSave(vg);
+            nvgGlobalAlpha(vg, std::min(1.f, pop * 1.4f) * std::clamp(k2 * 2, 0.f, 1.f));
+            nvgTranslate(vg, 0, 20 * (1 - k2));
+            ui::Cover(vg, t, gx, cy, cs, PlaceholderColor(name), Initial(name).c_str(), nullptr, false, false, 10, CompressImage(r.done[size_t(i)].first));
+            const std::string saved = "\xE2\x88\x92" + draw::Size(r.done[size_t(i)].second);
+            ui::Text(vg, gx + cs / 2, cy + cs + 16, 14, t.ok, saved.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgRestore(vg);
+        }
+        if (int(r.done.size()) > n) {
+            std::snprintf(text, sizeof(text), "+%d", int(r.done.size()) - n);
+            ui::Text(vg, cx + row / 2 + 14, cy + cs / 2, 17, t.muted, text);
+        }
+        cy += cs + 44;
+        std::snprintf(text, sizeof(text), m.cz_done_time_fmt, appui::Duration(r.started).c_str());
+        ui::Text(vg, cx, cy, 15, t.muted, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        cy += 28;
+    } else {
+        cy += 10;
+    }
+    // what could not be done, in red; a stop, as it is
+    const auto v = m_space ? m_space->Snapshot() : Space::View{};
+    for (int i = 0; i < int(r.failed.size()) && i < 3; i++) {
+        const ErrorText e = UnpackError(r.failed[size_t(i)].second);
+        std::snprintf(text, sizeof(text), m.cz_done_failed_fmt, CompressName(v, r.failed[size_t(i)].first).c_str(),
+                      (e.title.empty() ? e.what : e.title).c_str());
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x + 24, cy - 13, w - 48, 26);
+        ui::Text(vg, cx, cy, 15, t.err, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
+        cy += 26;
+    }
+    if (r.stopped) {
+        ui::Text(vg, cx, cy, 15, t.orange, m.cz_done_stopped, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
+    // the button, breathing
+    const float bw = std::max(160.f, ui::TextWidth(vg, 17, s.close) + 56), bh = 48;
+    const float breath = lively ? 1 + 0.025f * float(std::sin(m_time * 4)) : 1.f;
+    const float bx = cx - bw / 2, by = y + h - bh - 22;
+    nvgSave(vg);
+    nvgTranslate(vg, cx, by + bh / 2);
+    nvgScale(vg, breath, breath);
+    nvgTranslate(vg, -cx, -(by + bh / 2));
+    ui::FillRound(vg, bx, by, bw, bh, bh / 2, t.work);
+    ui::Title(vg, cx, by + bh / 2, 17, t.on_work, s.close, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgRestore(vg);
+    AddHit(bx, by, bw, bh, HitKind::DialogButton, 1);
+    nvgRestore(vg);
+    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.close, HidNpadButton_A}}, m_hint_rects);
+}
+
+void App::UpdateCompressDone(u64 down) {
+    if (down & (HidNpadButton_A | HidNpadButton_B)) m_dialog.kind = DialogKind::None;
 }
 
 void App::UpdateCompress(u64 down, u64 held) {
     const auto v = m_space->Snapshot();
     const auto c = m_compress->Snapshot();
     const auto rows = CompressVisible(v, c);
-    if (down & HidNpadButton_Y) {
-        m_compress_all = !m_compress_all; // every game, or only those that can be compressed
-        return;
-    }
+    const More& m = TrM();
+    const bool busy = c.running || !m_compress_queue.empty();
     if (Repeat(down, held, HidNpadButton_AnyUp) && m_compress_focus > 0) m_compress_focus--;
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_compress_focus < int(rows.size()) - 1) m_compress_focus++;
     // by first letter, for long lists
@@ -488,7 +1075,7 @@ void App::UpdateCompress(u64 down, u64 held) {
         m_compress_app = v.apps[size_t(rows[size_t(m_compress_focus)])].app_id;
     }
     if (down & HidNpadButton_B) {
-        m_space_mode = 0; // a compression that runs goes on
+        m_space_mode = 0; // a compression that runs goes on, and its queue
         m_compress_ask = 0;
         if (m_compress_to_tiles) {
             m_compress_to_tiles = false;
@@ -500,6 +1087,13 @@ void App::UpdateCompress(u64 down, u64 held) {
             m_tab = Tab::Installed;
             m_more = m_compress_back_more;
         }
+        return;
+    }
+    if ((down & HidNpadButton_Y) && !rows.empty()) {
+        // Y marks, as in the other lists (4A)
+        if (m_compress_picked.erase(m_compress_app)) return;
+        if (CompressMarkable(c, m_compress_app)) m_compress_picked.insert(m_compress_app);
+        else Notice(m.cz_cant_mark);
         return;
     }
     if (m_compress_ask && m_dialog.kind == DialogKind::None && !c.running) {
@@ -514,13 +1108,26 @@ void App::UpdateCompress(u64 down, u64 held) {
             m_compress_ask = 0; // nothing to ask: the row says why
         }
     }
-    if (c.running) {
-        if (down & HidNpadButton_X) m_compress->Stop();
+    if (busy) {
+        if (down & HidNpadButton_X) {
+            if (m_compress_queue.empty()) {
+                m_compress_round.stopped = true;
+                m_compress->Stop();
+            } else {
+                // the rest of the queue goes too: asked first
+                OpenDialog(DialogKind::CompressStop);
+            }
+            return;
+        }
+        // while it works, A only adds to the queue
+        if ((down & HidNpadButton_A) && !rows.empty()) {
+            if (CompressMarkable(c, m_compress_app)) AskCompress({m_compress_app});
+            else Notice(m.cz_busy);
+        }
         return;
     }
     if (!(down & (HidNpadButton_A | HidNpadButton_X)) || rows.empty()) return;
     const auto& a = v.apps[size_t(rows[size_t(std::clamp(m_compress_focus, 0, int(rows.size()) - 1))])];
-    const More& m = TrM();
     GameEstimate e;
     const auto it = c.games.find(a.app_id);
     bool known = it != c.games.end();
@@ -552,8 +1159,8 @@ void App::UpdateCompress(u64 down, u64 held) {
     }
     if (!known || e.state == GameEstimate::State::Pending) {
         // still being checked: it says so
-        if (!c.analyzing && !m_compress->StartAnalysis({a.app_id})) Notice(m.cz_pending);
-        else Notice(m.cz_pending);
+        if (!c.analyzing) m_compress->StartAnalysis({a.app_id});
+        Notice(m.cz_pending);
         return;
     }
     if (e.state == GameEstimate::State::Ours || e.why == GameEstimate::Why::Redo) {
@@ -563,31 +1170,8 @@ void App::UpdateCompress(u64 down, u64 held) {
         return;
     }
     // what can be compressed is compressed when chosen: what it saves shows when it ends
-    const bool waiting = e.merge && e.merged && e.state == GameEstimate::State::Low;
-    if (e.state != GameEstimate::State::Possible && e.state != GameEstimate::State::Worth && !waiting) return;
-    if (!hosversionAtLeast(12, 0, 0)) {
-        OpenDialog(DialogKind::CompressInfo);
-        m_dialog.single = true;
-        m_dialog.text = m.cz_fw_title;
-        m_dialog.from = m.cz_fw_body;
-        return;
-    }
-    if (!m_sigpatches.found) {
-        // never without them: the game would not start
-        OpenDialog(DialogKind::CompressInfo);
-        m_dialog.single = true;
-        m_dialog.text = m.cz_nosig_title;
-        m_dialog.from = m.cz_nosig_body;
-        return;
-    }
-    if (m_queue && m_queue->Busy()) {
-        Notice(m.cz_busy);
-        return;
-    }
-    OpenDialog(DialogKind::CompressGo);
-    m_dialog.ids = {a.app_id};
-    m_dialog.text = a.name;
-    m_dialog.size = e.saved;
+    if (!CompressCanQueue(e)) return;
+    AskCompress({a.app_id});
 }
 
 // The questions of this screen (drawn by DrawDialog).
@@ -597,6 +1181,30 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
     switch (m_dialog.kind) {
             break;
         case DialogKind::CompressGo: {
+            const bool busy = m_compress && (m_compress->Progress().running || !m_compress_queue.empty());
+            if (m_dialog.ids.size() > 1 && m_compress) {
+                // every one marked, in one question: their names, then what changes
+                const auto c = m_compress->Snapshot();
+                const auto v = m_space ? m_space->Snapshot() : Space::View{};
+                std::snprintf(text, sizeof(text), m.cz_go_many_title_fmt, int(m_dialog.ids.size()));
+                title = text;
+                std::string names;
+                bool merge = false;
+                for (size_t i = 0; i < m_dialog.ids.size(); i++) {
+                    const auto it = c.games.find(m_dialog.ids[i]);
+                    merge |= it != c.games.end() && it->second.merge;
+                    if (i >= 4) continue;
+                    names += (i ? ", " : "") + CompressName(v, m_dialog.ids[i]);
+                }
+                if (m_dialog.ids.size() > 4) {
+                    std::snprintf(text, sizeof(text), m.cz_and_more_fmt, int(m_dialog.ids.size()) - 4);
+                    names += std::string(" ") + text;
+                }
+                body = names + "\n" + m.cz_go_many_body + "\n" + (merge ? std::string(m.cz_merge_risks) + "\n" : std::string{}) + m.cz_risks;
+                std::snprintf(text, sizeof(text), m.cz_go_many_fmt, int(m_dialog.ids.size()));
+                primary = busy ? m.cz_add_queue : text;
+                break;
+            }
             GameEstimate e;
             if (m_compress && !m_dialog.ids.empty()) {
                 const auto c = m_compress->Snapshot();
@@ -620,6 +1228,16 @@ void App::CompressDialogText(std::string& title, std::string& body, std::string&
                 body = std::string(m.cz_go_body) + "\n" + dlc + m.cz_risks;
                 primary = m.cz_go;
             }
+            if (busy) primary = m.cz_add_queue; // it waits its turn
+            break;
+        }
+        case DialogKind::CompressStop: {
+            title = m.cz_stop;
+            const auto v = m_space ? m_space->Snapshot() : Space::View{};
+            const std::string name = m_compress ? CompressName(v, m_compress->Progress().app) : std::string{};
+            std::snprintf(text, sizeof(text), m.cz_stop_body_fmt, name.c_str(), int(m_compress_queue.size()));
+            body = text;
+            primary = m.cz_stop;
             break;
         }
         case DialogKind::CompressUndo:
@@ -655,7 +1273,13 @@ void App::ConfirmCompressDialog() {
     const More& m = TrM();
     switch (m_dialog.kind) {
         case DialogKind::CompressGo:
-            if (m_compress && !m_dialog.ids.empty()) m_compress->StartCompress(m_dialog.ids[0]);
+            // into the queue: it starts at once when nothing else is at work
+            CompressEnqueue(m_dialog.ids);
+            break;
+        case DialogKind::CompressStop:
+            m_compress_round.stopped = true;
+            m_compress_queue.clear();
+            if (m_compress) m_compress->Stop();
             break;
         case DialogKind::CompressUndo: {
             // the original again, from the library: its game file, where the game is

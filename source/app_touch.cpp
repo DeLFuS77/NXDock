@@ -502,6 +502,15 @@ bool App::Tap(float x, float y, u64& down) {
                     m_compress_focus = it->index;
                 }
                 break;
+            case HitKind::CompressMark:
+                // the box of a row (1A): it marks, as Y does
+                m_compress_focus = it->index;
+                m_compress_app = 0; // the focus follows the row tapped
+                down |= HidNpadButton_Y;
+                break;
+            case HitKind::CompressFilter:
+                m_compress_all = !m_compress_all; // every game, or only those that can be compressed (4A)
+                break;
             case HitKind::VersionChip:
                 down |= HidNpadButton_Minus;
                 break;

@@ -7,9 +7,13 @@
 // made-up cipher stands for AES-CTR: its stream depends on the key and the whole counter, so a
 // wrong counter anywhere gives wrong bytes. A damaged byte of the base game is caught by the IVFC
 // of the update. (Against real games, with AES: four games with
-// their updates and one with three; every block checked.)
+// their updates and one with three; every block checked.) Then the game merged with its update
+// (merge_game): written in one pass, the data level into its place as it is packed, it is the same
+// NCA, byte for byte, as written in two passes.
+#include "merge_game.hpp"
 #include "patch_view.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <random>
@@ -332,6 +336,92 @@ int main() {
         std::string error;
         CHECK(patchview::OpenPatched(Section(upd_nca, upd_key, upd_fsh, start, upd_size), nullptr, error) == nullptr && error == "no base game");
         CHECK(patchview::OpenPatched(Section(base_nca, base_key, base_fsh, start, base_content.size()), nullptr, error) == nullptr);
+    }
+
+    // 9. merged with its update (25D), in two passes and in one: the same NCA. The program NCA of
+    // the update: an ExeFS before its RomFS (as it is), the RomFS, a logo after it (AES-CTR, so
+    // encrypted again where it moves to).
+    {
+        const uint64_t upd_end = start + upd_size, logo_size = 0x4000;
+        Bytes full(upd_end + logo_size, 0);
+        std::memcpy(full.data(), upd_nca.data(), upd_nca.size());
+        for (uint64_t i = 0xC00; i < start; i++) full[i] = uint8_t(rng());
+        for (uint64_t i = upd_end; i < full.size(); i++) full[i] = uint8_t(rng());
+        Bytes logo_fsh(0x200, 0);
+        logo_fsh[4] = 3;
+        Put64(logo_fsh.data() + 0x140, 0x0000000200000000ull | 0x99);
+        Encrypt(full, upd_end, logo_size, upd_key, logo_fsh.data());
+        Bytes exefs_fsh(0x200, 0);
+        exefs_fsh[4] = 1;
+        Bytes header(0xC00, 0);
+        std::memcpy(header.data() + 0x200, "NCA3", 4);
+        Put64(header.data() + 0x208, full.size());
+        const uint64_t places[3][2] = {{0xC00, start}, {start, upd_end}, {upd_end, upd_end + logo_size}};
+        const Bytes* fshs[3] = {&exefs_fsh, &upd_fsh, &logo_fsh};
+        for (int i = 0; i < 3; i++) {
+            Put32(header.data() + 0x240 + i * 0x10, uint32_t(places[i][0] / 0x200));
+            Put32(header.data() + 0x240 + i * 0x10 + 4, uint32_t(places[i][1] / 0x200));
+            std::memcpy(header.data() + 0x400 + i * 0x200, fshs[i]->data(), 0x200);
+        }
+        const auto input = [&] {
+            mergegame::Input in;
+            in.base = Section(base_nca, base_key, base_fsh, start, base_content.size());
+            in.update = Section(full, upd_key, upd_fsh, start, upd_size);
+            in.update_index = 1;
+            in.update_header = header;
+            in.update_raw = [&full](uint64_t o, uint8_t* b, size_t n) {
+                if (o > full.size() || n > full.size() - o) return false;
+                std::memcpy(b, full.data() + o, n);
+                return true;
+            };
+            in.hash = sha;
+            in.encrypt_header = [](uint8_t* h, size_t n) {
+                for (size_t i = 0; i < n; i++) h[i] ^= uint8_t(0x5A + i);
+            };
+            return in;
+        };
+        const lz4pack::StepFn go = [](uint64_t) { return true; };
+        std::string error;
+        const auto now = [] { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
+        // two passes
+        mergegame::Merger two;
+        Bytes a;
+        const double t0 = now();
+        CHECK(two.Open(input(), error) && two.Measure(go, error));
+        CHECK(two.Write([&](const uint8_t* d, size_t n) { a.insert(a.end(), d, d + n); return true; }, go, error));
+        const double t1 = now();
+        CHECK(a.size() == two.NcaSize());
+        // one pass: the data level to its place first, then the rest around it
+        mergegame::Merger one;
+        const double t2 = now();
+        CHECK(one.Open(input(), error));
+        const uint64_t place = one.DataPlace(), bound = one.OnceBound();
+        Bytes b(bound, 0xEE);
+        uint64_t at = place;
+        bool inside = true;
+        const mergegame::OutFn out = [&](const uint8_t* d, size_t n) {
+            inside = inside && at + n <= b.size();
+            if (inside) std::memcpy(b.data() + at, d, n);
+            at += n;
+            return inside;
+        };
+        CHECK(one.Measure(go, error, out) && one.Placed());
+        CHECK(one.NcaSize() == two.NcaSize() && one.NcaSize() <= bound);
+        CHECK(one.WriteAround([&](uint64_t from) { at = from; return true; }, out, error));
+        const double t3 = now();
+        b.resize(size_t(one.NcaSize()));
+        CHECK(inside && b == a);
+        // what Write checks against what was measured still holds after a one-pass measure
+        Bytes again;
+        CHECK(one.Write([&](const uint8_t* d, size_t n) { again.insert(again.end(), d, d + n); return true; }, go, error) && again == a);
+        // where its table starts in the new header: inside a block of 16 is the case the cipher
+        // must start in the middle of
+        Bytes plain(a.begin(), a.begin() + 0xC00);
+        for (size_t i = 0; i < plain.size(); i++) plain[i] ^= uint8_t(0x5A + i);
+        uint64_t table_offset = 0;
+        std::memcpy(&table_offset, plain.data() + 0x400 + 0x200 + 0x178, 8);
+        std::printf("  merged in one pass: %zu bytes, the same as in two (its table at %llu, %llu into a block of 16); %.0f ms against %.0f ms\n",
+                    a.size(), (unsigned long long)table_offset, (unsigned long long)(table_offset % 16), t3 - t2, t1 - t0);
     }
 
     if (failures) std::printf("%d failed\n", failures);

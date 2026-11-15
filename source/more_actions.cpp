@@ -35,7 +35,7 @@ constexpr float kActW = 470, kActRow = 56;
 // What a row does when it has no button of its own (kButton: as its button)
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
-             kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kSortBase = 100 };
+             kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kCzGo, kCzFilter, kCzUnqueue, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
@@ -260,7 +260,7 @@ App::ActScreen App::CurrentActScreen() {
             if (m_more == MoreScreen::Space && m_space) {
                 if (m_space_mode == 1 && m_pick_kind == 0) return ActScreen::SpacePick;
                 if (m_space_mode == 4) return ActScreen::Tickets;
-                if (m_space_mode == 3 && m_compress && !m_compress->Snapshot().running) return ActScreen::Compress;
+                if (m_space_mode == 3 && m_compress) return ActScreen::Compress; // also while it works (15/11)
             }
             return ActScreen::None;
         default:
@@ -446,16 +446,50 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             break;
         }
         case ActScreen::Compress: {
+            // compress the marked or the one in focus, the marks, the queue, the filter (1A, 4A)
             const auto c = m_compress->Snapshot();
-            if (CompressVisible(m_space->Snapshot(), c).empty()) break;
+            const auto v = m_space->Snapshot();
+            const auto visible = CompressVisible(v, c);
+            const bool busy = c.running || !m_compress_queue.empty();
             const auto it = c.games.find(m_compress_app);
-            if (it != c.games.end() && it->second.why == GameEstimate::Why::Stops) {
+            const bool stops = it != c.games.end() && it->second.why == GameEstimate::Why::Stops;
+            int markable = 0, picked = 0;
+            unsigned long long bytes = 0;
+            for (int r : visible) {
+                const auto& a = v.apps[size_t(r)];
+                if (CompressMarkable(c, a.app_id)) markable++;
+                if (m_compress_picked.count(a.app_id)) {
+                    picked++;
+                    bytes += a.Bytes();
+                }
+            }
+            if (picked) {
+                std::snprintf(text, sizeof(text), m.cz_marked_fmt, picked, draw::Size(bytes).c_str());
+                title = text;
+                std::snprintf(text, sizeof(text), m.cz_go_marked_fmt, picked);
+                rows.push_back({kCzGo, text, draw::Size(bytes), true, 0, false, kIconPress});
+            } else if (!visible.empty() && CompressMarkable(c, m_compress_app)) {
+                rows.push_back({kCzGo, m.cz_menu_row, {}, true, 0, false, kIconPress});
+            }
+            if (!visible.empty()) {
+                const bool on = m_compress_picked.count(m_compress_app) > 0;
+                rows.push_back({kButton, m.ac_mark, {}, on || CompressMarkable(c, m_compress_app), HidNpadButton_Y, false, on ? kIconTick : kIconBox});
+                rows.push_back({kMarkAll, m.ac_mark_all, {}, markable > picked, 0, false, kIconTick});
+                rows.push_back({kUnmarkAll, m.ac_unmark, {}, picked > 0, 0, false, kIconBox});
+                rows.push_back({kInvert, m.ac_invert, {}, markable > 0, 0, false, kIconInvert});
+            }
+            if (std::find(m_compress_queue.begin(), m_compress_queue.end(), m_compress_app) != m_compress_queue.end()) {
+                rows.push_back({kCzUnqueue, m.cz_unqueue, {}, true, 0, false, kIconCross});
+            }
+            if (busy) {
+                rows.push_back({kButton, m.cz_stop, {}, true, HidNpadButton_X, true, kIconCross});
+            } else if (stops) {
                 rows.push_back({kButton, m.cz_remove_update, {}, true, HidNpadButton_X, true, kIconBin});
                 rows.push_back({kButton, m.cz_fix_original, {}, true, HidNpadButton_A, false, kIconInstall});
-            } else {
+            } else if (!visible.empty()) {
                 rows.push_back({kButton, m.open, {}, true, HidNpadButton_A, false, kIconOpen});
             }
-            rows.push_back({kButton, m_compress_all ? m.cz_only_some : m.cz_show_all, {}, true, HidNpadButton_Y, false, kIconFunnel});
+            rows.push_back({kCzFilter, m_compress_all ? m.cz_only_some : m.cz_show_all, {}, true, 0, false, kIconFunnel});
             break;
         }
         case ActScreen::ConsoleSort:
@@ -574,6 +608,8 @@ void App::ActDo(const ActRow& row) {
                 std::fill(m_pick_marks.begin(), m_pick_marks.end(), true);
             } else if (m_act_screen == ActScreen::Tickets) {
                 std::fill(m_ticket_marks.begin(), m_ticket_marks.end(), 1);
+            } else if (m_act_screen == ActScreen::Compress) {
+                for (const auto app : CompressMarkableApps()) m_compress_picked.insert(app);
             }
             break;
         case kUnmarkAll:
@@ -581,6 +617,7 @@ void App::ActDo(const ActRow& row) {
             else if (m_act_screen == ActScreen::ConsoleGame) std::fill(m_console_marks.begin(), m_console_marks.end(), 0);
             else if (m_act_screen == ActScreen::SpacePick) std::fill(m_pick_marks.begin(), m_pick_marks.end(), false);
             else if (m_act_screen == ActScreen::Tickets) std::fill(m_ticket_marks.begin(), m_ticket_marks.end(), 0);
+            else if (m_act_screen == ActScreen::Compress) m_compress_picked.clear();
             break;
         case kInvert: {
             // what was marked is not, and the rest is (16A)
@@ -597,6 +634,8 @@ void App::ActDo(const ActRow& row) {
                 on = InvertMarks(m_pick_marks);
             } else if (m_act_screen == ActScreen::Tickets) {
                 on = InvertMarks(m_ticket_marks);
+            } else if (m_act_screen == ActScreen::Compress) {
+                on = InvertMarks(m_compress_picked, CompressMarkableApps());
             }
             char text[160];
             std::snprintf(text, sizeof(text), TrM().ac_inverted_fmt, on);
@@ -605,6 +644,21 @@ void App::ActDo(const ActRow& row) {
         }
         case kRandom: RollRandom(); break; // 21A
         case kCompressAll: CompressFromConsole(0); break; // 14/11
+        case kCzGo:
+            // the marked, or the one in focus: one question, then into the queue (1A)
+            if (!m_compress_picked.empty()) {
+                const auto apps = CompressMarkableApps();
+                std::vector<unsigned long long> go;
+                for (const auto app : apps) {
+                    if (m_compress_picked.count(app)) go.push_back(app);
+                }
+                AskCompress(go);
+            } else {
+                AskCompress({m_compress_app});
+            }
+            break;
+        case kCzFilter: m_compress_all = !m_compress_all; break; // 4A
+        case kCzUnqueue: std::erase(m_compress_queue, m_compress_app); break;
         case kCompress: {
             // the game in focus of the list, or the one whose page is open
             unsigned long long app = m_console_app;

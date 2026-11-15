@@ -612,6 +612,7 @@ bool App::Frame() {
         if (m_rumble_step < 0) SendRumble(false);
     }
     { perf::Timer t_("frame: FollowQueue"); FollowQueue(); }
+    FollowCompressQueue(); // Compress games goes on on any screen (15/11)
     { perf::Timer t_("frame: FollowFilesWork"); FollowFilesWork(); }
     { perf::Timer t_("frame: FollowSelfUpdate"); FollowSelfUpdate(); }
     { perf::Timer t_("frame: FollowSaveAuto"); FollowSaveAuto(); }

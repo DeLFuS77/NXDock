@@ -574,6 +574,7 @@ App::Fill App::DialogMoreText(DialogContent& dc) {
             dc.error = m_dialog.from;
             break;
         case DialogKind::CompressGo:
+        case DialogKind::CompressStop:
         case DialogKind::CompressUndo:
         case DialogKind::CompressInfo:
         case DialogKind::CompressStopsOriginal:

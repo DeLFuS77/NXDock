@@ -54,6 +54,19 @@ constexpr uint32_t kMinGain = 64;  // a block must get this much smaller to be k
 // those of its HC levels (5, 16) are as small as LZ4 gets.
 constexpr double kRepackShare = 0.5;
 
+// What the piece being compressed takes before and after, for the screen (only one is compressed
+// at a time): while it is packed, the bytes read and those that came out give an estimate.
+struct Meter {
+    std::atomic<u64> before{0}, virt{0}, in{0}, out{0}, exact{0};
+    std::atomic<int> why{0}; // why it measures first (View::measure_why)
+    void Start(u64 now, u64 romfs) {
+        in = out = exact = 0;
+        virt = romfs;
+        before = now;
+    }
+};
+Meter g_meter;
+
 std::string Hex(const void* p, size_t n) {
     static const char* d = "0123456789ABCDEF";
     std::string s;
@@ -364,6 +377,61 @@ Result RegisterAs(NcmContentStorage& cs, const NcmContentId& id, const NcmPlaceH
         ncmContentStorageDeletePlaceHolder(&cs, &tmp);
     }
     return sphaira::ncm::Register(&cs, &id, &ph);
+}
+
+// One pass (4A): a part of the new NCA written apart into the placeholder, with the SHA-256 of
+// what was handed to the card.
+struct WrittenPart {
+    u64 from, to;
+    u8 hash[32];
+};
+
+// The parts make the whole NCA, one after another (empty ones dropped).
+bool PartsWhole(std::vector<WrittenPart>& parts, u64 size) {
+    std::sort(parts.begin(), parts.end(), [](const WrittenPart& a, const WrittenPart& b) { return a.from < b.from; });
+    std::erase_if(parts, [](const WrittenPart& p) { return p.to == p.from; });
+    u64 end = 0;
+    for (const auto& p : parts) {
+        if (p.from != end || p.to < p.from) return false;
+        end = p.to;
+    }
+    return end == size;
+}
+
+// The placeholder, registered under a name of its own, read back whole: the SHA-256 in order (the
+// new content id), and every part compared with what was written (what a second pass checked).
+bool ReadBackParts(NcmContentStorage& cs, const NcmContentId& id, u64 size, const std::vector<WrittenPart>& parts, const std::atomic<bool>& stop,
+                   const std::function<void(u64)>& progress, u8 hash[32], Result& rc) {
+    Sha256Context all, part;
+    sha256ContextCreate(&all);
+    sha256ContextCreate(&part);
+    std::vector<u8> buf(4 * 1024 * 1024);
+    bool same = true;
+    size_t pi = 0;
+    for (u64 at = 0; at < size;) {
+        const size_t n = size_t(std::min<u64>(buf.size(), size - at));
+        if (stop || R_FAILED(rc = ncmContentStorageReadContentIdFile(&cs, buf.data(), n, &id, s64(at)))) {
+            same = false;
+            break;
+        }
+        sha256ContextUpdate(&all, buf.data(), n);
+        for (size_t o = 0; o < n && pi < parts.size();) {
+            const size_t take = size_t(std::min<u64>(n - o, parts[pi].to - (at + o)));
+            sha256ContextUpdate(&part, buf.data() + o, take);
+            o += take;
+            if (at + o == parts[pi].to) {
+                u8 got[32];
+                sha256ContextGetHash(&part, got);
+                if (std::memcmp(got, parts[pi].hash, sizeof(got))) same = false;
+                sha256ContextCreate(&part);
+                pi++;
+            }
+        }
+        at += n;
+        progress(at);
+    }
+    sha256ContextGetHash(&all, hash);
+    return same && pi == parts.size();
 }
 
 // ---- Merge and compress (25D): a game with its update installed becomes one Application ----
@@ -798,31 +866,130 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         return;
     }
     std::string what;
-    // 1. measured, then written
+    // 1. the merged program NCA. In one pass when the storage has room for a placeholder as large
+    // as it can be: the data level written to its place as it is measured, the rest around it
+    // after, then read back whole under a name of its own and each part compared with what was
+    // written. Otherwise measured, then written again in order (two passes), checked against what
+    // was measured. Nothing installed is touched here.
     const u64 virt = merger.RomfsSize();
-    if (!merger.Measure([&](u64 d) { progress(1, d, virt); return !stop; }, what)) {
-        log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
-        return failed();
-    }
-    const u64 new_size = merger.NcaSize();
-    if (new_size >= p.before) {
-        error = Packed(m.cz_low_t, m.cz_low_d);
-        return;
-    }
     Result rc = 0;
     NcmPlaceHolderId ph{};
-    if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
-        R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &p.patch_program, &ph, s64(new_size)))) {
-        error = Packed(m.cz_room_t, m.cz_room_d, rc);
-        return;
-    }
     bool keep_ph = false;
     const auto drop_ph = [&] {
         if (!keep_ph) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
     };
-    const std::string spare_tmp = SparePath(app) + ".tmp";
-    bool spare_written = false;
+    NcmContentId once_temp{}; // the name it is read back under
+    bool once = false;
     {
+        NcmPlaceHolderId random{};
+        const u64 bound = merger.OnceBound();
+        once = bound > 0 && R_SUCCEEDED(ncmContentStorageGeneratePlaceHolderId(&s.cs, &random)) &&
+               R_SUCCEEDED(ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph));
+        std::memcpy(&once_temp, &random, sizeof(once_temp));
+        once = once && R_SUCCEEDED(ncmContentStorageCreatePlaceHolder(&s.cs, &once_temp, &ph, s64(bound)));
+    }
+    g_meter.Start(p.before, virt);
+    g_meter.why = once ? 0 : 1;
+    std::unique_ptr<Writer> stream;
+    if (once) stream = std::make_unique<Writer>(s.cs, ph, merger.DataPlace());
+    Result src = 0;
+    bool measured = merger.Measure(
+        [&](u64 d) {
+            g_meter.in = d;
+            progress(once ? 2 : 1, d, virt);
+            return !stop;
+        },
+        what,
+        once ? mergegame::OutFn([&](const u8* d, size_t n) {
+            g_meter.out += n;
+            return R_SUCCEEDED(src = stream->Write(d, n));
+        })
+             : mergegame::OutFn{});
+    if (measured && stream) measured = R_SUCCEEDED(src = stream->Flush());
+    if (!measured) {
+        log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
+        stream.reset();
+        if (once) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
+        return failed(src);
+    }
+    const u64 new_size = merger.NcaSize();
+    g_meter.exact = new_size;
+    if (new_size >= p.before) {
+        stream.reset();
+        if (once) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
+        error = Packed(m.cz_low_t, m.cz_low_d);
+        return;
+    }
+    if (once && !merger.Placed()) {
+        // what it stores came out bigger than the game read: not where it was written
+        log_write("[NXDock] merge %016llX: not in one pass, written again\n", (unsigned long long)app);
+        stream.reset();
+        ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
+        ph = NcmPlaceHolderId{};
+        once = false;
+        g_meter.why = 2;
+    }
+    u8 hash[32];
+    if (once) {
+        std::vector<WrittenPart> parts;
+        WrittenPart data_part{merger.DataPlace(), stream->At(), {}};
+        stream->Hash(data_part.hash);
+        stream.reset();
+        parts.push_back(data_part);
+        // the rest, part by part, each with what was handed to the card
+        std::unique_ptr<Writer> pw;
+        u64 pw_from = 0;
+        Result wrc = 0;
+        const auto close = [&] {
+            if (!pw) return true;
+            if (R_FAILED(wrc = pw->Flush())) return false;
+            WrittenPart part{pw_from, pw->At(), {}};
+            pw->Hash(part.hash);
+            parts.push_back(part);
+            pw.reset();
+            return true;
+        };
+        const bool around = merger.WriteAround(
+                                [&](u64 at) {
+                                    if (!close()) return false;
+                                    pw = std::make_unique<Writer>(s.cs, ph, at);
+                                    pw_from = at;
+                                    return true;
+                                },
+                                [&](const u8* d, size_t n) { return pw && R_SUCCEEDED(wrc = pw->Write(d, n)); }, what) &&
+                            close();
+        if (!around || !PartsWhole(parts, new_size)) {
+            log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
+            pw.reset();
+            drop_ph();
+            return failed(wrc);
+        }
+        const bool taken = R_SUCCEEDED(ncmContentStorageSetPlaceHolderSize(&s.cs, &ph, s64(new_size))) && R_SUCCEEDED(RegisterAs(s.cs, once_temp, ph));
+        if (taken) {
+            const bool same = ReadBackParts(s.cs, once_temp, new_size, parts, stop, [&](u64 d) { progress(3, d, new_size); }, hash, rc);
+            NcmContentId final_id;
+            std::memcpy(&final_id, hash, sizeof(final_id));
+            // under its own name, as a placeholder again, to be registered with the record (2)
+            if (!same || R_FAILED(rc = ncmContentStorageRevertToPlaceHolder(&s.cs, &ph, &once_temp, &final_id))) {
+                log_write("[NXDock] merge %016llX: the one pass did not read back right\n", (unsigned long long)app);
+                sphaira::ncm::Delete(&s.cs, &once_temp);
+                return failed(rc);
+            }
+        } else {
+            // this console's storage does not take it so: written again in order
+            log_write("[NXDock] merge %016llX: one pass not taken, two passes\n", (unsigned long long)app);
+            sphaira::ncm::Delete(&s.cs, &once_temp);
+            ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
+            ph = NcmPlaceHolderId{};
+            once = false;
+        }
+    }
+    if (!once) {
+        if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
+            R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &p.patch_program, &ph, s64(new_size)))) {
+            error = Packed(m.cz_room_t, m.cz_room_d, rc);
+            return;
+        }
         Writer w(s.cs, ph);
         Result wrc = 0;
         const bool ok = merger.Write([&](const u8* d, size_t n) { return R_SUCCEEDED(wrc = w.Write(d, n)); },
@@ -832,9 +999,12 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
             drop_ph();
             return failed(wrc);
         }
-        u8 hash[32];
         w.Hash(hash);
-        std::memcpy(&new_program, hash, sizeof(new_program));
+    }
+    std::memcpy(&new_program, hash, sizeof(new_program));
+    const std::string spare_tmp = SparePath(app) + ".tmp";
+    bool spare_written = false;
+    {
         // what the recipe will not have of the base, kept beside the merged game when it is
         // little (up to a tenth of it): a newer update then needs nothing from the library (25E)
         std::remove(spare_tmp.c_str());
@@ -1143,6 +1313,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
         if (once) ncmContentStorageDeletePlaceHolder(&s.cs, &once_ph);
         once = false;
     };
+    g_meter.why = once ? 0 : 1; // no room for it: measured first (phase 1), then written
     std::unique_ptr<Writer> stream;
     if (once) {
         stream = std::make_unique<Writer>(s.cs, once_ph, stream_at);
@@ -1151,13 +1322,20 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     lz4pack::BlockHasher hasher(data_block, Sha256);
     lz4pack::Packed sizes;
     Result stream_rc = 0;
+    g_meter.Start(u64(h.size), virt);
     bool packed = lz4pack::Pack(virt, kLevel, kMinGain, read,
         [&](u64, const u8* d, size_t n) {
             hasher.Feed(d, n);
+            g_meter.out += n;
             if (stream) stream_rc = stream->Write(d, n);
             return R_SUCCEEDED(stream_rc);
         },
-        [&](u64 d) { progress(once ? 2 : 1, d, virt); return !stop; }, sizes, kThreads);
+        [&](u64 d) {
+            g_meter.in = d;
+            progress(once ? 2 : 1, d, virt);
+            return !stop;
+        },
+        sizes, kThreads);
     if (packed && stream) packed = R_SUCCEEDED(stream_rc = stream->Flush());
     if (!packed) {
         drop_once();
@@ -1212,6 +1390,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     sha256CalculateHash(nh.fs_header_hash[r].sha256, &nfh, sizeof(nfh));
     const u64 new_size = u64(s64(h.size) + shift);
     nh.size = new_size;
+    g_meter.exact = new_size;
     u8 enc_header[0xC00];
     sphaira::crypto::cryptoAes128Xts(&nh, enc_header, k.header_key, 0, 0x200, sizeof(nh), true);
 
@@ -1239,10 +1418,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
         // compared with what was written (what a second pass checked)
         ph = once_ph;
         once = false; // the placeholder is ph now: drop() and fail() take it away
-        struct Part {
-            u64 from, to;
-            u8 hash[32];
-        };
+        using Part = WrittenPart;
         std::vector<Part> parts;
         Part data_part{stream_at, stream->At(), {}};
         stream->Hash(data_part.hash);
@@ -1322,50 +1498,15 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
             old_at = oe;
         }
         // the parts make the whole NCA, one after another, none empty
-        std::sort(parts.begin(), parts.end(), [](const Part& a, const Part& b) { return a.from < b.from; });
-        std::erase_if(parts, [](const Part& p) { return p.to == p.from; });
-        u64 end = 0;
-        for (const auto& p : parts) {
-            if (p.from != end || p.to < p.from) return fail(Result(0));
-            end = p.to;
-        }
-        if (new_at != new_size || end != new_size) return fail(Result(0));
+        if (!PartsWhole(parts, new_size) || new_at != new_size) return fail(Result(0));
         bool taken = R_SUCCEEDED(ncmContentStorageSetPlaceHolderSize(&s.cs, &ph, s64(new_size))) && R_SUCCEEDED(RegisterAs(s.cs, once_temp, ph));
         if (taken) {
             // read back whole: the SHA-256 in order, and every part as it was written
-            Sha256Context all, part;
-            sha256ContextCreate(&all);
-            sha256ContextCreate(&part);
-            buf.resize(4 * 1024 * 1024);
-            bool same = true;
-            size_t pi = 0;
-            for (u64 at = 0; at < new_size;) {
-                const size_t n = size_t(std::min<u64>(buf.size(), new_size - at));
-                if (stop || R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, buf.data(), n, &once_temp, s64(at)))) {
-                    same = false;
-                    break;
-                }
-                sha256ContextUpdate(&all, buf.data(), n);
-                for (size_t o = 0; o < n && pi < parts.size();) {
-                    const size_t take = size_t(std::min<u64>(n - o, parts[pi].to - (at + o)));
-                    sha256ContextUpdate(&part, buf.data() + o, take);
-                    o += take;
-                    if (at + o == parts[pi].to) {
-                        u8 got[32];
-                        sha256ContextGetHash(&part, got);
-                        if (std::memcmp(got, parts[pi].hash, sizeof(got))) same = false;
-                        sha256ContextCreate(&part);
-                        pi++;
-                    }
-                }
-                at += n;
-                progress(3, at, new_size);
-            }
-            sha256ContextGetHash(&all, program_hash);
+            const bool same = ReadBackParts(s.cs, once_temp, new_size, parts, stop, [&](u64 d) { progress(3, d, new_size); }, program_hash, rc);
             NcmContentId final_id;
             std::memcpy(&final_id, program_hash, sizeof(final_id));
             // under the new name, as a placeholder again, to be registered with the record (6)
-            if (!same || pi != parts.size() || R_FAILED(rc = ncmContentStorageRevertToPlaceHolder(&s.cs, &ph, &once_temp, &final_id))) {
+            if (!same || R_FAILED(rc = ncmContentStorageRevertToPlaceHolder(&s.cs, &ph, &once_temp, &final_id))) {
                 sphaira::ncm::Delete(&s.cs, &once_temp);
                 return fail(rc);
             }
@@ -1644,10 +1785,12 @@ void Mark(u64 id, const NcmContentId& content, u64 saved) {
 // A DLC that fails stays as it was (the game is already done): it is only written in the log.
 // Gives what they saved.
 u64 CompressDlcs(const keys::Keys& k, const std::vector<u64>& dlcs, const std::atomic<bool>& stop,
-                 const std::function<void(int, u64, u64)>& progress) {
+                 const std::function<void(int, u64, u64)>& progress, const std::function<void(int)>& piece) {
     u64 total = 0;
-    for (const u64 id : dlcs) {
+    for (size_t i = 0; i < dlcs.size(); i++) {
+        const u64 id = dlcs[i];
         if (stop) break;
+        piece(int(i) + 1);
         for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
             Storage s(sid);
             GameContents g;
@@ -1687,9 +1830,45 @@ bool Compressor::Busy() {
 
 void Compressor::Stop() { m_stop = true; }
 
+// The figures of the meter, in the view.
+static void Measured(Compressor::View& v) {
+    v.before = g_meter.before;
+    v.after = g_meter.exact;
+    v.after_exact = v.after != 0;
+    v.measure_why = g_meter.why;
+    const u64 in = g_meter.in, out = g_meter.out, virt = g_meter.virt;
+    // an estimate once enough was packed to say something (32 MiB)
+    if (!v.after_exact && v.before && virt && in >= (32ull << 20) && out < in) {
+        const u64 less = u64(double(virt) * double(in - out) / double(in));
+        v.after = less < v.before ? v.before - less : 0;
+    }
+}
+
 Compressor::View Compressor::Snapshot() {
     std::lock_guard lock(m_mutex);
-    return m_view;
+    View v = m_view;
+    Measured(v);
+    return v;
+}
+
+Compressor::View Compressor::Progress() {
+    std::lock_guard lock(m_mutex);
+    View v;
+    v.running = m_view.running;
+    v.analyzing = m_view.analyzing;
+    v.check_done = m_view.check_done;
+    v.check_total = m_view.check_total;
+    v.phase = m_view.phase;
+    v.done = m_view.done;
+    v.total = m_view.total;
+    v.app = m_view.app;
+    v.saved = m_view.saved;
+    v.error = m_view.error;
+    v.finished = m_view.finished;
+    v.dlc = m_view.dlc;
+    v.dlc_count = m_view.dlc_count;
+    Measured(v);
+    return v;
 }
 
 std::vector<CompressedGame> Compressor::Marks() {
@@ -1930,10 +2109,14 @@ bool Compressor::StartCompress(unsigned long long app) {
         if (m_view.running || m_view.analyzing) return false;
         m_view.running = true;
         m_view.app = app;
-        m_view.phase = 1;
+        m_view.phase = 0; // getting ready: nothing measured nor written yet
         m_view.done = m_view.total = 0;
         m_view.error.clear();
         m_view.saved = 0;
+        m_view.dlc = 0;
+        m_view.dlc_count = 0;
+        g_meter.Start(0, 0);
+        g_meter.why = 0;
     }
     // its DLC, from the check: compressed after the game (4A)
     std::vector<u64> dlcs;
@@ -1941,6 +2124,7 @@ bool Compressor::StartCompress(unsigned long long app) {
         std::lock_guard lock(m_mutex);
         const auto it = m_view.games.find(app);
         if (it != m_view.games.end()) dlcs.assign(it->second.dlcs.begin(), it->second.dlcs.end());
+        m_view.dlc_count = int(dlcs.size());
     }
     Join();
     m_stop = false;
@@ -1983,7 +2167,10 @@ bool Compressor::StartCompress(unsigned long long app) {
                 }
                 if (!error.empty()) return;
                 // its DLC, one after another (4A): a DLC that fails stays as it was
-                saved += CompressDlcs(k, dlcs, m_stop, progress);
+                saved += CompressDlcs(k, dlcs, m_stop, progress, [this](int n) {
+                    std::lock_guard lock(m_mutex);
+                    m_view.dlc = n;
+                });
                 return;
             }
             error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);

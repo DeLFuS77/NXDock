@@ -13,6 +13,10 @@ void App::DrawDialog(NVGcontext* vg) {
         DrawUsb3Sheet(vg); // a sheet of its own, wider (more_usb3.cpp)
         return;
     }
+    if (m_dialog.kind == DialogKind::CompressDone) {
+        DrawCompressDone(vg); // the summary of a round of Compress games (more_compress.cpp)
+        return;
+    }
     const Theme& t = m_theme;
     const auto& s = Tr();
     // everything behind goes dark; a tap there is Cancel
@@ -354,6 +358,10 @@ void App::UpdateDialog(u64 down, u64 held) {
         UpdateUsb3Sheet(down, held);
         return;
     }
+    if (m_dialog.kind == DialogKind::CompressDone) {
+        UpdateCompressDone(down);
+        return;
+    }
     if (ToolDialogInput(down, held)) return;
     if (m_dialog.kind == DialogKind::ConsoleRemove && (down & HidNpadButton_Y) && ConsoleRemoveTakesGame()) {
         m_dialog.keep_saves = !m_dialog.keep_saves; // the box of the saves (3A)
@@ -652,6 +660,7 @@ void App::ConfirmDialog() {
             DoHomeShortcut(m_dialog.kind == DialogKind::HomeRemove);
             break;
         case DialogKind::CompressGo:
+        case DialogKind::CompressStop:
         case DialogKind::CompressUndo:
         case DialogKind::CompressStopsOriginal:
         case DialogKind::CompressStopsRemove:

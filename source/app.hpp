@@ -79,7 +79,7 @@ private:
     // Everything on screen that answers to touch, rebuilt every frame.
     enum class HitKind { Button, Tab, Chip, Cover, QueueStrip, SettingsRow, PairRow, Remember, DetailRow, Dest, Install, QueueRow,
                          InstalledView, InstalledRow, ConsoleSize, ShopChip, FilesDest, DialogBack, DialogButton, MenuRow, MenuBack, WizItem, WizButton, WizMusic,
-                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, Wifi, SearchChip,
+                         MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, CompressMark, CompressFilter, Wifi, SearchChip,
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
                          ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, TicketRow,
@@ -360,6 +360,43 @@ private:
     bool m_compress_told = false;    // the notice of an update not merged was shown (once)
     std::vector<int> CompressVisible(const Space::View& v, const Compressor::View& c) const;
     std::vector<CompressedGame> m_compressed_marks;
+    // Several at once (15/11, 1A-4A): the games marked, those waiting their turn, and what this
+    // round of the queue did, for the card while it works and the summary when it ends.
+    std::set<unsigned long long> m_compress_picked;
+    std::vector<unsigned long long> m_compress_queue; // waiting, in order (not the one at work)
+    struct CompressRound {
+        std::vector<std::pair<unsigned long long, unsigned long long>> done; // game, saved
+        std::vector<std::pair<unsigned long long, std::string>> failed;     // game, error (packed)
+        int total = 0;          // the games of the round, those done and those to come
+        double started = 0;     // when it began
+        double game_at = 0;     // when the game at work began
+        bool stopped = false;   // X: the rest of the queue is dropped
+    };
+    CompressRound m_compress_round;
+    // what the summary shows once the round ends (3A)
+    CompressRound m_compress_summary;
+    double m_compress_summary_at = -100, m_compress_card_at = -100;
+    bool m_compress_summary_pending = false; // shown once no other question is open
+    // the speed, from what was read over the last seconds of the same step
+    std::vector<std::pair<double, unsigned long long>> m_compress_samples;
+    int m_compress_sample_step = -1;
+    double m_compress_speed = 0;  // bytes a second, 0 while not known
+    float m_compress_frac = 0;    // how far the piece at work is, all its steps together
+    bool m_compress_measuring = false; // the piece at work began with a step of measuring
+    int m_compress_piece = -1;
+    static bool CompressCanQueue(const GameEstimate& e);
+    bool CompressMarkable(const Compressor::View& c, unsigned long long app) const;
+    std::vector<unsigned long long> CompressMarkableApps();
+    void CompressEnqueue(const std::vector<unsigned long long>& apps);
+    void AskCompress(const std::vector<unsigned long long>& apps);
+    void FollowCompressQueue();
+    void FollowCompressSpeed(const Compressor::View& c);
+    void CompressStartNext();
+    void DrawCompressCard(NVGcontext* vg, const Space::View& v, const Compressor::View& c, float lx, float lw);
+    void DrawCompressDone(NVGcontext* vg);
+    void UpdateCompressDone(u64 down);
+    int CompressImage(unsigned long long app);
+    std::string CompressName(const Space::View& v, unsigned long long app) const;
     bool m_marks_read = false;
     int m_space_focus = 0, m_space_mode = 0, m_pick_kind = 0, m_pick_focus = 0, m_pick_first = 0, m_space_finished = 0;
     std::vector<std::pair<int, int>> m_pick_rows; // the game, and its content (dump) or -1
@@ -861,7 +898,7 @@ private:
     std::vector<HistoryEntry> m_history;
     unsigned m_history_version = ~0u;
     // the question shown over everything, if any
-    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
+    enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, CompressDone, CompressStop, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
                             UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
                             Usb3, Usb3Reboot };
