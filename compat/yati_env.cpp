@@ -12,6 +12,7 @@
 #include <malloc.h>
 #include <switch.h>
 #include <mutex>
+#include <sys/stat.h>
 
 namespace sphaira::env {
 namespace {
@@ -75,6 +76,19 @@ extern "C" void nxdock_log_open(const char* path) {
         std::fclose(g_log);
     }
     g_log = std::fopen(path, "w");
+    g_log_start = armGetSystemTick();
+    g_log_line_start = true;
+}
+
+// added to what the file has, unless it has grown past 2 MiB (then emptied)
+extern "C" void nxdock_log_append(const char* path) {
+    std::lock_guard lock(g_log_mutex);
+    if (g_log) {
+        std::fclose(g_log);
+    }
+    struct stat st{};
+    const bool big = stat(path, &st) == 0 && st.st_size > (2 << 20);
+    g_log = std::fopen(path, big ? "w" : "a");
     g_log_start = armGetSystemTick();
     g_log_line_start = true;
 }

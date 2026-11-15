@@ -6,6 +6,10 @@
   to another letter or moves the chosen game. Only the d-pad and the left stick pushed clearly move them.
 - Compress games: the screen stays smooth while it compresses. The work runs below the drawing of the screen, spread
   over the cores.
+- Compress games: compress.log keeps the whole round, each game under its title, and says the step where a game
+  failed. Before, each game emptied it.
+- Compress games: the summary at the end says "2 of 3 games compressed" when one failed, shows that game in grey
+  among the covers, and its line in red fits inside the box.
 
 ## 0.9.0-beta.5
 

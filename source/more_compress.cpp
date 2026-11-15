@@ -244,7 +244,9 @@ void App::CompressStartNext() {
     const auto p = m_compress->Progress();
     if (p.running || p.analyzing || (m_queue && m_queue->Busy())) return;
     const unsigned long long app = m_compress_queue.front();
-    if (!m_compress->StartCompress(app)) return;
+    const std::string name = m_space ? CompressName(m_space->Snapshot(), app) : std::string{};
+    if (!m_compress->StartCompress(app, name, m_compress_round.log_new)) return;
+    m_compress_round.log_new = false;
     m_compress_queue.erase(m_compress_queue.begin());
     m_compress_round.game_at = m_time;
     m_compress_samples.clear();
@@ -877,7 +879,10 @@ void App::FollowCompress(const Compressor::View& c) {
     if (m_space) name = CompressName(m_space->Snapshot(), c.app);
     const bool alone = m_compress_round.total <= 1 && m_compress_queue.empty();
     if (!c.error.empty()) {
-        if (!m_compress_round.stopped) m_compress_round.failed.push_back({c.app, c.error});
+        if (!m_compress_round.stopped) {
+            m_compress_round.failed.push_back({c.app, c.error});
+            m_compress_round.order.push_back(c.app);
+        }
         if (alone && !m_compress_round.stopped) {
             // one game alone: its error, as before
             OpenDialog(DialogKind::VaultError);
@@ -885,9 +890,11 @@ void App::FollowCompress(const Compressor::View& c) {
             m_dialog.from = c.error;
             m_dialog.text = m.cz_title;
             m_compress_round.failed.clear();
+            m_compress_round.order.clear();
         }
     } else {
         m_compress_round.done.push_back({c.app, c.saved});
+        m_compress_round.order.push_back(c.app);
         // in the history, as an install of its own
         HistoryEntry entry;
         entry.when = std::time(nullptr);
@@ -917,6 +924,34 @@ void App::FollowCompress(const Compressor::View& c) {
 
 // The summary of the round (3A): a green ring that draws itself, the total counting up, the covers
 // coming in one after another with what each one saved, how long it took, and what failed.
+namespace {
+// Up to `most` lines of `str` inside `w`, centred on `cx`, the first at `y`, one every `step`; the
+// last cut with … when it does not fit. Only measured when `color` is null. Returns how many.
+int CentredLines(NVGcontext* vg, float cx, float y, float w, float size, float step, const NVGcolor* color, const std::string& str, int most) {
+    if (str.empty()) return 0;
+    nvgFontFace(vg, "ui");
+    nvgFontSize(vg, size);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    NVGtextRow rows[8];
+    const int n = nvgTextBreakLines(vg, str.c_str(), nullptr, w, rows, 8);
+    const int shown = std::min(n, most);
+    for (int i = 0; color && i < shown; i++) {
+        std::string line(rows[i].start, rows[i].end);
+        if (i == shown - 1 && n > shown) {
+            // the rest, cut to fit
+            line.assign(rows[i].start, str.c_str() + str.size());
+            while (!line.empty() && ui::TextWidth(vg, size, (line + "\xE2\x80\xA6").c_str()) > w) {
+                line.pop_back();
+                while (!line.empty() && (u8(line.back()) & 0xC0) == 0x80) line.pop_back(); // whole characters
+            }
+            line += "\xE2\x80\xA6";
+        }
+        ui::Text(vg, cx, y + i * step, size, *color, line.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
+    return shown;
+}
+} // namespace
+
 void App::DrawCompressDone(NVGcontext* vg) {
     const Theme& t = m_theme;
     const auto& s = Tr();
@@ -924,15 +959,42 @@ void App::DrawCompressDone(NVGcontext* vg) {
     const CompressRound& r = m_compress_summary;
     const double since = m_time - m_compress_summary_at;
     const bool lively = ui::Lively();
+    const auto v = m_space ? m_space->Snapshot() : Space::View{};
     char text[300];
+    // every game of the round as it ended: those done and those that failed (B, 15/11)
+    struct Shown {
+        unsigned long long app = 0, saved = 0;
+        bool ok = false;
+    };
+    std::vector<Shown> games;
+    for (const auto app : r.order) {
+        const auto d = std::find_if(r.done.begin(), r.done.end(), [&](const auto& e) { return e.first == app; });
+        if (d != r.done.end()) games.push_back({app, d->second, true});
+        else if (std::any_of(r.failed.begin(), r.failed.end(), [&](const auto& e) { return e.first == app; })) games.push_back({app, 0, false});
+    }
+    const int done = int(r.done.size()), failed = int(r.failed.size()), count = int(games.size());
+    unsigned long long total = 0;
+    for (const auto& d : r.done) total += d.second;
+    // the one line in red: a game by its name, more by their count
+    std::string why;
+    if (failed == 1) {
+        std::snprintf(text, sizeof(text), m.cz_done_failed_fmt, CompressName(v, r.failed[0].first).c_str());
+        why = text;
+    } else if (failed > 1 && done == 0) {
+        why = m.cz_done_failed_all;
+    } else if (failed > 1) {
+        std::snprintf(text, sizeof(text), m.cz_done_failed_many_fmt, failed);
+        why = text;
+    }
+    const float w = 720, inner = w - 96, cs = 72;
+    const int why_lines = CentredLines(vg, 0, 0, inner, 15, 22, nullptr, why, 2);
+    const float h = 160 + (done ? 66.f : 8.f) + (count ? cs + 44 + 28.f : 0.f) + why_lines * 22.f + (why_lines ? 20.f : 0.f) + (r.stopped ? 26.f : 0.f) + 70;
     nvgBeginPath(vg);
     nvgRect(vg, 0, 0, kWidth, kHeight);
     nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.55f * ui::EaseOut(ui::Appear(m_compress_summary_at, 0.2f))));
     nvgFill(vg);
     AddHit(0, 0, kWidth, kHeight, HitKind::DialogBack);
-    const int lines = int(r.failed.size()) + (r.stopped ? 1 : 0);
-    const float w = 720, h = 420 + std::min(lines, 3) * 26.f - (r.done.empty() ? 110.f : 0.f);
-    const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
+    const float x = (kWidth - w) / 2, y = std::max(40.f, (kHeight - 56 - h) / 2);
     const float pop = ui::EaseOutBack(ui::Appear(m_compress_summary_at, 0.4f));
     nvgSave(vg);
     nvgTranslate(vg, x + w / 2, y + h / 2);
@@ -942,10 +1004,9 @@ void App::DrawCompressDone(NVGcontext* vg) {
     draw::Popup(vg, t, x, y, w, h, 20);
     AddHit(x, y, w, h, HitKind::Button);
     const float cx = x + w / 2;
-    unsigned long long total = 0;
-    for (const auto& d : r.done) total += d.second;
-    const NVGcolor tone = r.done.empty() ? t.err : t.ok;
-    // the ring, drawn round, then its tick
+    // green when something was compressed; the part that failed in grey (red is for the line only)
+    const NVGcolor tone = done ? t.ok : t.muted;
+    // the ring, drawn round (green, then grey for those that failed), then its sign
     {
         const float ry = y + 66, k = lively ? ui::EaseOut(float(std::clamp((since - 0.3) / 0.7, 0.0, 1.0))) : 1.f;
         NVGcolor halo = tone;
@@ -956,18 +1017,28 @@ void App::DrawCompressDone(NVGcontext* vg) {
         nvgCircle(vg, cx, ry, 70);
         nvgFillPaint(vg, nvgRadialGradient(vg, cx, ry, 20, 70, halo, clear));
         nvgFill(vg);
-        nvgBeginPath(vg);
-        nvgArc(vg, cx, ry, 32, -NVG_PI / 2, -NVG_PI / 2 + 2 * NVG_PI * std::max(0.001f, k), NVG_CW);
-        nvgStrokeColor(vg, tone);
-        nvgStrokeWidth(vg, 6);
-        nvgLineCap(vg, NVG_ROUND);
-        nvgStroke(vg);
+        const float sweep = 2 * NVG_PI * std::max(0.001f, k);
+        const auto arc = [&](float from, float span, NVGcolor c) {
+            nvgBeginPath(vg);
+            nvgArc(vg, cx, ry, 32, from, from + std::max(0.001f, span), NVG_CW);
+            nvgStrokeColor(vg, c);
+            nvgStrokeWidth(vg, 6);
+            nvgLineCap(vg, NVG_ROUND);
+            nvgStroke(vg);
+        };
+        if (done && failed) {
+            const float share = float(done) / float(done + failed), gap = 0.22f;
+            arc(-NVG_PI / 2 + gap / 2, sweep * share - gap, t.ok);
+            arc(-NVG_PI / 2 + sweep * share + gap / 2, sweep * (1 - share) - gap, t.muted);
+        } else {
+            arc(-NVG_PI / 2, sweep, tone);
+        }
         if (k >= 1) {
-            if (r.done.empty()) ui::Title(vg, cx, ry, 30, tone, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            if (!done) ui::Title(vg, cx, ry, 30, tone, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
             else ui::CheckMark(vg, cx, ry, 22 * (lively ? ui::EaseOutBack(ui::Appear(m_compress_summary_at + 1.0, 0.3f)) : 1.f), tone, 4.f);
         }
-        // a few sparks out of the ring
-        if (lively && !r.done.empty() && since > 1.0 && since < 1.9) {
+        // a few sparks out of the ring, when all went well
+        if (lively && done && !failed && !r.stopped && since > 1.0 && since < 1.9) {
             const float u = float((since - 1.0) / 0.9);
             for (int i = 0; i < 12; i++) {
                 const float a = float(i) / 12 * 2 * NVG_PI;
@@ -982,60 +1053,83 @@ void App::DrawCompressDone(NVGcontext* vg) {
         }
     }
     float cy = y + 134;
-    if (r.done.empty()) std::snprintf(text, sizeof(text), "%s", m.cz_done_none);
-    else if (r.done.size() == 1) std::snprintf(text, sizeof(text), "%s", m.cz_done_one);
-    else std::snprintf(text, sizeof(text), m.cz_done_many_fmt, int(r.done.size()));
+    if (!done) std::snprintf(text, sizeof(text), "%s", m.cz_done_none);
+    else if (failed) std::snprintf(text, sizeof(text), m.cz_done_part_fmt, done, done + failed);
+    else if (done == 1) std::snprintf(text, sizeof(text), "%s", m.cz_done_one);
+    else std::snprintf(text, sizeof(text), m.cz_done_many_fmt, done);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, x + 24, cy - 16, w - 48, 32);
     ui::Title(vg, cx, cy, 22, t.text, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgRestore(vg);
     cy += 26;
-    if (!r.done.empty()) {
+    if (done) {
         // the total, counting up
         const float k = lively ? ui::EaseOut(float(std::clamp((since - 0.9) / 1.3, 0.0, 1.0))) : 1.f;
         const std::string sum = "\xE2\x88\x92" + draw::Size((unsigned long long)(double(total) * k));
         ui::Title(vg, cx, cy + 26, 44, t.ok, sum.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         cy += 66;
-        // the covers, one after another, with what each saved (up to five)
-        const int n = std::min<int>(5, int(r.done.size()));
-        const float cs = 72, gap = 30, row = n * cs + (n - 1) * gap;
-        const auto v = m_space ? m_space->Snapshot() : Space::View{};
+    } else {
+        cy += 8;
+    }
+    if (count) {
+        // the covers, one after another, with what each saved; one that failed in grey, with a mark
+        // and "unchanged" (up to five)
+        const int n = std::min(5, count);
+        const float gap = 30, row = n * cs + (n - 1) * gap;
         for (int i = 0; i < n; i++) {
+            const Shown& g = games[size_t(i)];
             const float k2 = lively ? ui::EaseOutBack(ui::Appear(m_compress_summary_at + 1.4 + 0.18 * i, 0.4f)) : 1.f;
             const float gx = cx - row / 2 + i * (cs + gap);
-            const std::string name = CompressName(v, r.done[size_t(i)].first);
+            const std::string name = CompressName(v, g.app);
             nvgSave(vg);
             nvgGlobalAlpha(vg, std::min(1.f, pop * 1.4f) * std::clamp(k2 * 2, 0.f, 1.f));
             nvgTranslate(vg, 0, 20 * (1 - k2));
-            ui::Cover(vg, t, gx, cy, cs, PlaceholderColor(name), Initial(name).c_str(), nullptr, false, false, 10, CompressImage(r.done[size_t(i)].first));
-            const std::string saved = "\xE2\x88\x92" + draw::Size(r.done[size_t(i)].second);
-            ui::Text(vg, gx + cs / 2, cy + cs + 16, 14, t.ok, saved.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            ui::Cover(vg, t, gx, cy, cs, PlaceholderColor(name), Initial(name).c_str(), nullptr, false, false, 10, CompressImage(g.app));
+            if (g.ok) {
+                const std::string saved = "\xE2\x88\x92" + draw::Size(g.saved);
+                ui::Text(vg, gx + cs / 2, cy + cs + 16, 14, t.ok, saved.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            } else {
+                // dimmed to grey, and a dash in a ring at its corner
+                ui::FillRound(vg, gx, cy, cs, cs, 10, nvgRGBAf(0.06f, 0.07f, 0.09f, 0.62f));
+                const float bx = gx + cs - 4, by = cy + 4;
+                nvgBeginPath(vg);
+                nvgCircle(vg, bx, by, 12);
+                nvgFillColor(vg, t.panel);
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgCircle(vg, bx, by, 10);
+                nvgFillColor(vg, nvgRGBAf(0.23f, 0.26f, 0.32f, 1));
+                nvgFill(vg);
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, bx - 4.5f, by);
+                nvgLineTo(vg, bx + 4.5f, by);
+                nvgStrokeColor(vg, t.text);
+                nvgStrokeWidth(vg, 2.6f);
+                nvgLineCap(vg, NVG_ROUND);
+                nvgStroke(vg);
+                ui::Text(vg, gx + cs / 2, cy + cs + 16, 14, t.muted, m.cz_unchanged, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            }
             nvgRestore(vg);
         }
-        if (int(r.done.size()) > n) {
-            std::snprintf(text, sizeof(text), "+%d", int(r.done.size()) - n);
+        if (count > n) {
+            std::snprintf(text, sizeof(text), "+%d", count - n);
             ui::Text(vg, cx + row / 2 + 14, cy + cs / 2, 17, t.muted, text);
         }
         cy += cs + 44;
         std::snprintf(text, sizeof(text), m.cz_done_time_fmt, appui::Duration(r.started).c_str());
         ui::Text(vg, cx, cy, 15, t.muted, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         cy += 28;
-    } else {
-        cy += 10;
     }
-    // what could not be done, in red; a stop, as it is
-    const auto v = m_space ? m_space->Snapshot() : Space::View{};
-    for (int i = 0; i < int(r.failed.size()) && i < 3; i++) {
-        const ErrorText e = UnpackError(r.failed[size_t(i)].second);
-        std::snprintf(text, sizeof(text), m.cz_done_failed_fmt, CompressName(v, r.failed[size_t(i)].first).c_str(),
-                      (e.title.empty() ? e.what : e.title).c_str());
+    // what could not be done: one line in red, in at most two inside the panel; a stop, as it is
+    CentredLines(vg, cx, cy, inner, 15, 22, &t.err, why, 2);
+    cy += why_lines * 22.f;
+    if (r.stopped) {
         nvgSave(vg);
         nvgIntersectScissor(vg, x + 24, cy - 13, w - 48, 26);
-        ui::Text(vg, cx, cy, 15, t.err, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgRestore(vg);
-        cy += 26;
-    }
-    if (r.stopped) {
         ui::Text(vg, cx, cy, 15, t.orange, m.cz_done_stopped, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
     }
-    // the button, breathing
+    // the button, breathing, with room above it
     const float bw = std::max(160.f, ui::TextWidth(vg, 17, s.close) + 56), bh = 48;
     const float breath = lively ? 1 + 0.025f * float(std::sin(m_time * 4)) : 1.f;
     const float bx = cx - bw / 2, by = y + h - bh - 22;

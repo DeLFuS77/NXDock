@@ -371,6 +371,8 @@ private:
         double started = 0;     // when it began
         double game_at = 0;     // when the game at work began
         bool stopped = false;   // X: the rest of the queue is dropped
+        bool log_new = true;    // its first game empties compress.log, the others add to it
+        std::vector<unsigned long long> order; // the games as they ended, done or failed (the summary)
     };
     CompressRound m_compress_round;
     // what the summary shows once the round ends (3A)

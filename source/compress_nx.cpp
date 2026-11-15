@@ -36,6 +36,7 @@
 #include <memory>
 
 extern "C" void nxdock_log_open(const char* path);
+extern "C" void nxdock_log_append(const char* path);
 extern "C" void nxdock_log_close();
 
 namespace nxdock {
@@ -855,11 +856,16 @@ Result PutContent(NcmContentStorage& cs, const std::vector<u8>& bytes, NcmConten
 void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std::atomic<bool>& stop,
               const std::function<void(int, u64, u64)>& progress, std::string& error, u64& saved, NcmContentId& new_program) {
     const More& m = TrM();
-    const auto failed = [&](Result rc = 0) { error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d, rc); };
+    // every way out that fails writes where it failed first
+    const auto failed = [&](const char* step, Result rc = 0) {
+        log_write("[NXDock] merge %016llX failed: %s, 0x%X\n", (unsigned long long)app, step, rc);
+        error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d, rc);
+    };
     Opened o;
     mergegame::Merger merger;
     GameEstimate::Why why{};
     if (!OpenMerger(s, k, p, o, merger, why)) {
+        log_write("[NXDock] merge %016llX: could not be opened (why %d)\n", (unsigned long long)app, int(why));
         // a newer update over a merged game that needs its base game, which the library has not
         error = why == GameEstimate::Why::Update                  ? Packed(m.cz_base_t, m.cz_base_d)
                 : why == GameEstimate::Why::Key && !k.from_file ? Packed(m.cz_keys_t, m.cz_keys_d)
@@ -911,13 +917,14 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
         stream.reset();
         if (once) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
-        return failed(src);
+        return failed("packing the data level", src);
     }
     const u64 new_size = merger.NcaSize();
     g_meter.exact = new_size;
     if (new_size >= p.before) {
         stream.reset();
         if (once) ncmContentStorageDeletePlaceHolder(&s.cs, &ph);
+        log_write("[NXDock] %016llX: merge: it does not get smaller\n", (unsigned long long)app);
         error = Packed(m.cz_low_t, m.cz_low_d);
         return;
     }
@@ -963,7 +970,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
             log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
             pw.reset();
             drop_ph();
-            return failed(wrc);
+            return failed("writing around the data level", wrc);
         }
         const bool taken = R_SUCCEEDED(ncmContentStorageSetPlaceHolderSize(&s.cs, &ph, s64(new_size))) && R_SUCCEEDED(RegisterAs(s.cs, once_temp, ph));
         if (taken) {
@@ -974,7 +981,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
             if (!same || R_FAILED(rc = ncmContentStorageRevertToPlaceHolder(&s.cs, &ph, &once_temp, &final_id))) {
                 log_write("[NXDock] merge %016llX: the one pass did not read back right\n", (unsigned long long)app);
                 sphaira::ncm::Delete(&s.cs, &once_temp);
-                return failed(rc);
+                return failed("reading back the one pass", rc);
             }
         } else {
             // this console's storage does not take it so: written again in order
@@ -988,6 +995,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
     if (!once) {
         if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
             R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &p.patch_program, &ph, s64(new_size)))) {
+            log_write("[NXDock] %016llX: merge: no room for the placeholder, 0x%X\n", (unsigned long long)app, rc);
             error = Packed(m.cz_room_t, m.cz_room_d, rc);
             return;
         }
@@ -998,7 +1006,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         if (!ok || R_FAILED(wrc = w.Flush()) || w.At() != new_size) {
             log_write("[NXDock] merge %016llX: %s\n", (unsigned long long)app, what.c_str());
             drop_ph();
-            return failed(wrc);
+            return failed("writing in two passes", wrc);
         }
         w.Hash(hash);
     }
@@ -1038,7 +1046,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         if (stop) {
             std::remove(spare_tmp.c_str());
             drop_ph();
-            return failed();
+            return failed("stopped");
         }
         // its CNMT: the base's, with the version and the contents of the update
         progress(3, 0, 1);
@@ -1047,7 +1055,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         mergemeta::Cnmt bc, uc, mc;
         if (!ReadCnmt(s, k, p.base_meta, bmh, bmk, bc) || !ReadCnmt(s, k, p.patch_meta, umh, umk, uc)) {
             drop_ph();
-            return failed();
+            return failed("reading the CNMT of the base or the update");
         }
         mergemeta::Content prog;
         for (const auto& c : uc.contents) {
@@ -1059,7 +1067,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         std::vector<u8> mheader, msection;
         if (!mergemeta::MergedCnmt(bc, uc, prog, mc)) {
             drop_ph();
-            return failed();
+            return failed("merging the CNMT");
         }
         // no more of the system than the record of the update installed asks: an installer may
         // have lowered it so this console starts the game
@@ -1072,7 +1080,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         }
         if (!mergemeta::MetaNca(reinterpret_cast<const u8*>(&bmh), mc, Sha256, mheader, msection)) {
             drop_ph();
-            return failed();
+            return failed("making the meta NCA");
         }
         // the meta NCA: its section encrypted at 0xC00 with the key of the base's, its header with
         // the header key
@@ -1090,20 +1098,20 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         NcmPlaceHolderId mph{};
         if (R_FAILED(rc = PutContent(s.cs, meta_nca, new_meta, mph))) {
             drop_ph();
-            return failed(rc);
+            return failed("writing the meta NCA", rc);
         }
 
         // 2. both registered, next to the old contents
         if (R_FAILED(rc = RegisterAs(s.cs, new_program, ph))) {
             ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
             drop_ph();
-            return failed(rc);
+            return failed("registering the program", rc);
         }
         keep_ph = true;
         if (R_FAILED(rc = RegisterAs(s.cs, new_meta, mph))) {
             ncmContentStorageDeletePlaceHolder(&s.cs, &mph);
             sphaira::ncm::Delete(&s.cs, &new_program);
-            return failed(rc);
+            return failed("registering the meta", rc);
         }
         const auto remove_new = [&] {
             sphaira::ncm::Delete(&s.cs, &new_program);
@@ -1117,7 +1125,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         if (R_FAILED(rc = ncmContentMetaDatabaseGet(&s.db, &p.base, &base_size, old_base.data(), old_base.size())) ||
             R_FAILED(rc = ncmContentMetaDatabaseGet(&s.db, &p.patch, &patch_size, old_patch.data(), old_patch.size()))) {
             remove_new();
-            return failed(rc);
+            return failed("reading the records of the database", rc);
         }
         old_base.resize(size_t(base_size));
         old_patch.resize(size_t(patch_size));
@@ -1131,13 +1139,13 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         key.install_type = NcmContentInstallType_Full;
         if (R_FAILED(rc = ns::Initialize())) {
             remove_new();
-            return failed(rc);
+            return failed("starting ns", rc);
         }
         std::vector<ncm::ContentStorageRecord> old_records;
         if (R_FAILED(rc = ns::GetApplicationRecords(app, old_records))) {
             ns::Exit();
             remove_new();
-            return failed(rc);
+            return failed("reading the records of the game", rc);
         }
         const auto put_back = [&] {
             ncmContentMetaDatabaseRemove(&s.db, &key);
@@ -1171,7 +1179,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         if (!db_ok) {
             put_back();
             ns::Exit();
-            return failed(rc);
+            return failed("changing the database and the record", rc);
         }
         ns::SetLowestLaunchVersion(app, records);
         ns::InvalidateApplicationControlCache(app);
@@ -1182,7 +1190,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
             log_write("[NXDock] merge %016llX: the console could not read it, put back\n", (unsigned long long)app);
             put_back();
             ns::Exit();
-            return failed();
+            return failed("the console reading it");
         }
         if (!could) {
             // the console would not open it for NXDock: what the card kept is read back whole
@@ -1191,7 +1199,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
                 log_write("[NXDock] merge %016llX: the new copy did not read back right, put back\n", (unsigned long long)app);
                 put_back();
                 ns::Exit();
-                return failed();
+                return failed("reading back the new copy");
             }
         }
         ns::Exit();
@@ -1249,12 +1257,14 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     u8 raw[0xC00];
     nca::Header h;
     if (R_FAILED(rc = ncmContentStorageReadContentIdFile(&s.cs, raw, sizeof(raw), &g.program, 0)) || R_FAILED(rc = nca::DecryptHeader(raw, k, h))) {
+        log_write("[NXDock] %016llX: reading the program NCA header, 0x%X\n", (unsigned long long)g.key.id, rc);
         error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
         return;
     }
     bool already = false, sparse = false;
     const int r = RomfsSection(h, already, sparse);
     if (r < 0) {
+        log_write("[NXDock] %016llX: no RomFS section it can pack\n", (unsigned long long)g.key.id);
         error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
         return;
     }
@@ -1271,6 +1281,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     // the levels of a header that does not hold together are never used to place anything
     if (start > old_end || IvfcLevels(fh).empty() || data_at > old_end - start || virt > (u64(1) << 40) || DataLevel(fh).block_size < 9 ||
         DataLevel(fh).block_size > 24) {
+        log_write("[NXDock] %016llX: a RomFS header that does not hold together\n", (unsigned long long)g.key.id);
         error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
         return;
     }
@@ -1285,6 +1296,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     if (already) {
         if (!ReadOldTable(s.cs, g.program, key.key, fh, start + data_at, old, old_virt_end, work) ||
             lz4pack::ShareAtLevel(old, 0) < kRepackShare) {
+            log_write("[NXDock] %016llX: already compressed: its table not read or not worth it\n", (unsigned long long)g.key.id);
             error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
             return;
         }
@@ -1350,6 +1362,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     std::vector<lz4pack::IvfcLevel> lv = IvfcLevels(fh);
     if (lv.empty() || data_at > old_end - start) {
         drop_once();
+        log_write("[NXDock] %016llX: the hash levels of the RomFS\n", (unsigned long long)g.key.id);
         error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
         return;
     }
@@ -1358,12 +1371,14 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     u8 master[32];
     if (lv.back().offset != data_at || !lz4pack::BuildIvfc(data_hashes, lv, Sha256, levels, master)) {
         drop_once();
+        log_write("[NXDock] %016llX: building the hash levels\n", (unsigned long long)g.key.id);
         error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
         return;
     }
     const u64 new_end = start + ((data_at + stored + 0x3FFF) & ~u64(0x3FFF));
     if (new_end >= old_end) {
         drop_once();
+        log_write("[NXDock] %016llX: it does not get smaller\n", (unsigned long long)g.key.id);
         error = Packed(m.cz_low_t, m.cz_low_d);
         return;
     }
@@ -1524,6 +1539,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
         // 4B. two passes: written in order into a placeholder of its size, encrypted and hashed
         if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
             R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &g.program, &ph, s64(new_size)))) {
+            log_write("[NXDock] %016llX: no room for the placeholder, 0x%X\n", (unsigned long long)g.key.id, rc);
             error = Packed(m.cz_room_t, m.cz_room_d, rc);
             return;
         }
@@ -1672,6 +1688,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     };
     if (g.has_meta && R_FAILED(rc = RegisterAs(s.cs, new_meta, mph))) {
         undo();
+        log_write("[NXDock] %016llX: registering the meta, 0x%X\n", (unsigned long long)g.key.id, rc);
         error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
         return;
     }
@@ -1679,6 +1696,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     u64 rec_size = 0;
     if (R_FAILED(rc = ncmContentMetaDatabaseGet(&s.db, &g.key, &rec_size, rec.data(), rec.size())) || rec_size < 8) {
         undo();
+        log_write("[NXDock] %016llX: reading the record of the database, 0x%X\n", (unsigned long long)g.key.id, rc);
         error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
         return;
     }
@@ -1702,6 +1720,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     if (!program_set || R_FAILED(rc = ncmContentMetaDatabaseSet(&s.db, &g.key, rec.data(), rec_size)) ||
         R_FAILED(rc = ncmContentMetaDatabaseCommit(&s.db))) {
         undo();
+        log_write("[NXDock] %016llX: writing the record of the database, 0x%X\n", (unsigned long long)g.key.id, rc);
         error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
         return;
     }
@@ -1907,8 +1926,10 @@ bool Compressor::StartAnalysis(std::vector<unsigned long long> apps) {
     m_stop = false;
     m_thread = std::thread([this, apps] {
         WorkThread(-1); // below the thread that draws
-        // what each game is found to be, and why, in sdmc:/switch/NXDock/compress.log
-        nxdock_log_open("sdmc:/switch/NXDock/compress.log");
+        // what each game is found to be, and why, added to sdmc:/switch/NXDock/compress.log (a
+        // compression that failed before keeps its lines)
+        nxdock_log_append("sdmc:/switch/NXDock/compress.log");
+        log_write("=== the check of %zu games ===\n", apps.size());
         const auto note = [](unsigned long long app, const GameEstimate& e) {
             static const char* states[] = {"pending", "possible", "worth", "low", "already compressed", "compressed by NXDock", "cannot"};
             static const char* whys[] = {"", "not found", "sparse", "no key (ticket)", "could not be read", "update", "merged when compressed: undo first",
@@ -2065,11 +2086,15 @@ std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, c
     saved = 0;
     keys::Keys k;
     Result rc = splCryptoInitialize();
-    if (R_FAILED(rc)) return Packed(m.cz_failed_t, m.cz_failed_d, rc);
+    if (R_FAILED(rc)) {
+        log_write("[NXDock] %016llX: merge: the crypto service, 0x%X\n", (unsigned long long)app, rc);
+        return Packed(m.cz_failed_t, m.cz_failed_d, rc);
+    }
     rc = keys::parse_keys(k, true);
     if (R_SUCCEEDED(rc)) rc = ncmInitialize();
     if (R_FAILED(rc)) {
         splCryptoExit();
+        log_write("[NXDock] %016llX: merge: the keys or ncm, 0x%X\n", (unsigned long long)app, rc);
         return Packed(m.cz_failed_t, m.cz_failed_d, rc);
     }
     std::lock_guard titles(TitlesLock());
@@ -2079,6 +2104,7 @@ std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, c
     if (IsMergedGame(app) && !HasRecipe(app)) {
         ncmExit();
         splCryptoExit();
+        log_write("[NXDock] %016llX: merge: merged from a compressed game, install it again first\n", (unsigned long long)app);
         return Packed(m.cz_redo_t, m.cz_redo_d);
     }
     for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
@@ -2105,7 +2131,7 @@ std::string MergeUpdate(unsigned long long app, const std::atomic<bool>& stop, c
     return error;
 }
 
-bool Compressor::StartCompress(unsigned long long app) {
+bool Compressor::StartCompress(unsigned long long app, const std::string& name, bool new_log) {
     {
         std::lock_guard lock(m_mutex);
         if (m_view.running || m_view.analyzing) return false;
@@ -2130,13 +2156,17 @@ bool Compressor::StartCompress(unsigned long long app) {
     }
     Join();
     m_stop = false;
-    m_thread = std::thread([this, app, dlcs] {
+    m_thread = std::thread([this, app, dlcs, name, new_log] {
         WorkThread(-1); // below the thread that draws, so the screen stays smooth
         net::Boost awake; // the console stays awake while a game is written again
         // the queue does not install nor remove while a game is written again
         std::lock_guard titles(TitlesLock());
-        // what it does goes to sdmc:/switch/NXDock/compress.log, for when something goes wrong
-        nxdock_log_open("sdmc:/switch/NXDock/compress.log");
+        // what it does goes to sdmc:/switch/NXDock/compress.log, for when something goes wrong: one
+        // log for the whole round (emptied at its first game), each game under its title
+        if (new_log) nxdock_log_open("sdmc:/switch/NXDock/compress.log");
+        else nxdock_log_append("sdmc:/switch/NXDock/compress.log");
+        log_write("=== %016llX %s ===\n", (unsigned long long)app, name.c_str());
+        log_write("[NXDock] %s\n", NXDOCK_VERSION);
         const More& m = TrM();
         std::string error;
         u64 saved = 0;
@@ -2152,6 +2182,7 @@ bool Compressor::StartCompress(unsigned long long app) {
             if (R_SUCCEEDED(rc)) rc = keys::parse_keys(k, true);
             if (R_SUCCEEDED(rc)) rc = ncmInitialize();
             if (R_FAILED(rc)) {
+                log_write("[NXDock] %016llX: the keys or ncm, 0x%X\n", (unsigned long long)app, rc);
                 error = Packed(m.cz_failed_t, m.cz_failed_d, rc);
                 return;
             }
@@ -2176,8 +2207,16 @@ bool Compressor::StartCompress(unsigned long long app) {
                 });
                 return;
             }
+            log_write("[NXDock] %016llX: not found installed\n", (unsigned long long)app);
             error = Packed(m.cz_unsupported_t, m.cz_unsupported_d);
         }();
+        if (error.empty()) {
+            log_write("[NXDock] %016llX: done, %llu MB saved\n", (unsigned long long)app, (unsigned long long)(saved >> 20));
+        } else {
+            const ErrorText e = UnpackError(error);
+            log_write("[NXDock] %016llX: not compressed: %s%s%s\n", (unsigned long long)app, e.title.c_str(), e.code.empty() ? "" : " ",
+                      e.code.c_str());
+        }
         ncmExit();
         splCryptoExit();
         nxdock_log_close();
