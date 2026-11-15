@@ -4,6 +4,7 @@
 // The text of each dialog, by area: its title, body, rows, note and buttons. DrawDialog
 // (app_dialog.cpp) draws them all in the same card.
 #include "app_shared.hpp"
+#include "dialog_fit.hpp"
 
 namespace nxdock {
 
@@ -428,11 +429,10 @@ App::Fill App::DialogConsoleText(DialogContent& dc) {
                             updates += c.type == NcmContentMetaType_Patch;
                             dlc += c.type == NcmContentMetaType_AddOnContent;
                         }
+                        // "1 update, 2 DLC": the singular for one, nothing for none
                         std::string what = a.name;
-                        if (updates || dlc) {
-                            std::snprintf(text, sizeof(text), m.ic_with_fmt, updates, dlc);
-                            what += std::string(" · ") + text;
-                        }
+                        const std::string with = CountsText(updates, dlc, m.ic_upd_one, m.ic_upd_fmt, m.ic_dlc_one, m.ic_dlc_fmt, m.ic_list_sep);
+                        if (!with.empty()) what += " \xC2\xB7 " + with;
                         dc.size += a.Bytes();
                         dc.lines.push_back({what, "", SizeText(a.Bytes()), t.text});
                     }

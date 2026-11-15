@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- In the console: deleting many games at once, the question fits on the screen (fewer games listed, "and N more"
+  grows) and its long lines end in "…". While it deletes, a bar says which game, of how many, and when it copies its
+  saves; each game leaves the list as soon as it is gone. "1 update", not "1 updates", and no "0 DLC".
+
 ## 0.9.0-beta.6
 
 These changes have not been tested in depth yet, so some bugs may remain.

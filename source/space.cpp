@@ -693,6 +693,7 @@ void Space::ScanNow() {
     std::sort(apps.begin(), apps.end(), [](const InstalledApp& a, const InstalledApp& b) { return a.name < b.name; });
     std::lock_guard lock(m_mutex);
     m_view.apps = std::move(apps);
+    m_view.removed.clear(); // read again: those gone are not there any more
     m_view.leftovers = left;
     m_view.storage = st;
     m_view.scanned = true;
@@ -820,26 +821,45 @@ bool Space::StartRemove(unsigned long long app, std::vector<InstalledApp::Conten
 bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games,
                         std::function<std::string(unsigned long long)> before, std::function<void(unsigned long long)> after) {
     if (Busy() || games.empty()) return false;
+    // the progress counts each content, and the saves of each game copied first as one step more
     u64 total = 0;
     for (auto& [app, items] : games) {
         // the updates and the DLC before the game: the record of the game goes with the last of it
         std::stable_sort(items.begin(), items.end(), [](const InstalledApp::Content& a, const InstalledApp::Content& b) {
             return (a.type == NcmContentMetaType_Application) < (b.type == NcmContentMetaType_Application);
         });
-        total += items.size();
+        const bool whole = std::any_of(items.begin(), items.end(), [](const InstalledApp::Content& c) { return c.type == NcmContentMetaType_Application; });
+        total += items.size() + (whole && before ? 1 : 0);
     }
     Run(Task::Remove, [this, games, total, before, after]() -> std::string {
         const More& m = TrM();
         std::lock_guard titles(TitlesLock());
         Result rc = 0;
         u64 i = 0;
+        int index = 0;
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.removed.clear();
+            m_view.remove_count = int(games.size());
+        }
         for (const auto& [app, items] : games) {
             const bool whole = std::any_of(items.begin(), items.end(),
                                            [](const InstalledApp::Content& c) { return c.type == NcmContentMetaType_Application; });
+            {
+                // which game, of how many, and whether its saves are being copied: for the screen
+                std::lock_guard lock(m_mutex);
+                m_view.remove_app = app;
+                m_view.remove_index = ++index;
+                m_view.remove_saving = whole && before;
+            }
             if (whole && before) {
                 // its saves first; nothing of this game goes when they could not be copied
+                Progress(i, total);
                 const std::string error = before(app);
                 if (!error.empty()) return error;
+                i++;
+                std::lock_guard lock(m_mutex);
+                m_view.remove_saving = false;
             }
             bool base = false;
             for (const auto& c : items) {
@@ -858,7 +878,13 @@ bool Space::StartRemove(std::vector<std::pair<unsigned long long, std::vector<In
             if (R_FAILED(rc)) break;
             // then its mods and its tickets, when asked (7A)
             if (base && after) after(app);
+            // gone: out of the list now, not at the end of all
+            if (base) {
+                std::lock_guard lock(m_mutex);
+                m_view.removed.push_back(app);
+            }
         }
+        Progress(total, total);
         if (R_FAILED(rc)) {
             if (rc == Result_GameRunning) return Packed(m.ic_rm_running_t, m.ic_rm_running_d, rc);
             return Packed(m.ic_rm_failed_t, m.ic_rm_failed_d, rc);

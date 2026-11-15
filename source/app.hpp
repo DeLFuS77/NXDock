@@ -575,6 +575,7 @@ private:
     void DrawConsole(NVGcontext* vg, const Space::View& v);
     void DrawConsolePage(NVGcontext* vg, const Space::View& v);
     void DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library);
+    void DrawRemoveProgress(NVGcontext* vg, const Space::View& v);
     void InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s);
     // Where it installs, in large: the SD card and the internal memory side by side, each with its
     // free space; `kind` is the touch that chooses one (Dest for a game, FilesDest for the files).
