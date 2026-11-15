@@ -31,6 +31,7 @@
 #include <ctime>
 
 extern "C" void nxdock_log_open(const char* path);
+extern "C" void nxdock_log_append(const char* path);
 extern "C" void nxdock_log_close();
 extern "C" void nxdock_log_memory(const char* when);
 
@@ -1055,8 +1056,10 @@ void InstallQueue::MergeAfter(InstallJob& job, const std::vector<NcmContentMetaK
         m_merge_stop = false;
     }
     log_write("[NXDock] the update of a merged game: merging %016llX\n", (unsigned long long)app);
-    // what the merge does goes to its own log (the one of the install is closed by now)
-    nxdock_log_open("sdmc:/switch/NXDock/compress.log");
+    // what the merge does goes to the log of Compress games, added to it (the one of the install is
+    // closed by now; a compression waits for this job, and its lines stay)
+    nxdock_log_append("sdmc:/switch/NXDock/compress.log");
+    log_write("=== %016llX merged with its update, after installing it ===\n", (unsigned long long)app);
     u64 saved = 0;
     const std::string error = MergeUpdate(app, m_merge_stop, [this](int phase, uint64_t done, uint64_t total) {
         std::lock_guard lock(m_mutex);

@@ -244,7 +244,9 @@ void App::CompressStartNext() {
     const auto p = m_compress->Progress();
     if (p.running || p.analyzing || (m_queue && m_queue->Busy())) return;
     const unsigned long long app = m_compress_queue.front();
-    if (!m_compress->StartCompress(app)) return;
+    const std::string name = m_space ? CompressName(m_space->Snapshot(), app) : std::string{};
+    if (!m_compress->StartCompress(app, name, m_compress_round.log_new)) return;
+    m_compress_round.log_new = false;
     m_compress_queue.erase(m_compress_queue.begin());
     m_compress_round.game_at = m_time;
     m_compress_samples.clear();

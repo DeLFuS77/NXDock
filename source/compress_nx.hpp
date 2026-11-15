@@ -115,7 +115,9 @@ public:
     // What each game would save, on a thread; games already known are not analysed again.
     bool StartAnalysis(std::vector<unsigned long long> apps);
     // One game, on a thread; false while something else runs.
-    bool StartCompress(unsigned long long app);
+    // name: for the title of its lines in compress.log; new_log: the first game of a round empties
+    // the log, the others add to it
+    bool StartCompress(unsigned long long app, const std::string& name = {}, bool new_log = true);
     void Stop();
     View Snapshot();
     // The same without the list of games: cheap, for every frame.
