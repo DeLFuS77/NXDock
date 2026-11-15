@@ -806,6 +806,7 @@ private:
     std::vector<HistoryEntry> m_console_done;             // what goes in the history when it is done
     std::vector<unsigned long long> m_console_done_ids;   // several games: the game of each entry above
     bool m_console_rm_stop = false;                       // Cancel asked: it stops before the next game
+    std::string m_console_rm_stop_name;                   // the game it was at then, the last to go
     std::string m_console_done_text;                      // the green notice then
     void AskConsoleRemoveMany(const Space::View& v);
     void AskConsoleRemoveMarked();

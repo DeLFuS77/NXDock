@@ -363,6 +363,11 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& raw) {
 void App::StopRemove() {
     if (!m_space || m_console_rm_stop) return;
     m_console_rm_stop = true;
+    m_console_rm_stop_name.clear();
+    const auto v = m_space->Snapshot();
+    for (const auto& a : v.apps) {
+        if (a.app_id == v.remove_app) m_console_rm_stop_name = a.name;
+    }
     m_space->Cancel();
 }
 
@@ -377,7 +382,7 @@ void App::DrawRemoveProgress(NVGcontext* vg, const Space::View& v) {
         if (a.app_id == v.remove_app) name = a.name;
     }
     char text[300];
-    if (m_console_rm_stop) std::snprintf(text, sizeof(text), m.ic_rm_stopping_fmt, name.c_str());
+    if (m_console_rm_stop) std::snprintf(text, sizeof(text), m.ic_rm_stopping_fmt, m_console_rm_stop_name.c_str());
     else if (v.remove_saving) std::snprintf(text, sizeof(text), m.ic_rm_saving_fmt, name.c_str());
     else std::snprintf(text, sizeof(text), m.ic_rm_progress_fmt, name.c_str(), v.remove_index, v.remove_count);
     const float w = 760, h = 70, x = (kWidth - w) / 2, y = kHeight - 56 - h - 14;
@@ -840,11 +845,6 @@ void App::AskConsoleRemoveMany(const Space::View& v) {
 void App::UpdateConsole(u64 down, u64 held) {
     if (!m_space) return;
     const auto all = m_space->Snapshot();
-    // while several games are taken off, B stops before the next one
-    if (all.task == Space::Task::Remove && all.remove_count > 1 && (down & HidNpadButton_B)) {
-        StopRemove();
-        return;
-    }
     if (!m_console_app) {
         // the filter of what is missing (6A), the size and deleting what is marked are in the menu
         // of + (1A, 14/11)
