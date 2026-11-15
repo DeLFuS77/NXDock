@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Compress games: mark one, several or all games (Y, a tap on the box, or the + menu) and compress them in a queue,
+  with one question for all. More can be added while it works, and it goes on when you leave the screen.
+- Compress games: while it works, a card with the cover, the share done, the speed, the time left, the steps, the size
+  before and after, and what comes next. At the end, a summary of what each game saved.
+- Compress games: Y marks, as in the other lists; showing every game moved to the + menu.
+
 ## 0.9.0-beta.4
 
 These changes have not been tested in depth yet, so some bugs may remain.
