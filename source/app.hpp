@@ -576,6 +576,10 @@ private:
     void DrawConsolePage(NVGcontext* vg, const Space::View& v);
     void DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library);
     void DrawRemoveProgress(NVGcontext* vg, const Space::View& v);
+    // a shortcut of homebrew on the HOME menu, not a game (shortcut_filter.hpp)
+    static bool IsShortcut(const InstalledApp& a);
+    // what In the console lists: the games, and the shortcuts of homebrew only when asked in +
+    Space::View ConsoleApps(const Space::View& v) const;
     void StopRemove();
     void InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s);
     // Where it installs, in large: the SD card and the internal memory side by side, each with its

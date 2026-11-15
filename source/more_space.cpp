@@ -156,6 +156,7 @@ void App::OpenPicker(int kind) {
     for (int i = 0; i < int(v.apps.size()); i++) {
         const auto& a = v.apps[size_t(i)];
         if (a.archived) continue;
+        if (!m_ui.show_shortcuts && IsShortcut(a)) continue; // games only, as In the console
         if (kind == 2) {
             for (int c = 0; c < int(a.contents.size()); c++) m_pick_rows.push_back({i, c});
         } else {

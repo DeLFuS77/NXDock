@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DeLFuS77
+#include "shortcut_filter.hpp"
 #include "space.hpp"
 #include "compress_nx.hpp"
 
@@ -691,6 +692,23 @@ void Space::ScanNow() {
         fsDeviceOperatorClose(&op);
     }
     std::sort(apps.begin(), apps.end(), [](const InstalledApp& a, const InstalledApp& b) { return a.name < b.name; });
+    // the shortcuts of homebrew In the console hides, and why, to check against the console's list
+    if (FILE* f = std::fopen("sdmc:/switch/NXDock/shortcuts.log", "w")) {
+        for (const auto& a : apps) {
+            unsigned long long program = 0;
+            bool update = false, dlc = false;
+            for (const auto& c : a.contents) {
+                if (c.type == NcmContentMetaType_Application) program += c.bytes;
+                update = update || c.type == NcmContentMetaType_Patch;
+                dlc = dlc || c.type == NcmContentMetaType_AddOnContent;
+            }
+            const ShortcutSign sign = ShortcutOf(a.app_id, program, update, dlc);
+            if (sign != ShortcutSign::None) {
+                std::fprintf(f, "%016llX %s: hidden, %s (program %llu bytes)\n", a.app_id, a.name.c_str(), ShortcutWhy(sign), program);
+            }
+        }
+        std::fclose(f);
+    }
     std::lock_guard lock(m_mutex);
     m_view.apps = std::move(apps);
     m_view.removed.clear(); // read again: those gone are not there any more

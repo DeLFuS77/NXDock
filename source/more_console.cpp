@@ -5,6 +5,7 @@
 // those not in the library (installed with DBI, from the eShop or a game card), each with its icon
 // of the console; and the page of a game with what it has (the game, its update, each DLC, told
 // apart), where what goes is marked and taken off after a question. The saves are never touched.
+#include "shortcut_filter.hpp"
 #include "app.hpp"
 
 #include "console_order.hpp"
@@ -187,18 +188,19 @@ void App::ReadConsole() {
     if (m_console_scanned_for != version && !m_space->Busy() && m_space->StartScan()) m_console_scanned_for = version;
 }
 
-void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
+void App::DrawConsole(NVGcontext* vg, const Space::View& raw) {
     const Theme& t = m_theme;
     const auto& s = Tr();
     const More& m = TrM();
     const Tools& tt = TrT();
     FollowSpace();
-    FollowMissing(all);
+    FollowMissing(raw);
     if (m_console_app) {
-        DrawConsolePage(vg, all);
+        DrawConsolePage(vg, raw);
         return;
     }
-    const Space::View v = ConsoleView(all);
+    const Space::View v = ConsoleView(raw);
+    const Space::View all = ConsoleApps(raw); // the counts of the filters, of what is listed
     if (!v.scanned) {
         ui::Spinner(vg, kWidth / 2, 320, 14, t.work, m_time);
         ui::Text(vg, kWidth / 2, 366, 18, t.muted, m.ic_reading, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -1201,7 +1203,27 @@ void App::FollowMissing(const Space::View& v) {
     }
 }
 
-Space::View App::ConsoleView(const Space::View& in) {
+bool App::IsShortcut(const InstalledApp& a) {
+    unsigned long long program = 0;
+    bool update = false, dlc = false;
+    for (const auto& c : a.contents) {
+        if (c.type == NcmContentMetaType_Application) program += c.bytes;
+        update = update || c.type == NcmContentMetaType_Patch;
+        dlc = dlc || c.type == NcmContentMetaType_AddOnContent;
+    }
+    return ShortcutOf(a.app_id, program, update, dlc) != ShortcutSign::None;
+}
+
+Space::View App::ConsoleApps(const Space::View& v) const {
+    if (m_ui.show_shortcuts) return v;
+    Space::View out = v;
+    std::erase_if(out.apps, [](const InstalledApp& a) { return IsShortcut(a); });
+    return out;
+}
+
+Space::View App::ConsoleView(const Space::View& raw) {
+    // the shortcuts of homebrew out, unless asked for in +: nothing hidden is marked nor deleted
+    const Space::View in = ConsoleApps(raw);
     // the games taken off so far, out of the list at once, not at the end of all
     Space::View trimmed;
     const Space::View* from = &in;
