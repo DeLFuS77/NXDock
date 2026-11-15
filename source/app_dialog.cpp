@@ -3,10 +3,25 @@
 //
 // The dialogs over any screen: drawn, moved through and confirmed.
 #include "app_shared.hpp"
+#include "dialog_fit.hpp"
 
 namespace nxdock {
 
 using namespace appui;
+
+namespace {
+// The text cut with an ellipsis to fit `w`, on a whole character; as it is when it fits.
+std::string Fitted(NVGcontext* vg, float size, std::string text, float w) {
+    if (ui::TextWidth(vg, size, text.c_str()) <= w) return text;
+    const std::string dots = "\xE2\x80\xA6";
+    while (!text.empty() && ui::TextWidth(vg, size, (text + dots).c_str()) > w) {
+        size_t cut = text.size() - 1;
+        while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) cut--;
+        text.erase(cut);
+    }
+    return text + dots;
+}
+} // namespace
 
 void App::DrawDialog(NVGcontext* vg) {
     if (m_dialog.kind == DialogKind::Usb3) {
@@ -71,17 +86,23 @@ void App::DrawDialog(NVGcontext* vg) {
     // the layout, from the top
     const float w = 740, pad = 32, iw = w - 2 * pad;
     const float tick_h = (tick ? 84.f + 14 : 0.f) + (tick2 ? 84.f + 14 : 0.f);
-    const int shown = std::min<int>(int(lines.size()), m_dialog.kind == DialogKind::HistoryInfo ? 8 : 5);
-    const bool more = int(lines.size()) > shown;
+    const int cap = std::min<int>(int(lines.size()), m_dialog.kind == DialogKind::HistoryInfo ? 8 : 5);
     // rows a finger chooses are 48 px high; the others 40
     const float lp = std::any_of(lines.begin(), lines.end(), [](const Line& l) { return l.hit >= 0; }) ? 48.f : 40.f;
-    float h = pad + 40;
     const float body_h = body.empty() ? 0 : BoxHeight(vg, iw, 17, body.c_str()) + 16;
     const float note_h = note.empty() ? 0 : BoxHeight(vg, iw, 15, note.c_str()) + 14;
-    const float list_h = lines.empty() ? 0 : shown * lp + (more ? 30 : 0) + 12 + 16;
     const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
-    h += body_h + list_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + tick_h + 60 + pad - 8;
-    const float x = (kWidth - w) / 2, y = std::max(80.f, (kHeight - 56 - h) / 2);
+    const float rest = pad + 40 + body_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + tick_h + 60 + pad - 8;
+    // as many rows as fit with the buttons on the screen: fewer rows, and "and N more" grows
+    const float room = kHeight - 56 - 2 * 24;
+    const int shown = lines.empty() ? 0 : RowsThatFit(int(lines.size()), cap, rest + 12 + 16, lp, 30, room);
+    const bool more = int(lines.size()) > shown;
+    const float list_h = lines.empty() ? 0 : shown * lp + (more ? 30 : 0) + 12 + 16;
+    const float h = rest + list_h;
+    const float x = (kWidth - w) / 2;
+    // in the middle, below the top bar; a tall one higher, its buttons over the hint bar
+    float y = (kHeight - 56 - h) / 2;
+    if (y < 80) y = std::max(24.f, std::min(80.f, kHeight - 56 - 24 - h));
     // it grows out of the middle with a soft spring
     const float pop = ui::EaseOutBack(ui::Appear(m_dialog_at, 0.32f));
     nvgSave(vg);
@@ -98,16 +119,7 @@ void App::DrawDialog(NVGcontext* vg) {
     AddHit(x, y, w, h, HitKind::Button);
 
     float cy = y + pad;
-    if (ui::TextWidth(vg, 26, title.c_str()) > iw) {
-        // cut with an ellipsis, on a whole character
-        const std::string dots = "\xE2\x80\xA6";
-        while (!title.empty() && ui::TextWidth(vg, 26, (title + dots).c_str()) > iw) {
-            size_t cut = title.size() - 1;
-            while (cut > 0 && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80) cut--;
-            title.erase(cut);
-        }
-        title += dots;
-    }
+    title = Fitted(vg, 26, title, iw); // cut with an ellipsis, on a whole character
     nvgSave(vg);
     nvgScissor(vg, x + pad, cy - 4, iw, 44);
     ui::Text(vg, x + pad, cy + 16, 26, t.text, title.c_str());
@@ -162,9 +174,13 @@ void App::DrawDialog(NVGcontext* vg) {
                 draw::TickBox(vg, t, tx, ly, l.tick > 0, "dialog-tick:" + std::to_string(l.hit));
                 tx += 36;
             }
+            // a line too long ends in an ellipsis, before its tag and what is on its right
+            const float tag_w = l.tag.empty() ? 0.f : ui::TextWidth(vg, 13, l.tag.c_str()) + 16 + 12;
+            const float room_w = std::max(40.f, x + pad + iw - 16 - rw - 16 - tag_w - tx);
+            const std::string shown_text = Fitted(vg, 17, l.text, room_w);
             nvgSave(vg);
-            nvgScissor(vg, tx, ly - lp / 2, iw - 32 - rw - 140, lp);
-            tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, l.text.c_str());
+            nvgScissor(vg, tx, ly - lp / 2, room_w + 4, lp);
+            tx = ui::Text(vg, tx, ly, 17, m_dialog.kind == DialogKind::HistoryInfo ? t.muted : t.text, shown_text.c_str());
             const bool colored = m_dialog.kind == DialogKind::HistoryInfo || m_dialog.kind == DialogKind::Verify ||
                                  m_dialog.kind == DialogKind::PreCheck || m_dialog.kind == DialogKind::TicketsDelete;
             nvgRestore(vg);
@@ -271,7 +287,7 @@ void App::DrawDialog(NVGcontext* vg) {
         edge.a = 0.6f;
         ui::StrokeRound(vg, x + pad + 1, cy + 1, iw - 2, th - 2, 14, on ? edge : t.line, 2);
         draw::TickBox(vg, t, x + pad + 22, cy + th / 2, on, "remove-extra");
-        ui::Text(vg, x + pad + 62, cy + th / 2 - 13, 18, t.text, m.rx_title);
+        ui::Text(vg, x + pad + 62, cy + th / 2 - 13, 18, t.text, m_dialog.ids.size() > 1 ? m.rx_title_many : m.rx_title);
         // what was found: "Mods: 2 folders · common ticket"
         std::string found;
         char text[96];

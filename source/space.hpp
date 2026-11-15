@@ -117,6 +117,12 @@ public:
         unsigned long long card_bytes = 0;
         int tickets_all = -1; // every ticket of the console, at the last scan (6A)
         int tickets_done = 0, tickets_kept = 0; // the last Tickets task: deleted, and kept as their copy failed
+        // a Remove task: the game at work (its saves being copied, or its contents going), which of
+        // how many, and the games already gone (out of the list at once, until the next scan)
+        unsigned long long remove_app = 0;
+        int remove_index = 0, remove_count = 0;
+        bool remove_saving = false;
+        std::vector<unsigned long long> removed;
     };
 
     ~Space();

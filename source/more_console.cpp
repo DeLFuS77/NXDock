@@ -353,7 +353,36 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& all) {
     char left[160] = "";
     PickedText(v, left, sizeof(left));
     DrawListLetter(vg, kWidth / 2, 360);
+    DrawRemoveProgress(vg, v);
     ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
+}
+
+// While games are taken off: which one, of how many, copying its saves or deleting it, over the
+// hint bar, where it is seen.
+void App::DrawRemoveProgress(NVGcontext* vg, const Space::View& v) {
+    if (v.task != Space::Task::Remove || v.remove_count <= 0) return;
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    std::string name;
+    for (const auto& a : v.apps) {
+        if (a.app_id == v.remove_app) name = a.name;
+    }
+    char text[300];
+    if (v.remove_saving) std::snprintf(text, sizeof(text), m.ic_rm_saving_fmt, name.c_str());
+    else std::snprintf(text, sizeof(text), m.ic_rm_progress_fmt, name.c_str(), v.remove_index, v.remove_count);
+    const float w = 720, h = 70, x = (kWidth - w) / 2, y = kHeight - 56 - h - 14;
+    const float in = ui::EaseOut(ui::Appear(m_console_list_at, 0.3f));
+    nvgSave(vg);
+    nvgGlobalAlpha(vg, in);
+    draw::Popup(vg, t, x, y, w, h, 16);
+    ui::Spinner(vg, x + 32, y + 26, 9, t.work, m_time);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, x + 52, y + 8, w - 72, 36);
+    ui::Text(vg, x + 52, y + 26, 17, t.text, text);
+    nvgRestore(vg);
+    const float frac = v.total ? float(double(v.done) / double(v.total)) : 0.f;
+    ui::Progress(vg, t, x + 20, y + 50, w - 40, 8, frac, t.work, m_time, true);
+    nvgRestore(vg);
 }
 
 // Medium (six in a row) or large covers (four in a row, with the version and the size).
@@ -443,6 +472,7 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
     nvgRestore(vg);
     char left[160] = "";
     PickedText(v, left, sizeof(left));
+    DrawRemoveProgress(vg, v);
     ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
 }
 
@@ -1143,7 +1173,16 @@ void App::FollowMissing(const Space::View& v) {
     }
 }
 
-Space::View App::ConsoleView(const Space::View& v) {
+Space::View App::ConsoleView(const Space::View& in) {
+    // the games taken off so far, out of the list at once, not at the end of all
+    Space::View trimmed;
+    const Space::View* from = &in;
+    if (!in.removed.empty()) {
+        trimmed = in;
+        std::erase_if(trimmed.apps, [&](const InstalledApp& a) { return std::find(in.removed.begin(), in.removed.end(), a.app_id) != in.removed.end(); });
+        from = &trimmed;
+    }
+    const Space::View& v = *from;
     // the filters (what is missing, 6A; without the game, 5C), then the order (4A)
     if (!m_console_missing && !m_console_orphans && m_ui.console_sort == kSortName) return v;
     if (m_console_missing) FollowMissing(v);
