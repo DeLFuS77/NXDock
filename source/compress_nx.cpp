@@ -14,6 +14,7 @@
 #include "net.hpp"
 #include "merge_game.hpp"
 #include "merge_meta.hpp"
+#include "merge_pack.hpp"
 #include "merge_recipe.hpp"
 #include "romfs_lz4.hpp"
 #include "read_note.hpp"
@@ -1358,7 +1359,10 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     lz4pack::Packed sizes;
     Result stream_rc = 0;
     g_meter.Start(u64(h.size), virt);
-    bool packed = lz4pack::Pack(virt, kLevel, kMinGain, read,
+    // packed as a merged game is, so what the game holds more than once is stored once, at any
+    // byte (one run: no update)
+    mergepack::Stats again_stats;
+    bool packed = mergepack::Pack(virt, {}, kLevel, kMinGain, read,
         [&](u64, const u8* d, size_t n) {
             hasher.Feed(d, n);
             g_meter.out += n;
@@ -1370,13 +1374,15 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
             progress(once ? 2 : 1, d, virt);
             return !stop;
         },
-        sizes, kThreads);
+        Sha256, nullptr, sizes, again_stats, kThreads);
     if (packed && stream) packed = R_SUCCEEDED(stream_rc = stream->Flush());
     if (!packed) {
         drop_once();
         error = stop ? Packed(m.cz_stopped_t, m.cz_stopped_d) : Packed(m.cz_failed_t, m.cz_failed_d, stream_rc);
         return;
     }
+    log_write("[NXDock] %016llX: %llu bytes held again stored once (%llu found away from where blocks are cut)\n",
+              (unsigned long long)g.key.id, (unsigned long long)again_stats.blocks_again, (unsigned long long)again_stats.moved_again);
     const auto table = lz4pack::BuildTable(sizes.entries, virt);
     const u64 stored = sizes.table_offset + table.size();
     hasher.Feed(table.data(), table.size());
@@ -1584,9 +1590,10 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
                 lz4pack::BlockHasher check(data_block, Sha256);
                 lz4pack::Packed again;
                 Result wrc = 0;
-                const bool ok = lz4pack::Pack(virt, kLevel, kMinGain, read,
+                mergepack::Stats written_stats;
+                const bool ok = mergepack::Pack(virt, {}, kLevel, kMinGain, read,
                     [&](u64, const u8* d, size_t n) { check.Feed(d, n); wrc = w.Write(d, n); return R_SUCCEEDED(wrc); },
-                    [&](u64 d) { progress(2, d, virt); return !stop; }, again, kThreads);
+                    [&](u64 d) { progress(2, d, virt); return !stop; }, Sha256, nullptr, again, written_stats, kThreads);
                 if (!ok || again.entries.size() != sizes.entries.size() || again.table_offset != sizes.table_offset) {
                     return fail(R_FAILED(wrc) ? wrc : Result(0));
                 }
