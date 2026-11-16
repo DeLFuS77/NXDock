@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0-beta.8
+
+These changes have not been tested in depth yet, so some bugs may remain.
+
+- Compress games: what a game holds more than once is stored once, wherever it is, also when a game is compressed by
+  itself, and the next part is read while the one before is compressed: some games come out about 10 % smaller, and
+  faster.
+- The name and logo of NXDock are not licensed with the code: a modified version needs its own (TRADEMARKS.md).
+
 ## 0.9.0-beta.7
 
 These changes have not been tested in depth yet, so some bugs may remain.
