@@ -180,6 +180,54 @@ int main() {
         CHECK(st2.blocks_again == 10 * 0x10000);
     }
 
+    // 2c. a whole block held again at bytes of every kind, not where blocks are cut (a file of the
+    // game held twice, at another place): found by its spots, pointed at, and read back the same;
+    // the same bytes on 1 and on 3 threads
+    {
+        Bytes d3;
+        auto noise = [&](size_t n) { for (size_t j = 0; j < n; j++) d3.push_back(uint8_t(rng())); };
+        noise(0x10200); // the head and a block
+        Bytes file(3 * 0x10000 + 12345);
+        for (auto& b : file) b = uint8_t(rng());
+        d3.insert(d3.end(), file.begin(), file.end());
+        const size_t odd[] = {1, 7, 4093, 0x8001, 0xFFFF, 33};
+        for (size_t k : odd) {
+            noise(k);
+            d3.insert(d3.end(), file.begin(), file.end());
+        }
+        noise(5000);
+        Bytes s3, s3t;
+        lz4pack::Packed p3, p3t;
+        mergepack::Stats st3, st3t;
+        const lz4pack::ReadFn read3 = [&](uint64_t o, uint8_t* b, size_t n) {
+            if (o + n > d3.size()) return false;
+            std::memcpy(b, d3.data() + o, n);
+            return true;
+        };
+        auto pack3 = [&](unsigned threads, Bytes& s, lz4pack::Packed& p, mergepack::Stats& st) {
+            return mergepack::Pack(d3.size(), {}, 9, 64, read3,
+                                   [&](uint64_t o, const uint8_t* d, size_t n) {
+                                       if (o != s.size()) return false;
+                                       s.insert(s.end(), d, d + n);
+                                       return true;
+                                   },
+                                   nullptr, sha, nullptr, p, st, threads);
+        };
+        CHECK(pack3(1, s3, p3, st3));
+        Bytes o3(d3.size());
+        CHECK(lz4pack::Unpack(p3.entries, d3.size(), [&](uint64_t o, uint8_t* b, size_t n) {
+            if (o + n > s3.size()) return false;
+            std::memcpy(b, s3.data() + o, n);
+            return true;
+        }, 0, o3.data(), o3.size()) && o3 == d3);
+        // each of the six copies holds the file's 3 whole blocks again (the first copy is stored):
+        // the first found by its spots, away from where blocks are cut, and the blocks after it cut
+        // on from there, so found by their hash
+        CHECK(st3.blocks_again == 6 * 3 * 0x10000 && st3.moved_again == 6 * 0x10000);
+        CHECK(s3.size() < file.size() + 0x10200 + 2 * 0x10000 * 6 + 0x20000);
+        CHECK(pack3(3, s3t, p3t, st3t) && s3t == s3 && p3t.entries.size() == p3.entries.size());
+    }
+
     // 3. Nintendo's LZ4 of a block, when smaller, is kept as it is
     {
         std::vector<uint64_t> asked;
