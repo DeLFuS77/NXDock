@@ -206,4 +206,6 @@ licence and what was changed.
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+GPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE). The name "NXDock" and its logo are not licensed with the
+code: a modified version needs a name and a logo of its own, and must say it is not NXDock. See
+[TRADEMARKS.md](TRADEMARKS.md).
