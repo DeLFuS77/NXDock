@@ -149,13 +149,18 @@ struct GameContents {
     s64 program_size = 0;
 };
 
+// the most contents read of one key of the database
+constexpr s32 kMaxContents = 64;
+
 bool FindGame(Storage& s, u64 app, GameContents& g) {
     const auto found = KeysOf(&s.db, NcmContentMetaType_Application, app, app, app);
     if (found.empty()) return false;
     g.key = found[0];
-    NcmContentInfo infos[16];
+    // as many contents as Contents() reads: a collection of several programs has more than 16,
+    // and its meta could be left out of a shorter list
+    NcmContentInfo infos[kMaxContents];
     s32 n = 0;
-    if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, infos, 16, &g.key, 0))) return false;
+    if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, infos, kMaxContents, &g.key, 0))) return false;
     bool program = false, meta = false;
     for (s32 i = 0; i < n; i++) {
         if (infos[i].content_type == NcmContentType_Program && infos[i].id_offset == 0) {
@@ -442,7 +447,7 @@ bool ReadBackParts(NcmContentStorage& cs, const NcmContentId& id, u64 size, cons
 
 // The contents of a key of the database.
 bool Contents(Storage& s, const NcmContentMetaKey& key, std::vector<NcmContentInfo>& out) {
-    out.resize(64);
+    out.resize(size_t(kMaxContents));
     s32 n = 0;
     if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, out.data(), s32(out.size()), &key, 0))) return false;
     out.resize(size_t(std::max(n, 0)));
@@ -1791,9 +1796,11 @@ bool FindAddOn(Storage& s, u64 id, GameContents& g) {
     const auto found = KeysOf(&s.db, NcmContentMetaType_AddOnContent, 0, id, id);
     if (found.empty()) return false;
     g.key = found[0];
-    NcmContentInfo infos[16];
+    // as many contents as Contents() reads: a collection of several programs has more than 16,
+    // and its meta could be left out of a shorter list
+    NcmContentInfo infos[kMaxContents];
     s32 n = 0;
-    if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, infos, 16, &g.key, 0))) return false;
+    if (R_FAILED(ncmContentMetaDatabaseListContentInfo(&s.db, &n, infos, kMaxContents, &g.key, 0))) return false;
     bool data = false, meta = false;
     for (s32 i = 0; i < n; i++) {
         if (infos[i].content_type == NcmContentType_Data && !data) {

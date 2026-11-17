@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Compress games: a collection of several programs is read with all its contents, so its metadata is never left out of a short list
+
 ## 0.9.0-beta.8
 
 These changes have not been tested in depth yet, so some bugs may remain.
