@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.9
 
-- Compress games: a collection of several programs is read with all its contents, so its metadata is never left out of a short list
+- Compress games: a collection of several programs is read with all its contents, so its metadata is never left out
 
 ## 0.9.0-beta.8
 
