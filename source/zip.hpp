@@ -10,16 +10,18 @@
 
 namespace nxdock::zip {
 
-// A small zip writer: files stored as they are (saves are small and often packed already),
-// written straight to a file. Sizes up to 4 GB each.
+// A small zip writer, written straight to a file. Sizes up to 4 GB each. Files are stored as they
+// are (saves are small and often packed already), or deflated when asked (text, as logs).
 class Writer {
 public:
     ~Writer();
     bool Open(const std::string& path);
-    // A folder ("data/"), or a file read with `read(offset, buffer, size)` (false on error):
-    // it is read twice, once for its CRC-32 and once to be written.
+    // A folder ("data/"), or a file read with `read(offset, buffer, size)` (false on error).
+    // Stored, it is read twice, once for its CRC-32 and once to be written; deflated, once, and
+    // its CRC-32 and packed size are written into its header after.
     bool AddFolder(const std::string& name);
-    bool AddFile(const std::string& name, uint64_t size, const std::function<bool(uint64_t, void*, size_t)>& read);
+    bool AddFile(const std::string& name, uint64_t size, const std::function<bool(uint64_t, void*, size_t)>& read,
+                 bool deflate = false);
     bool Close();
 
 private:
@@ -27,8 +29,11 @@ private:
         std::string name;
         uint32_t crc = 0, size = 0;
         uint32_t offset = 0;
+        uint16_t method = 0;  // 0 stored, 8 deflated
+        uint32_t packed = 0;  // the bytes written of it
     };
     bool Put(const void* data, size_t size);
+    bool AddDeflated(const std::string& name, uint64_t size, const std::function<bool(uint64_t, void*, size_t)>& read);
     FILE* m_file = nullptr;
     uint32_t m_pos = 0;
     std::vector<Entry> m_entries;

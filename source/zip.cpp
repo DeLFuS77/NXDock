@@ -68,8 +68,10 @@ bool Writer::AddFolder(const std::string& name) {
     return AddFile(name.back() == '/' ? name : name + "/", 0, [](uint64_t, void*, size_t) { return true; });
 }
 
-bool Writer::AddFile(const std::string& name, uint64_t size, const std::function<bool(uint64_t, void*, size_t)>& read) {
+bool Writer::AddFile(const std::string& name, uint64_t size, const std::function<bool(uint64_t, void*, size_t)>& read,
+                     bool deflate) {
     if (!m_ok || size > 0xFFFFFFFFull) return m_ok = false;
+    if (deflate && size > 0) return AddDeflated(name, size, read);
     std::unique_ptr<unsigned char[]> buf(new unsigned char[kChunk]);
     uLong crc = crc32(0, nullptr, 0);
     for (uint64_t off = 0; off < size;) {
@@ -78,7 +80,7 @@ bool Writer::AddFile(const std::string& name, uint64_t size, const std::function
         crc = crc32(crc, buf.get(), uInt(n));
         off += n;
     }
-    Entry e{name, uint32_t(crc), uint32_t(size), m_pos};
+    Entry e{name, uint32_t(crc), uint32_t(size), m_pos, 0, uint32_t(size)};
     unsigned char h[30] = {};
     Le32(h, 0x04034b50);
     Le16(h + 4, 20);
@@ -98,6 +100,64 @@ bool Writer::AddFile(const std::string& name, uint64_t size, const std::function
     return m_ok;
 }
 
+bool Writer::AddDeflated(const std::string& name, uint64_t size, const std::function<bool(uint64_t, void*, size_t)>& read) {
+    const uint32_t at = m_pos;
+    unsigned char h[30] = {};
+    Le32(h, 0x04034b50);
+    Le16(h + 4, 20);
+    Le16(h + 6, 0x0800); // UTF-8 names
+    Le16(h + 8, 8);
+    Le32(h + 22, uint32_t(size));
+    Le16(h + 26, uint32_t(name.size()));
+    // the CRC-32 and the packed size are known at the end: written into the header then
+    if (!Put(h, sizeof(h)) || !Put(name.data(), name.size())) return false;
+    const uint32_t start = m_pos;
+    std::unique_ptr<unsigned char[]> in(new unsigned char[kChunk]), out(new unsigned char[kChunk]);
+    z_stream z{};
+    if (deflateInit2(&z, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) return m_ok = false;
+    uLong crc = crc32(0, nullptr, 0);
+    bool ok = true;
+    for (uint64_t off = 0; ok;) {
+        const size_t n = size_t(std::min<uint64_t>(kChunk, size - off));
+        if (n && !read(off, in.get(), n)) {
+            ok = false;
+            break;
+        }
+        crc = crc32(crc, in.get(), uInt(n));
+        off += n;
+        const int flush = off == size ? Z_FINISH : Z_NO_FLUSH;
+        z.next_in = in.get();
+        z.avail_in = uInt(n);
+        int rc = Z_OK;
+        do {
+            z.next_out = out.get();
+            z.avail_out = uInt(kChunk);
+            rc = deflate(&z, flush);
+            const size_t made = kChunk - z.avail_out;
+            if (rc == Z_STREAM_ERROR || (made && !Put(out.get(), made))) {
+                ok = false;
+                break;
+            }
+        } while (z.avail_out == 0);
+        if (flush == Z_FINISH) {
+            ok = ok && rc == Z_STREAM_END;
+            break;
+        }
+    }
+    deflateEnd(&z);
+    if (!ok) return m_ok = false;
+    Entry e{name, uint32_t(crc), uint32_t(size), at, 8, m_pos - start};
+    unsigned char fix[8];
+    Le32(fix, e.crc);
+    Le32(fix + 4, e.packed);
+    if (fseeko(m_file, off_t(at) + 14, SEEK_SET) != 0 || std::fwrite(fix, 1, sizeof(fix), m_file) != sizeof(fix) ||
+        fseeko(m_file, 0, SEEK_END) != 0) {
+        return m_ok = false;
+    }
+    m_entries.push_back(e);
+    return true;
+}
+
 bool Writer::Close() {
     if (!m_file) return false;
     const uint32_t start = m_pos;
@@ -107,8 +167,9 @@ bool Writer::Close() {
         Le16(h + 4, 20);
         Le16(h + 6, 20);
         Le16(h + 8, 0x0800);
+        Le16(h + 10, e.method);
         Le32(h + 16, e.crc);
-        Le32(h + 20, e.size);
+        Le32(h + 20, e.packed);
         Le32(h + 24, e.size);
         Le16(h + 28, uint32_t(e.name.size()));
         Le32(h + 42, e.offset);

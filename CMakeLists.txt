@@ -169,6 +169,7 @@ add_executable(nxdock
     source/link.cpp
     source/net.cpp
     source/push.cpp
+    source/report.cpp
     source/safety.cpp
     source/sound.cpp
     source/speedtest.cpp

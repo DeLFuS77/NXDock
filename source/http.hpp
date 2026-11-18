@@ -36,9 +36,11 @@ Response PostJson(const std::string& url, const std::string& json, const std::st
 // Large bodies, sent or received in pieces, for saves and dumps. No time limit while bytes keep
 // moving; a minute without any stops it. `progress` gets the bytes so far and returns false to
 // stop (a cancel).
-// Sends `size` bytes that `read(buffer, max)` gives (0 at the end, -1 on error), with POST or PUT.
+// Sends `size` bytes that `read(buffer, max)` gives (0 at the end, -1 on error), with POST or PUT,
+// as `type` (a zip of a report goes as application/zip).
 Response Send(const std::string& method, const std::string& url, const std::string& key, uint64_t size,
-              const std::function<long(char*, size_t)>& read, const std::function<bool(uint64_t)>& progress = {});
+              const std::function<long(char*, size_t)>& read, const std::function<bool(uint64_t)>& progress = {},
+              const char* type = "application/octet-stream");
 // Gives the body of a GET to `write` (false stops), up to `max_bytes`.
 Response Receive(const std::string& url, const std::string& key, uint64_t max_bytes,
                  const std::function<bool(const char*, size_t)>& write, const std::function<bool(uint64_t)>& progress = {});
