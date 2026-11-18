@@ -36,7 +36,7 @@ constexpr float kActW = 470, kActRow = 56;
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kShortcuts, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
              kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kCzGo, kCzFilter, kCzUnqueue, kSigpatchInfo, kSigpatchOff,
-             kSortBase = 100 };
+             kSendReport, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
@@ -410,6 +410,10 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
                 rows.push_back({kButton, s.retry, {}, true, HidNpadButton_A, false, kIconAgain});
             }
+            // its error card has the button of a report (4A): here too
+            const bool error_card = (j.state == InstallJob::State::Failed && !j.error.empty()) ||
+                                    (j.state == InstallJob::State::Done && !j.merge_error.empty());
+            if (error_card && CanSendReport()) rows.push_back({kSendReport, m.rp_button, {}, !m_lib_report_running, 0, false, kIconOpen});
             const bool paused = m_queue->Paused();
             rows.push_back({kButton, paused ? m.qw_go_on : m.qw_pause, {}, paused || m_queue->Waiting() > 0, HidNpadButton_ZR, false,
                             paused ? kIconPlay : kIconPause});
@@ -679,6 +683,7 @@ void App::ActDo(const ActRow& row) {
         }
         case kSigpatchInfo: OpenSigpatchInfo(); break; // 5B
         case kSigpatchOff: SigpatchesOff(); break;
+        case kSendReport: SendReport(); break; // 4A
         case kUpdateShop: UpdateFromShop(m_shop_focus); break; // 15A
         case kUsb3: OpenUsb3(); break;                         // USB A
         case kViewWrap:

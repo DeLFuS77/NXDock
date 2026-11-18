@@ -932,6 +932,9 @@ void App::ConfirmDialog() {
                 Notice(Tr().undo_wait_queue);
             }
             break;
+        case DialogKind::VaultError:
+            if (m_dialog.report) SendReport(); // a game that could not be compressed (4A)
+            break;
         case DialogKind::ClearHistory:
             History(HistoryPath()).Clear();
             m_history.clear();

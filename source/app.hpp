@@ -43,6 +43,7 @@
 #include "text_view.hpp"
 #include "usb30.hpp"
 #include "compress_meta.hpp"
+#include "report.hpp"
 
 namespace nxdock {
 
@@ -85,7 +86,7 @@ private:
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
                          ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, RemoveStop, TicketRow,
-                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip, SigpatchInfo };
+                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip, SigpatchInfo, SendReport };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -533,6 +534,19 @@ private:
     void CheckSdSpace();
     void Notice(const std::string& text);
     void NoticeOk(const std::string& text); // in green, with a tick: something was done
+    void NoticeBusy(const std::string& text);  // with a ring that spins, until another notice: something at work
+    void NoticeError(const std::string& text); // in red, with its mark: something could not be done
+    // The report for the library (4A, report.hpp, app_report.cpp): from Settings › Help and the
+    // error cards of the queue and of Compress games; sent on a thread of its own while a notice spins.
+    bool CanSendReport(); // a library is paired
+    void SendReport();
+    void FollowReport();
+    // its button on an error card, its right edge at `right`; returns where it starts
+    float DrawReportButton(NVGcontext* vg, float right, float cy);
+    std::thread m_lib_report_thread;
+    std::atomic<bool> m_lib_report_ready{false};
+    bool m_lib_report_running = false;
+    report::Result m_lib_report_result;
     void DrawPairing(NVGcontext* vg, const Link::View& v);
     // Without network: said in large, in place of what needs it (the pairing, the library).
     void DrawNoNetwork(NVGcontext* vg, const char* retry);
@@ -728,7 +742,7 @@ private:
     SpaceRead m_space_read;
     std::string m_notice;
     double m_notice_until = 0;
-    bool m_notice_ok = false;
+    bool m_notice_ok = false, m_notice_busy = false, m_notice_err = false;
     int m_pair_focus = 0; // row in focus on the pairing screen
     std::string m_manual_url; // typed in Settings, until the key is typed too
     SpeedTest m_speed;
@@ -946,6 +960,7 @@ private:
         int extra_mods = 0;              // ConsoleRemove: the folders of mods found
         int extra_common = 0, extra_personal = 0; // ConsoleRemove: the tickets found
         std::vector<char> marks;         // UpdateHere: the jobs ticked (15A)
+        bool report = false;             // VaultError: the error can be sent in a report (4A)
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;

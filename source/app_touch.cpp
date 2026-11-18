@@ -288,6 +288,7 @@ bool App::Tap(float x, float y, u64& down) {
                 break;
             case HitKind::NoRoomUse: UseNandOnce(it->index); break; // 12A
             case HitKind::SigpatchInfo: OpenSigpatchInfo(); break;  // the i of the line of sigpatches (5B)
+            case HitKind::SendReport: SendReport(); break;          // the button of an error card (4A)
 
             case HitKind::QueueRow:
                 if (m_queue_focus == it->index) {

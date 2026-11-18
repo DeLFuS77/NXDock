@@ -898,6 +898,8 @@ void App::DrawQueue(NVGcontext* vg) {
     const float list_top = y, list_bottom = card ? std::max(y + 100, 650 - card_h - 12) : 640;
     if (card) {
         ErrorCard(vg, t, 48, 650 - card_h, kWidth - 96, card_text, true);
+        // what went wrong, to the library in a report from the card itself (4A); + has it too
+        if (CanSendReport()) DrawReportButton(vg, kWidth - 48 - 14, 650 - card_h + 30);
     }
     const float pitch = 54;
     ListArea(48, 98, kWidth - 96, list_bottom - 98, pitch);

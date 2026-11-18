@@ -263,6 +263,8 @@ void App::Exit() {
     if (m_focus_hooked) appletUnhook(&m_focus_hook);
     m_focus_hooked = false;
     if (m_space_thread.joinable()) m_space_thread.join();
+    // a report being sent ends first (its zip is deleted then)
+    if (m_lib_report_thread.joinable()) m_lib_report_thread.join();
     if (m_lbl) lblExit();
     // a check or a download of a new version is let go
     m_updater.reset();
@@ -672,6 +674,7 @@ bool App::Frame() {
     { perf::Timer t_("frame: FollowFinish"); FollowFinish(); }
     { perf::Timer t_("frame: FollowUsb"); FollowUsb(); }
     { perf::Timer t_("frame: FollowPush"); FollowPush(); }
+    FollowReport(); // a report for the library sent: what became of it (4A)
     { perf::Timer t_("frame: FollowQueueAsk"); FollowQueueAsk(); }
     { perf::Timer t_("frame: FollowQueueWeb"); FollowQueueWeb(); }
     { perf::Timer t_("frame: CheckSdSpace"); CheckSdSpace(); }
@@ -936,22 +939,37 @@ void App::Draw(NVGcontext* vg) {
     DrawDice(vg); // a game at random (21A): the question waits for the dice
     if (m_time < m_notice_until && !m_notice.empty()) {
         // a short notice above the hint bar
-        const float mark = m_notice_ok ? 28.f : 0.f; // something done: a green tick before it
-        const float w = ui::TextWidth(vg, 16, m_notice.c_str()) + 48 + mark;
+        // something done: a green tick before it; at work: a ring that spins; not done: a red mark
+        const bool marked = m_notice_ok || m_notice_busy || m_notice_err;
+        const float mark = marked ? 28.f : 0.f;
+        // a long one (an error says what to do) is cut to the screen
+        const float w = std::min(float(kWidth) - 64, ui::TextWidth(vg, 16, m_notice.c_str()) + 48 + mark);
         // it comes up from below with a little spring
         const float rise = ui::EaseOutBack(ui::Appear(m_notice_at, 0.35f));
         const float x = (kWidth - w) / 2, y = 600 + (1 - rise) * 34;
         nvgGlobalAlpha(vg, float(std::min(1.0, (m_notice_until - m_time) * 3)) * std::min(1.f, rise * 1.5f));
         NVGcolor fill = m_theme.panel2;
-        if (m_notice_ok) {
-            fill = m_theme.ok;
-            fill.a = 0.18f;
+        const NVGcolor edge = m_notice_ok ? m_theme.ok : m_notice_err ? m_theme.err : m_theme.work;
+        if (m_notice_ok || m_notice_err) {
+            fill = edge;
+            fill.a = m_notice_err ? 0.14f : 0.18f;
             ui::FillRound(vg, x, y, w, 44, 22, m_theme.panel2);
         }
         ui::FillRound(vg, x, y, w, 44, 22, fill);
-        ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, 43, 22, m_notice_ok ? m_theme.ok : m_theme.work, 1.5f);
+        ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, 43, 22, edge, 1.5f);
         if (m_notice_ok) ui::CheckMark(vg, x + 30, y + 22, 14, m_theme.ok, 2.6f);
+        if (m_notice_busy) ui::Spinner(vg, x + 30, y + 22, 9, m_theme.work, m_time);
+        if (m_notice_err) {
+            nvgBeginPath(vg);
+            nvgCircle(vg, x + 30, y + 22, 10);
+            nvgFillColor(vg, m_theme.err);
+            nvgFill(vg);
+            ui::Text(vg, x + 30, y + 23, 14, m_theme.panel, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x + 18 + mark, y, w - 36 - mark, 44);
         ui::Text(vg, x + (w + mark) / 2, y + 22, 16, m_theme.text, m_notice.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgRestore(vg);
         nvgGlobalAlpha(vg, 1.f);
     }
     DrawFinish(vg);
@@ -1134,13 +1152,27 @@ void App::Notice(const std::string& text) {
     m_notice = text;
     m_notice_at = m_time;
     m_notice_until = m_time + 3.5;
-    m_notice_ok = false;
+    m_notice_ok = m_notice_busy = m_notice_err = false;
 }
 
 void App::NoticeOk(const std::string& text) {
     Notice(text);
     m_notice_ok = true;
     m_notice_until = m_time + 5;
+}
+
+void App::NoticeBusy(const std::string& text) {
+    // it stays while the work goes on: the notice of its end takes its place
+    Notice(text);
+    m_notice_busy = true;
+    m_notice_until = m_time + 3600;
+}
+
+void App::NoticeError(const std::string& text) {
+    // longer: what to do is read in it
+    Notice(text);
+    m_notice_err = true;
+    m_notice_until = m_time + 7;
 }
 
 void App::CheckSdSpace() {

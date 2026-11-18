@@ -898,6 +898,7 @@ void App::FollowCompress(const Compressor::View& c) {
             m_dialog.single = true;
             m_dialog.from = c.error;
             m_dialog.text = m.cz_title;
+            m_dialog.report = true; // it can go to the library in a report (4A)
             m_compress_round.failed.clear();
             m_compress_round.order.clear();
         }
@@ -1140,23 +1141,45 @@ void App::DrawCompressDone(NVGcontext* vg) {
         ui::Text(vg, cx, cy, 15, t.orange, m.cz_done_stopped, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         nvgRestore(vg);
     }
-    // the button, breathing, with room above it
+    // the button, breathing, with room above it; with a game that failed, a report for the library
+    // beside it (4A), on X
+    const bool report = failed > 0 && CanSendReport();
     const float bw = std::max(160.f, ui::TextWidth(vg, 17, s.close) + 56), bh = 48;
+    const float rw = report ? ui::TextWidth(vg, 17, m.rp_button) + 84 : 0.f;
     const float breath = lively ? 1 + 0.025f * float(std::sin(m_time * 4)) : 1.f;
-    const float bx = cx - bw / 2, by = y + h - bh - 22;
+    const float row = rw + (report ? 14.f : 0.f) + bw;
+    const float bx = cx - row / 2 + rw + (report ? 14.f : 0.f), by = y + h - bh - 22;
+    const float bcx = bx + bw / 2;
+    if (report) {
+        const float rx = cx - row / 2;
+        ui::FillRound(vg, rx, by, rw, bh, bh / 2, t.panel2);
+        ui::StrokeRound(vg, rx + 1, by + 1, rw - 2, bh - 2, bh / 2, t.line, 2);
+        if (m_lib_report_running) ui::Spinner(vg, rx + 34, by + bh / 2, 9, t.work, m_time);
+        else ui::Symbol(vg, t, rx + 34, by + bh / 2, 24, ui::glyph::X, t.text, HidNpadButton_X);
+        ui::Text(vg, rx + 56, by + bh / 2, 17, m_lib_report_running ? t.muted : t.text, m.rp_button);
+        m_hits.push_back({{rx, by, rw, bh, HidNpadButton_X}, HitKind::Button, 0});
+    }
     nvgSave(vg);
-    nvgTranslate(vg, cx, by + bh / 2);
+    nvgTranslate(vg, bcx, by + bh / 2);
     nvgScale(vg, breath, breath);
-    nvgTranslate(vg, -cx, -(by + bh / 2));
+    nvgTranslate(vg, -bcx, -(by + bh / 2));
     ui::FillRound(vg, bx, by, bw, bh, bh / 2, t.work);
-    ui::Title(vg, cx, by + bh / 2, 17, t.on_work, s.close, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    ui::Title(vg, bcx, by + bh / 2, 17, t.on_work, s.close, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     nvgRestore(vg);
     AddHit(bx, by, bw, bh, HitKind::DialogButton, 1);
     nvgRestore(vg);
-    ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.close, HidNpadButton_A}}, m_hint_rects);
+    if (report) {
+        ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.close, HidNpadButton_A}, {ui::glyph::X, m.rp_button, HidNpadButton_X}}, m_hint_rects);
+    } else {
+        ui::HintBar(vg, t, nullptr, {{ui::glyph::A, s.close, HidNpadButton_A}}, m_hint_rects);
+    }
 }
 
 void App::UpdateCompressDone(u64 down) {
+    if ((down & HidNpadButton_X) && !m_compress_summary.failed.empty() && CanSendReport()) {
+        SendReport(); // what failed, to the library in a report (4A); the summary stays
+        return;
+    }
     if (down & (HidNpadButton_A | HidNpadButton_B)) m_dialog.kind = DialogKind::None;
 }
 

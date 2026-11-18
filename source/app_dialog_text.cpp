@@ -588,6 +588,13 @@ App::Fill App::DialogMoreText(DialogContent& dc) {
         case DialogKind::VaultError:
             dc.title = m_dialog.text.empty() ? TrM().t_saves : m_dialog.text;
             dc.error = m_dialog.from;
+            if (m_dialog.report) {
+                // a game that could not be compressed (4A): Close, and a report for the library
+                // when one is paired
+                m_dialog.single = !CanSendReport();
+                dc.primary = TrM().rp_button;
+                dc.cancel_label = Tr().close;
+            }
             break;
         case DialogKind::CompressGo:
         case DialogKind::CompressStop:
