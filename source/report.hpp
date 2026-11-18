@@ -33,8 +33,8 @@ struct File {
 // Only files right in those two folders; nothing else is looked at.
 std::vector<File> Files(const std::string& sd);
 
-// info.txt: the version of NXDock, the firmware, Atmosphère, emuMMC, applet or application, the
-// memory, the SD card and the date.
+// info.txt: the version of NXDock and whether it is an official build, the firmware, Atmosphère,
+// emuMMC, applet or application, the memory, the SD card and the date.
 std::string Info(const ConsoleFacts& facts, const std::string& version);
 
 // Writes the zip to `path`: info.txt and the files, deflated. False when it could not be written.

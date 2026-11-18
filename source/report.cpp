@@ -2,6 +2,7 @@
 // Copyright (C) 2026 DeLFuS77
 #include "report.hpp"
 
+#include "brand.hpp"
 #include "zip.hpp"
 
 #include <dirent.h>
@@ -97,6 +98,8 @@ std::string Info(const ConsoleFacts& f, const std::string& version) {
         out += "\n";
     };
     line("NXDock", version);
+    // an official build, or one made without NXDOCK_OFFICIAL (brand.hpp)
+    line("Build", brand::kOfficial ? "official" : "unofficial");
     line("Firmware", f.firmware.empty() ? "unknown" : f.firmware);
     line("Atmosphere", f.atmosphere.empty() ? "unknown" : f.atmosphere);
     line("emuMMC", f.emummc == 1 ? "yes" : f.emummc == 0 ? "no" : "unknown");

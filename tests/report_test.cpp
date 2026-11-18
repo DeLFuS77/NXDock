@@ -5,6 +5,7 @@
 // and the newest crash reports go in (never keys, configuration or anything else), a long log
 // keeps its end and a long crash report its start, info.txt says what it should, and the zip,
 // deflated, reads back byte for byte.
+#include "brand.hpp"
 #include "report.hpp"
 #include "zip.hpp"
 
@@ -117,6 +118,7 @@ int main(int argc, char** argv) {
     const std::string info = report::Info(facts, "0.9.0-test");
     const auto has = [&](const char* text) { return info.find(text) != std::string::npos; };
     CHECK(has("NXDock: 0.9.0-test\n") && has("Firmware: 19.0.1\n") && has("Atmosphere: 1.8.0\n") && has("emuMMC: yes\n"));
+    CHECK(has(brand::kOfficial ? "Build: official\n" : "Build: unofficial\n"));
     CHECK(has("Sigpatches: sys-patch\n") && has("Mode: applet\n") && has("Date: 2025-11-17 17:20:00 UTC\n"));
     CHECK(has("Memory used: 300.0 MiB (314572800 bytes)\n") && has("Memory total: 3.00 GiB (3221225472 bytes)\n"));
     CHECK(has("SD card free: 12.00 GiB (12884901888 bytes)\n") && has("SD card size: 238.00 GiB"));
