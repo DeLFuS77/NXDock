@@ -23,6 +23,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <map>
 #include <memory>
 #include <set>
@@ -402,6 +403,40 @@ int SaveAndDeleteTickets(const std::vector<TicketId>& tickets, int* kept) {
     return int(saved.size());
 }
 
+std::map<unsigned long long, PlayStats> ReadPlayStats(const std::vector<unsigned long long>& apps) {
+    std::map<unsigned long long, PlayStats> out;
+    if (apps.empty() || R_FAILED(pdmqryInitialize())) return out;
+    for (const auto app : apps) out[app];
+    const std::vector<u64> ids(apps.begin(), apps.end());
+    // when each was last played: minutes ago
+    for (size_t at = 0; at < ids.size(); at += 64) {
+        const s32 n = s32(std::min<size_t>(64, ids.size() - at));
+        std::vector<PdmLastPlayTime> times(static_cast<size_t>(n));
+        s32 total = 0;
+        if (R_FAILED(pdmqryQueryLastPlayTime(true, times.data(), ids.data() + at, n, &total))) continue;
+        for (s32 i = 0; i < total && i < n; i++) {
+            if (!times[size_t(i)].flag) continue;
+            const auto it = out.find(times[size_t(i)].application_id);
+            if (it != out.end()) it->second.idle_minutes = times[size_t(i)].last_played_minutes;
+        }
+    }
+    // how long each was played, how many times it was opened, and the time it was last played (by
+    // the clock of the console; else from the minutes ago)
+    const long long now = (long long)std::time(nullptr);
+    for (auto& [app, p] : out) {
+        PdmPlayStatistics stats{};
+        if (R_FAILED(pdmqryQueryPlayStatisticsByApplicationId(app, false, &stats))) continue;
+        p.play_minutes = (long long)(stats.playtime / 60'000'000'000ull);
+        p.launches = int(stats.total_launches);
+        if (stats.total_launches) {
+            p.last_played = stats.last_timestamp_user ? (long long)stats.last_timestamp_user
+                          : p.idle_minutes >= 0 ? now - p.idle_minutes * 60 : 0;
+        }
+    }
+    pdmqryExit();
+    return out;
+}
+
 Space::~Space() {
     m_cancel = true;
     if (m_thread.joinable()) m_thread.join();
@@ -623,30 +658,19 @@ void Space::ScanNow() {
                 apps.push_back(a);
             }
         }
-        // when each game was last played
-        if (R_SUCCEEDED(pdmqryInitialize())) {
-            std::vector<u64> ids;
+        // when each game was last played, how long and how many times it was opened (3A), read
+        // once per scan
+        {
+            std::vector<unsigned long long> ids;
             for (const auto& a : apps) ids.push_back(a.app_id);
-            for (size_t at = 0; at < ids.size(); at += 64) {
-                const s32 n = s32(std::min<size_t>(64, ids.size() - at));
-                std::vector<PdmLastPlayTime> times(static_cast<size_t>(n));
-                s32 total = 0;
-                if (R_FAILED(pdmqryQueryLastPlayTime(true, times.data(), ids.data() + at, n, &total))) continue;
-                for (s32 i = 0; i < total; i++) {
-                    if (!times[size_t(i)].flag) continue;
-                    for (auto& a : apps) {
-                        if (a.app_id == times[size_t(i)].application_id) a.idle_minutes = times[size_t(i)].last_played_minutes;
-                    }
-                }
-            }
-            // how long each was played and how many times it was opened (3A), read once per scan
+            const auto play = ReadPlayStats(ids);
             for (auto& a : apps) {
-                PdmPlayStatistics stats{};
-                if (R_FAILED(pdmqryQueryPlayStatisticsByApplicationId(a.app_id, false, &stats))) continue;
-                a.play_minutes = (long long)(stats.playtime / 60'000'000'000ull);
-                a.launches = int(stats.total_launches);
+                const auto it = play.find(a.app_id);
+                if (it == play.end()) continue;
+                a.idle_minutes = it->second.idle_minutes;
+                a.play_minutes = it->second.play_minutes;
+                a.launches = it->second.launches;
             }
-            pdmqryExit();
         }
         // the names known already; the others come after, on their own thread (NameLater)
         {

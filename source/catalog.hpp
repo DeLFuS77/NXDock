@@ -10,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "console_facts.hpp"
 
 namespace nxdock {
 
@@ -116,10 +117,23 @@ struct InstalledContent {
     u32 version = 0;
     bool nand = false;
 };
-// The body of /install/inventory. Tested on the computer.
-std::string InventoryJson(const std::vector<InstalledContent>& items);
+// How long an installed game was played, by every user of the console, for the inventory.
+struct PlayEntry {
+    u64 title_id = 0;
+    long long minutes = 0, launches = 0;
+    long long last_played = 0; // seconds since 1970 (UTC); 0 unknown
+};
+// The body of /install/inventory: "items", then "console" and "play" when given (an app that
+// does not know them reads "items" as before). Tested on the computer.
+std::string InventoryJson(const std::vector<InstalledContent>& items, const ConsoleFacts* console = nullptr,
+                          const std::vector<PlayEntry>* play = nullptr);
 
 // What the console has installed, by application id; with list, every content too.
 std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list = nullptr);
+
+// The whole inventory as it is now: what is installed, what the console is (ReadConsoleFacts)
+// and how long each game was played (ReadPlayStats). On the console; it asks the system for a
+// while, so it is read on the thread of Push.
+std::string ReadInventory(const SystemInfo& sys);
 
 } // namespace nxdock

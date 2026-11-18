@@ -31,6 +31,10 @@ private:
     std::atomic<Answer> m_emummc{Answer::Unknown}, m_blocked{Answer::Unknown};
 };
 
+// Atmosphère: whether the system runs from an emuMMC, from the configuration item of exosphere
+// that says its type. On the console.
+Safety::Answer ReadEmuMmc();
+
 // Whether an address of a Nintendo server, as the DNS of the console answered it, leads
 // nowhere (a block, or 90DNS). Tested on the computer.
 bool IsBlockedAddress(unsigned char a, unsigned char b, unsigned char c, unsigned char d);

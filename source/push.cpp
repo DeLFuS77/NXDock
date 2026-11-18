@@ -51,8 +51,20 @@ void Push::SendInventory(std::string json) {
     {
         std::lock_guard lock(m_mutex);
         // only the newest inventory matters
+        m_inventory = nullptr;
+        m_inventory_asks++;
         std::erase_if(m_posts, [](const auto& p) { return p.first == "/install/inventory"; });
         m_posts.push_back({"/install/inventory", std::move(json)});
+    }
+    m_cv.notify_all();
+}
+
+void Push::SendInventory(std::function<std::string()> make) {
+    {
+        std::lock_guard lock(m_mutex);
+        m_inventory_asks++;
+        std::erase_if(m_posts, [](const auto& p) { return p.first == "/install/inventory"; });
+        m_inventory = std::move(make);
     }
     m_cv.notify_all();
 }
@@ -66,6 +78,16 @@ void Push::Run() {
             continue;
         }
         const std::string url = m_url, key = m_key;
+        // an inventory to read: read here, not on the thread of the interface; one asked for
+        // meanwhile takes its place
+        if (m_inventory) {
+            const auto make = std::exchange(m_inventory, nullptr);
+            const unsigned ask = m_inventory_asks;
+            lock.unlock();
+            std::string body = make();
+            lock.lock();
+            if (ask == m_inventory_asks) m_posts.push_back({"/install/inventory", std::move(body)});
+        }
         // what to tell the app first
         while (!m_posts.empty() && !m_quit) {
             const auto post = m_posts.front();

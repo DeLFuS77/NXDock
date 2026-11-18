@@ -10,6 +10,7 @@ namespace nxdock {
 // Firmwares are in the form of the cnmt: major << 26 | minor << 20 | micro << 16.
 struct SystemInfo {
     unsigned firmware = 0;    // 0: unknown
+    std::string firmware_text; // as the console shows it ("19.0.1"), from set:sys; empty when unknown
     bool atmosphere = false;  // exosphere answered
     unsigned ams_major = 0, ams_minor = 0, ams_micro = 0;
     unsigned ams_target = 0;  // the newest firmware this Atmosphère supports, 0 unknown

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -31,6 +32,9 @@ public:
     void Answer(const std::string& id, bool accepted);
     // The inventory to send, or off to delete it in the app.
     void SendInventory(std::string json);
+    // The same, read by `make` on the thread of Push when its turn comes (it asks the system for a
+    // while). Only the newest asked for is sent.
+    void SendInventory(std::function<std::string()> make);
 
 private:
     void Run();
@@ -42,6 +46,8 @@ private:
     std::string m_url, m_key;
     std::vector<PushItem> m_items;
     std::deque<std::pair<std::string, std::string>> m_posts; // path, body
+    std::function<std::string()> m_inventory; // an inventory still to read
+    unsigned m_inventory_asks = 0;            // inventories asked for, to drop one read late
 };
 
 } // namespace nxdock

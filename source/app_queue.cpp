@@ -398,13 +398,13 @@ void App::FollowPush() {
         m_pushed.clear();
         return;
     }
-    // the inventory, when the user said yes: at the start and after every install or removal
+    // the inventory, when the user said yes: at the start and after every install or removal; what
+    // is installed, the console and the play time, read on the thread of Push
     if (m_prefs.share_installed == 1 && (m_inventory_sent != m_queue->Version() || m_inventory_url != c.url) && !m_queue->Busy()) {
         m_inventory_sent = m_queue->Version();
         m_inventory_url = c.url;
-        std::vector<InstalledContent> list;
-        ReadInstalled(&list);
-        m_push->SendInventory(InventoryJson(list));
+        const SystemInfo sys = m_sysinfo;
+        m_push->SendInventory([sys] { return ReadInventory(sys); });
     }
 }
 

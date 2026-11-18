@@ -31,15 +31,21 @@ Safety::~Safety() {
     m_thread.join();
 }
 
-void Safety::Run() {
-    // Atmosphère: the configuration item of exosphere that says the emuMMC type (0: none)
+Safety::Answer ReadEmuMmc() {
+    // the configuration item of exosphere that says the emuMMC type (0: none)
+    Safety::Answer answer = Safety::Answer::Unknown;
     if (R_SUCCEEDED(splInitialize())) {
         u64 type = 0;
         if (R_SUCCEEDED(splGetConfig(SplConfigItem(65007), &type))) {
-            m_emummc = type != 0 ? Answer::Yes : Answer::No;
+            answer = type != 0 ? Safety::Answer::Yes : Safety::Answer::No;
         }
         splExit();
     }
+    return answer;
+}
+
+void Safety::Run() {
+    m_emummc = ReadEmuMmc();
     // a few names the console asks for; all must lead nowhere
     static const char* kNames[] = {"conntest.nintendowifi.net", "ctest.cdn.nintendo.net", "atum.hac.lp1.d4c.nintendo.net",
                                    "sun.hac.lp1.d4c.nintendo.net"};

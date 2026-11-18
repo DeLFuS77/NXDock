@@ -23,5 +23,8 @@ u64 OwnProgramId();
 s64 StorageFreeSpace(NcmStorageId storage);
 // Free and total bytes of a storage; false when ncm does not answer.
 bool StorageSpace(NcmStorageId storage, s64& free_bytes, s64& total_bytes);
+// Free and total bytes of the file system of the SD card (what the top bar shows); each -1 when
+// not read, false without the free bytes.
+bool SdCardSpace(s64& free_bytes, s64& total_bytes);
 
 } // namespace nxdock

@@ -1152,14 +1152,7 @@ void App::CheckSdSpace() {
     m_space_read = SpaceRead{-1, -1, m_nand_free_bytes, m_nand_total_bytes};
     m_space_thread = std::thread([this] {
         SpaceRead& r = m_space_read;
-        FsFileSystem fs;
-        if (R_SUCCEEDED(fsOpenSdCardFileSystem(&fs))) {
-            char root[FS_MAX_PATH] = "/";
-            s64 free_bytes = 0, total_bytes = 0;
-            if (R_SUCCEEDED(fsFsGetFreeSpace(&fs, root, &free_bytes))) r.sd_free = free_bytes;
-            if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &total_bytes)) && total_bytes > 0) r.sd_total = total_bytes;
-            fsFsClose(&fs);
-        }
+        SdCardSpace(r.sd_free, r.sd_total);
         StorageSpace(NcmStorageId_BuiltInUser, r.nand_free, r.nand_total);
         m_space_ready = true;
     });

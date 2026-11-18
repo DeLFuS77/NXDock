@@ -97,6 +97,16 @@ struct Storage {
 // planner ("this queue needs X GB: archive these"). Tested on the computer.
 std::vector<int> PlanArchive(const std::vector<InstalledApp>& apps, unsigned long long needed, bool nand);
 
+// How a game was played, by every user of the console (pdm): -1 (0 for last_played) when unknown.
+struct PlayStats {
+    long long idle_minutes = -1; // since it was last played
+    long long play_minutes = -1; // how long it was played, all told
+    int launches = -1;           // how many times it was opened
+    long long last_played = 0;   // when it was last played, seconds since 1970 (UTC)
+};
+// Of each of `apps`; empty when pdm does not answer. On the console.
+std::map<unsigned long long, PlayStats> ReadPlayStats(const std::vector<unsigned long long>& apps);
+
 class Space {
 public:
     enum class Task { None, Scan, Clean, Archive, Move, Dump, Remove, Tickets };

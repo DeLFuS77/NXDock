@@ -86,6 +86,33 @@ int main() {
            "inventory: the JSON of the app");
     Expect(InventoryJson({}) == R"({"items":[]})", "inventory: empty");
 
+    // with the console and the play time: "items" stays as it was, the rest after it
+    ConsoleFacts facts;
+    facts.firmware = "19.0.1";
+    facts.atmosphere = "1.8.0";
+    facts.emummc = 1;
+    facts.sd_free = 123;
+    facts.sd_total = 456;
+    facts.nand_free = 789;
+    facts.nand_total = 1011;
+    facts.sigpatches = "sys-patch";
+    facts.mem_used = 5; // only for a report
+    const std::vector<PlayEntry> play = {{0x0100000000010000ull, 2040, 57, 1763400000}, {0x0100000000020000ull, -1, -1, 0}};
+    Expect(InventoryJson({{0x0100000000010000ull, 0x80, 0, false}}, &facts, &play) ==
+               R"({"items":[{"titleId":"0100000000010000","type":"game","version":0,"storage":"sd"}],)"
+               R"("console":{"firmware":"19.0.1","atmosphere":"1.8.0","emummc":true,"sdFree":123,"sdTotal":456,"nandFree":789,"nandTotal":1011,"sigpatches":"sys-patch"},)"
+               R"("play":[{"titleId":"0100000000010000","minutes":2040,"launches":57,"lastPlayed":1763400000},)"
+               R"({"titleId":"0100000000020000","minutes":0,"launches":0,"lastPlayed":0}]})",
+           "inventory: the console and the play time, unknowns as 0");
+    // unknown facts: no Atmosphère, emuMMC not known, sizes not read; text escaped
+    ConsoleFacts unknown;
+    unknown.firmware = "19.0.1 \"x\"\\\n";
+    const std::vector<PlayEntry> none;
+    Expect(InventoryJson({}, &unknown, &none) ==
+               R"({"items":[],"console":{"firmware":"19.0.1 \"x\"\\\n","atmosphere":"","emummc":false,"sdFree":0,"sdTotal":0,"nandFree":0,"nandTotal":0,"sigpatches":""},"play":[]})",
+           "inventory: unknown facts and escaped text");
+    Expect(InventoryJson({}, nullptr, &none) == R"({"items":[],"play":[]})", "inventory: play without the console");
+
     std::printf(failures ? "%d failed\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }
