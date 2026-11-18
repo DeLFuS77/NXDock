@@ -9,6 +9,7 @@
 
 #include <switch.h>
 #include <memory>
+#include <utility>
 #include <vector>
 #include "catalog.hpp"
 #include "file_source.hpp"
@@ -973,6 +974,11 @@ private:
     forwarder::Status m_home; // where NXDock is and whether its HOME menu shortcut is there
     SystemInfo m_sysinfo;           // the firmware and Atmosphère, for the check before installing
     bool m_risk_ok = false;
+    // no sigpatches found before the first install of a session (while its option is on): the
+    // interface takes it once to show a notice; installing never waits on it
+    SigpatchNotice m_sigpatch_check;
+    bool m_sigpatch_due = false;
+    bool TakeSigpatchNotice() { return std::exchange(m_sigpatch_due, false); }
     std::string m_update_hint;
     Dialog m_dialog;
     // A dialog of this kind, with nothing left of the one before.

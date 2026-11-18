@@ -651,6 +651,9 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
             Notice(text);
             m_notice_until = m_time + 6;
         }
+        // no sigpatches found: once a session, before the first install, the interface is told to
+        // say so (TakeSigpatchNotice); the install goes on all the same
+        if (!m_prefs.download_test && m_sigpatch_check.Due(m_ui.sigpatch_notice, "sdmc:")) m_sigpatch_due = true;
         // back to the library: the strip shows the install going on
         m_detail = false;
     } else if (duplicate) {

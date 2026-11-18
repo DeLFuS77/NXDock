@@ -100,4 +100,10 @@ Sigpatches FindSigpatches(const std::string& sd) {
     return s;
 }
 
+bool SigpatchNotice::Due(bool option_on, const std::string& sd) {
+    if (m_checked) return false;
+    m_checked = true;
+    return option_on && !FindSigpatches(sd).found;
+}
+
 } // namespace nxdock

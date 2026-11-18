@@ -34,4 +34,16 @@ struct Sigpatches {
 // `sd` is the root of the SD card ("sdmc:" on the console, a folder on the computer).
 Sigpatches FindSigpatches(const std::string& sd);
 
+// The notice before installing when no sigpatches are found: once a session, at the first install,
+// while its option (sigpatch_notice) is on. Only a notice: installing goes on all the same.
+class SigpatchNotice {
+public:
+    // Called as installs are added to the queue: true when the notice is due now. The SD card is
+    // looked at only the first time, and only with the option on.
+    bool Due(bool option_on, const std::string& sd);
+
+private:
+    bool m_checked = false;
+};
+
 } // namespace nxdock

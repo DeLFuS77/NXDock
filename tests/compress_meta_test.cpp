@@ -53,6 +53,19 @@ int main() {
         s = FindSigpatches(sd);
         CHECK(s.found && s.how == "sys-patch");
     }
+    {
+        // the notice before installing: once a session, only without sigpatches and with its option on
+        const std::string none = root + "/none", patched = root + "/sd";
+        std::system(("mkdir -p " + none).c_str());
+        SigpatchNotice first;
+        CHECK(first.Due(true, none));
+        CHECK(!first.Due(true, none)); // said once
+        SigpatchNotice off;
+        CHECK(!off.Due(false, none));
+        CHECK(!off.Due(true, none)); // the first install of the session went by without it
+        SigpatchNotice found;
+        CHECK(!found.Due(true, patched));
+    }
     if (failures) std::printf("%d failed\n", failures);
     else std::printf("compress_meta: all passed\n");
     return failures ? 1 : 0;
