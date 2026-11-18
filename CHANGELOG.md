@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.10
+
+These changes have not been tested in depth yet, so some bugs may remain.
 
 - Shared with the library, when allowed: the firmware, Atmosphère, emuMMC, free space and sigpatches of the console,
   and how long each game was played.
