@@ -40,6 +40,20 @@ bool StorageSpace(NcmStorageId storage, s64& free_bytes, s64& total_bytes) {
     return ok;
 }
 
+bool SdCardSpace(s64& free_bytes, s64& total_bytes) {
+    free_bytes = total_bytes = -1;
+    FsFileSystem fs;
+    if (R_FAILED(fsOpenSdCardFileSystem(&fs))) {
+        return false;
+    }
+    char root[FS_MAX_PATH] = "/";
+    s64 v = 0;
+    if (R_SUCCEEDED(fsFsGetFreeSpace(&fs, root, &v))) free_bytes = v;
+    if (R_SUCCEEDED(fsFsGetTotalSpace(&fs, root, &v)) && v > 0) total_bytes = v;
+    fsFsClose(&fs);
+    return free_bytes >= 0;
+}
+
 bool HasContent(u64 id, u32 version) {
     if (!id || R_FAILED(ncmInitialize())) return false;
     bool has = false;

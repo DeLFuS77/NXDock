@@ -142,15 +142,15 @@ inline bool AskText(const char* guide, const std::string& initial, bool secret, 
     return true;
 }
 
-// Settings, in groups: the library, installing, the saves, notices, the look, the wizard, the HOME
-// menu, connecting by hand.
+// Settings, in groups: the library, installing, the saves, notices, the look, help (the wizard and
+// a report for the library), NXDock, the HOME menu, connecting by hand.
 enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
-    kRowDest, kRowPick, kRowScreen,
+    kRowDest, kRowPick, kRowScreen, kRowSigpatch,
     kRowSaveCopy, kRowSaveAuto, // a group of their own (S1 A of 14/11)
     kRowFinish, kRowBattery, kRowNotifyDone,
     kRowLanguage, kRowTheme, kRowStyle, kRowSounds, kRowAnim, kRowFocusView, kRowTouchRumble,
-    kRowWizard,
+    kRowWizard, kRowReport,
     kRowSelfUpdate, kRowSelfNotice, kRowSelfBack,
     kRowHome, kRowHomeRemove,
     kRowAddress, kRowKey,

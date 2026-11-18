@@ -137,6 +137,7 @@ UiPrefs UiPrefs::Load() {
         else if (key == "finish_effect") p.finish_effect = n != 0;
         else if (key == "battery_notice") p.battery_notice = n != 0;
         else if (key == "battery_level") p.battery_level = n >= 5 && n <= 50 ? n : 15;
+        else if (key == "sigpatch_notice") p.sigpatch_notice = n != 0;
         else if (key == "check_updates") p.check_updates = n != 0;
         else if (key == "saver") p.saver = n != 0;
         else if (key == "screen_off_auto") p.screen_off_auto = n != 0;
@@ -180,12 +181,12 @@ bool UiPrefs::Save() const {
                  "check_updates=%d\nsaver=%d\nlanguage=%d\ntheme_auto=%d\ndest=%d\npick=%d\nsort=%d\nfocus=%s\nscreen_off_auto=%d\nanim=%d\nsave_copy=%d\nnotify_done=%d\nconsole_size=%d\nlibrary_size=%d\n"
                  "focus_view=%d\ntouch_rumble=%d\nstyle=%d\nconsole_sort=%d\n"
                  "self_update_notice=%d\nself_update_checked=%lld\nversions_list=%d\nmtp_units=%d\nsave_auto_days=%d\nsave_auto_last=%lld\ntext_wrap=%d\n"
-                 "show_shortcuts=%d\n",
+                 "show_shortcuts=%d\nsigpatch_notice=%d\n",
                  wizard_done, wizard_music, sounds, finish_effect, battery_notice, battery_level, check_updates, saver,
                  language, theme_auto, dest, pick, sort, focus.c_str(), screen_off_auto, anim, save_copy, notify_done, console_size, library_size,
                  focus_view, touch_rumble, style, console_sort,
                  self_update_notice, self_update_checked, versions_list, mtp_units, save_auto_days, save_auto_last, text_wrap,
-                 show_shortcuts);
+                 show_shortcuts, sigpatch_notice);
     const bool ok = std::fclose(f) == 0;
     if (!ok) {
         std::remove(kUiTemp);

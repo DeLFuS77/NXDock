@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Shared with the library, when allowed: the firmware, Atmosphère, emuMMC, free space and sigpatches of the console,
+  and how long each game was played.
+- Settings › Help: Send a report to the library. The logs, the history and the crash reports go to Switch Library
+  Manager Web as a ZIP to attach to an issue, without keys, saves or names. The error cards of the queue and of
+  Compress games have the same button.
+- The page of a game says in an orange line when no sigpatches are found; the game installs all the same. The line
+  can be turned off in + and back on in Settings › Installing.
+- The library can ask to remove a game. NXDock always asks first, copies its saves as Settings › Saves says, and
+  removes the game with its update and DLC.
+
 ## 0.9.0-beta.9
 
 - Compress games: a collection of several programs is read with all its contents, so its metadata is never left out

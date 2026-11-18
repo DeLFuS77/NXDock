@@ -152,6 +152,102 @@ float App::DrawNoRoom(NVGcontext* vg, float x, float y, float w, unsigned long l
     return h;
 }
 
+// ---- no sigpatches found (5B of the visual test of 18/11) ----
+
+bool App::SigpatchShown() {
+    // only a warning, every time the page shows: with its option on, and not while installs only
+    // download (the test of the network)
+    return !m_prefs.download_test && SigpatchLine(m_ui.sigpatch_notice, m_sigcache, "sdmc:");
+}
+
+bool App::SigpatchByY(const Game& g) {
+    // Y checks a game on the console, as before; on one not installed it tells about sigpatches
+    return SigpatchShown() && !g.installed.base && g.installed.dlc.empty();
+}
+
+void App::OpenSigpatchInfo() {
+    OpenDialog(DialogKind::SigpatchInfo);
+    m_dialog.single = true;
+}
+
+void App::SigpatchesOff() {
+    // from the menu of +: Settings › Installing turns it back on
+    m_ui.sigpatch_notice = false;
+    m_ui.Save();
+    NoticeOk(TrM().sg_off_done);
+}
+
+float App::DrawSigpatchLine(NVGcontext* vg, float x, float y, float w, bool y_info) {
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    // it comes in under the cards after the page, each time the page is shown
+    if (m_sig_game != m_detail_game) {
+        m_sig_game = m_detail_game;
+        m_sig_at = m_time;
+    }
+    const double at = std::max(m_sig_at, m_detail_at + 0.25);
+    const float k = ui::EaseOutBack(ui::Appear(at, 0.45f));
+    const float h = 52;
+    nvgSave(vg);
+    // it slides in from the right and opens down; gentle animations only fade it
+    if (ui::Lively()) {
+        nvgTranslate(vg, 26 * (1 - std::min(1.f, k)), 0);
+        nvgIntersectScissor(vg, x - 8, y - 4, w + 16, (h + 8) * std::clamp(k, 0.f, 1.05f));
+    }
+    nvgGlobalAlpha(vg, std::clamp(ui::Appear(at, 0.3f), 0.f, 1.f));
+    NVGcolor fill = t.orange;
+    fill.a = 0.12f;
+    ui::FillRound(vg, x, y, w, h, 12, t.panel);
+    ui::FillRound(vg, x, y, w, h, 12, fill);
+    NVGcolor edge = t.orange;
+    edge.a = 0.6f;
+    ui::StrokeRound(vg, x + .5f, y + .5f, w - 1, h - 1, 12, edge, 1.2f);
+    // a warning triangle, in orange, as the line of the SD card without room
+    const float wx = x + 24, wy = y + h / 2;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, wx, wy - 10);
+    nvgLineTo(vg, wx + 11, wy + 9);
+    nvgLineTo(vg, wx - 11, wy + 9);
+    nvgClosePath(vg);
+    nvgFillColor(vg, t.orange);
+    nvgFill(vg);
+    ui::Text(vg, wx, wy + 2, 13, t.panel, "!", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    // the i on the right: Y (when the page has no check) or a tap opens what they are
+    const float ix = x + w - 30;
+    NVGcolor ring = t.orange;
+    ring.a = 0.18f;
+    nvgBeginPath(vg);
+    nvgCircle(vg, ix, wy, 15);
+    nvgFillColor(vg, ring);
+    nvgFill(vg);
+    nvgBeginPath(vg);
+    nvgCircle(vg, ix, wy, 15);
+    nvgStrokeColor(vg, edge);
+    nvgStrokeWidth(vg, 1.2f);
+    nvgStroke(vg);
+    ui::Text(vg, ix, wy + 1, 18, t.orange, "i", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    AddHit(ix - 30, y, 60, h, HitKind::SigpatchInfo);
+    float right = ix - 24;
+    if (y_info) {
+        ui::Symbol(vg, t, right - 10, wy, 18, ui::glyph::Y, t.muted, HidNpadButton_Y);
+        right -= 30;
+    }
+    // what it means; a line that does not fit goes on two, without the second
+    const float tx = x + 46, tw = std::max(60.f, right - tx);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, tx, y, tw, h);
+    if (ui::TextWidth(vg, 15, m.sg_line) <= tw) {
+        ui::Text(vg, tx, y + 17, 15, t.orange, m.sg_line);
+        ui::Text(vg, tx, y + 36, 13, t.muted, m.sg_line_more);
+    } else {
+        const float lh = std::min(h - 8, BoxHeight(vg, tw, 14, m.sg_line));
+        TextBox(vg, tx, y + (h - lh) / 2, tw, 14, t.orange, m.sg_line);
+    }
+    nvgRestore(vg);
+    nvgRestore(vg);
+    return h;
+}
+
 void App::UseNandOnce(int screen) {
     // the internal memory for this install only; the next one goes to the SD card again
     if (screen == 0) {
@@ -239,6 +335,10 @@ void App::UpdateDetail(u64 down, u64 held) {
         } else {
             EnqueuePicked();
         }
+    }
+    if ((down & HidNpadButton_Y) && SigpatchByY(g)) {
+        OpenSigpatchInfo(); // no sigpatches found (5B): what they are
+        return;
     }
     if ((down & HidNpadButton_Y) && (g.installed.base || !g.installed.dlc.empty())) {
         if (m_queue->StartVerify(g.title_id)) {
@@ -384,7 +484,9 @@ void App::DrawDetail(NVGcontext* vg) {
     if (NoRoomAppears(0, picked_size, m_to_nand)) m_detail_focus = int(rows.size()) + 1;
     const bool noroom = NoRoomShown(picked_size, m_to_nand);
     if (!noroom && m_detail_focus > int(rows.size())) m_detail_focus = int(rows.size());
-    const float strip = noroom ? 60.f : 0.f;
+    // no sigpatches found (5B): an orange line under the cards too, every time, never in the way
+    const bool sig = SigpatchShown();
+    const float strip = (noroom ? 60.f : 0.f) + (sig ? 60.f : 0.f);
     // room below for where it goes (two large cards) and Install
     const float list_h = std::min({float(rows.size()) * lh + 12, 250.f, std::max(2 * lh + 12, 664 - 14 - 52 - 18 - 64 - 16 - strip - ly)});
     enter(2);
@@ -452,6 +554,8 @@ void App::DrawDetail(NVGcontext* vg) {
     DestCards(vg, rx, cards_y, rw, 64, m_to_nand, picked_size, HitKind::Dest);
     nvgRestore(vg);
     if (noroom) DrawNoRoom(vg, rx, cards_y + 64 + 8, rw, picked_size, m_detail_focus == int(rows.size()) + 1, 0);
+    const bool sig_by_y = sig && SigpatchByY(g);
+    if (sig) DrawSigpatchLine(vg, rx, cards_y + 64 + 8 + (noroom ? 60.f : 0.f), rw, sig_by_y);
     const float dy = cards_y + 64 + 18 + strip;
     char install[160];
     std::snprintf(install, sizeof(install), m_to_nand ? TrM().dc_install_nand_fmt : TrM().dc_install_sd_fmt, SizeText(picked_size).c_str());
@@ -473,6 +577,8 @@ void App::DrawDetail(NVGcontext* vg) {
     std::vector<ui::Hint> hints = {{ui::glyph::A, s.select, HidNpadButton_A}, {where_glyphs.c_str(), TrM().dc_switch, HidNpadButton_ZR}};
     if (g.installed.base || !g.installed.dlc.empty()) {
         hints.push_back({ui::glyph::Y, s.verify, HidNpadButton_Y});
+    } else if (sig_by_y) {
+        hints.push_back({ui::glyph::Y, TrM().sg_hint, HidNpadButton_Y}); // what sigpatches are (5B)
     }
     if (g.installed.base && !m_shop_active) {
         hints.push_back({ui::glyph::X, TrM().t_mods, HidNpadButton_X}); // its cheats and mods (10A)

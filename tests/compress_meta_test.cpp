@@ -53,6 +53,25 @@ int main() {
         s = FindSigpatches(sd);
         CHECK(s.found && s.how == "sys-patch");
     }
+    {
+        // the line on the page of a game: every time without sigpatches with its option on; the
+        // SD card read once, and again only after Refresh (NXDock back in focus)
+        const std::string none = root + "/none", patched = root + "/sd";
+        std::system(("rm -rf " + none + " && mkdir -p " + none).c_str());
+        SigpatchCache cache;
+        CHECK(SigpatchLine(true, cache, none));
+        CHECK(SigpatchLine(true, cache, none)); // not only once
+        CHECK(!SigpatchLine(false, cache, none)); // the option off
+        std::system(("mkdir -p " + none + "/atmosphere/contents/420000000000000B").c_str());
+        Touch(none + "/atmosphere/contents/420000000000000B/exefs.nsp");
+        CHECK(SigpatchLine(true, cache, none)); // kept: the SD card is not read every frame
+        cache.Refresh();
+        CHECK(!SigpatchLine(true, cache, none) && cache.Get(none).how == "sys-patch"); // read again
+        SigpatchCache off;
+        CHECK(!SigpatchLine(false, off, none));
+        SigpatchCache found;
+        CHECK(!SigpatchLine(true, found, patched));
+    }
     if (failures) std::printf("%d failed\n", failures);
     else std::printf("compress_meta: all passed\n");
     return failures ? 1 : 0;

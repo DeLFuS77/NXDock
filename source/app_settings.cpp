@@ -25,6 +25,7 @@ const char* SettingHelp(int row) {
         case kRowDest: return tt.h_dest;
         case kRowPick: return tt.h_pick;
         case kRowScreen: return tt.h_screen;
+        case kRowSigpatch: return TrM().sg_help;
         case kRowSaveCopy: return tt.h_save_copy;
         case kRowSaveAuto: return tt.h_save_auto;
         case kRowFinish: return tt.h_finish;
@@ -37,6 +38,7 @@ const char* SettingHelp(int row) {
         case kRowFocusView: return tt.h_focus_view;
         case kRowTouchRumble: return tt.h_touch_rumble;
         case kRowWizard: return tt.h_wizard;
+        case kRowReport: return TrM().rp_help;
         case kRowSelfUpdate: return tt.h_self_update;
         case kRowSelfNotice: return tt.h_self_notice;
         case kRowSelfBack: return tt.h_self_back;
@@ -184,6 +186,10 @@ void App::ActivateSetting(int row) {
         case kRowWizard:
             OpenWizard();
             break;
+        case kRowReport:
+            // to the library, for an issue (4A); without one paired it says how to pair
+            SendReport();
+            break;
         case kRowSelfUpdate:
             AskSelfUpdate();
             break;
@@ -217,6 +223,11 @@ void App::ActivateSetting(int row) {
             break;
         case kRowPick:
             m_ui.pick = (m_ui.pick + 1) % 3;
+            m_ui.Save();
+            break;
+        case kRowSigpatch:
+            // the orange line of the page of a game when no sigpatches are found (5B)
+            m_ui.sigpatch_notice = !m_ui.sigpatch_notice;
             m_ui.Save();
             break;
         case kRowFinish:
@@ -407,6 +418,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {m.st_dest, m_ui.dest == 2 ? s.wiz_ask_each : s.sd_card, true},
         {m.st_pick, picks[std::clamp(m_ui.pick, 0, 2)], true},
         {m.st_screen, screens[m_ui.screen_off_auto ? 2 : m_ui.saver ? 1 : 0], m_ui.saver || m_ui.screen_off_auto},
+        {m.sg_row, yes(m_ui.sigpatch_notice), m_ui.sigpatch_notice},
         {m.sc_row, yes(m_ui.save_copy), m_ui.save_copy},
         {TrT().sv_auto_row, save_auto, m_ui.save_auto_days > 0},
         {m.st_finish, yes(m_ui.finish_effect), m_ui.finish_effect},
@@ -420,6 +432,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {m.st_focus_row, m_ui.focus_view == 1 ? m.st_focus_panel : m.st_focus_band, true},
         {m.st_touch_rumble, yes(m_ui.touch_rumble), m_ui.touch_rumble},
         {s.wiz_row, s.wiz_repeat, true},
+        {m.rp_row, "", false},
         {TrT().up_row, self_update, self_newer},
         {TrT().up_notice_row, yes(m_ui.self_update_notice), m_ui.self_update_notice},
         {TrT().up_back_row, m_update_has_old ? TrT().up_back_kept : TrT().up_back_none, false},
@@ -428,7 +441,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {s.manual_address, address, !m_manual_url.empty()},
         {s.manual_key, linked ? s.key_saved : s.not_set, linked},
     };
-    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, TrT().st_g_saves, m.st_g_notices, m.st_g_look, m.st_g_wizard, TrT().st_g_nxdock, m.st_g_home, m.st_g_manual};
+    const char* groups[kGroups] = {m.st_g_library, m.st_g_install, TrT().st_g_saves, m.st_g_notices, m.st_g_look, m.st_g_help, TrT().st_g_nxdock, m.st_g_home, m.st_g_manual};
     const float x = 48, w = 540, h = 56, gap = 8, head = 34;
     // where each row goes: a title before the first of each group
     float top_of[kSettingRows];
@@ -462,7 +475,8 @@ void App::DrawSettings(NVGcontext* vg) {
         if (y + h + 12 < view_top - 8 || y - 12 > view_bottom) continue;
         const bool dim = ((i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked) ||
                          (i == kRowHomeRemove && (!m_home.installed || m_home.running_from)) ||
-                         (i == kRowHome && m_home.running_from) || (i == kRowSelfBack && !m_update_has_old);
+                         (i == kRowHome && m_home.running_from) || (i == kRowSelfBack && !m_update_has_old) ||
+                         (i == kRowReport && !linked);
         nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
         Panel(vg, t, x, y, w, h, 14);
         if (i == m_setting) {
@@ -476,8 +490,15 @@ void App::DrawSettings(NVGcontext* vg) {
         const float vw = std::min(260.f, ui::TextWidth(vg, 16, rows[i].value.c_str()));
         nvgSave(vg);
         nvgIntersectScissor(vg, x + 16, y, w - 32 - vw - 14, h);
-        ui::Text(vg, x + 22, y + h / 2, 18, i == kRowForget ? t.warn : t.text, rows[i].label);
+        if (i == kRowReport) {
+            // the report (4A): what it is for, small, under its name; a ring while it goes
+            ui::Text(vg, x + 22, y + h / 2 - 10, 18, t.text, rows[i].label);
+            ui::Text(vg, x + 22, y + h / 2 + 13, 13, t.muted, m.rp_row_sub);
+        } else {
+            ui::Text(vg, x + 22, y + h / 2, 18, i == kRowForget ? t.warn : t.text, rows[i].label);
+        }
         nvgRestore(vg);
+        if (i == kRowReport && m_lib_report_running) ui::Spinner(vg, x + w - 34, y + h / 2, 9, t.work, m_time);
         nvgSave(vg);
         nvgIntersectScissor(vg, x + w - 22 - vw, y, vw, h);
         ui::Text(vg, x + w - 22, y + h / 2, 16, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
@@ -507,7 +528,8 @@ void App::DrawSettings(NVGcontext* vg) {
             case 2: {
                 // "Now: …" for a choice; the rows that do something say their state as it is, or nothing
                 std::string pill = rows[row].value;
-                const bool action = row == kRowWizard || row == kRowSelfUpdate || row == kRowSelfBack || row == kRowHome || row == kRowHomeRemove;
+                const bool action = row == kRowWizard || row == kRowSelfUpdate || row == kRowSelfBack || row == kRowHome || row == kRowHomeRemove ||
+                                    row == kRowReport;
                 if (row == kRowWizard) pill.clear();
                 if (!action && !pill.empty()) {
                     char now[200];
@@ -549,6 +571,7 @@ void App::DrawSettings(NVGcontext* vg) {
     else if (m_setting == kRowSelfUpdate) act = m.open;
     else if (m_setting == kRowSelfBack) act = TrT().up_back_go;
     else if (m_setting == kRowHomeRemove) act = m.hm_remove_go;
+    else if (m_setting == kRowReport) act = m.rp_send;
     if (m_setting == kRowStyle) {
         ui::HintBar(vg, t, nullptr, {{ui::glyph::DPad, act, HidNpadButton_AnyRight}, {ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
         return;

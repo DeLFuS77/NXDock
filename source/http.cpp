@@ -184,7 +184,7 @@ void SplitKey(const std::string& key, std::string& user, std::string& pass) {
 }
 
 Response Send(const std::string& method, const std::string& url, const std::string& key, uint64_t size,
-              const std::function<long(char*, size_t)>& read, const std::function<bool(uint64_t)>& progress) {
+              const std::function<long(char*, size_t)>& read, const std::function<bool(uint64_t)>& progress, const char* type) {
     CURL* curl = Prepare(url, key);
     if (!curl) return {0, {}, "curl"};
     std::string body;
@@ -196,7 +196,7 @@ Response Send(const std::string& method, const std::string& url, const std::stri
     curl_easy_setopt(curl, CURLOPT_READDATA, &s);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, OnWrite);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &s);
-    curl_slist* headers = curl_slist_append(nullptr, "Content-Type: application/octet-stream");
+    curl_slist* headers = curl_slist_append(nullptr, (std::string("Content-Type: ") + type).c_str());
     headers = curl_slist_append(headers, "Expect:");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     if (method == "PUT") {

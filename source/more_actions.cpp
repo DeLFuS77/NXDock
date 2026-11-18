@@ -35,7 +35,8 @@ constexpr float kActW = 470, kActRow = 56;
 // What a row does when it has no button of its own (kButton: as its button)
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kShortcuts, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
-             kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kCzGo, kCzFilter, kCzUnqueue, kSortBase = 100 };
+             kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kCzGo, kCzFilter, kCzUnqueue, kSigpatchInfo, kSigpatchOff,
+             kSendReport, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
@@ -409,6 +410,10 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             if (j.state == InstallJob::State::Failed || j.state == InstallJob::State::Cancelled) {
                 rows.push_back({kButton, s.retry, {}, true, HidNpadButton_A, false, kIconAgain});
             }
+            // its error card has the button of a report (4A): here too
+            const bool error_card = (j.state == InstallJob::State::Failed && !j.error.empty()) ||
+                                    (j.state == InstallJob::State::Done && !j.merge_error.empty());
+            if (error_card && CanSendReport()) rows.push_back({kSendReport, m.rp_button, {}, !m_lib_report_running, 0, false, kIconOpen});
             const bool paused = m_queue->Paused();
             rows.push_back({kButton, paused ? m.qw_go_on : m.qw_pause, {}, paused || m_queue->Waiting() > 0, HidNpadButton_ZR, false,
                             paused ? kIconPlay : kIconPause});
@@ -434,6 +439,11 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
             if (g.installed.base || !g.installed.dlc.empty()) rows.push_back({kButton, s.verify, {}, true, HidNpadButton_Y, false, kIconShield});
             if (g.installed.base && !m_shop_active) rows.push_back({kButton, m.t_mods, {}, true, HidNpadButton_X, false, kIconMods});
             rows.push_back({kButton, m.dc_switch, m_to_nand ? s.internal : s.sd_card, true, HidNpadButton_ZR, false, kIconCard});
+            if (SigpatchShown()) {
+                // no sigpatches found (5B): what they are, and the warning off (Settings turns it on)
+                rows.push_back({kSigpatchInfo, m.sg_menu_info, {}, true, SigpatchByY(g) ? u64(HidNpadButton_Y) : 0, false, kIconInfo});
+                rows.push_back({kSigpatchOff, m.sg_menu_off, {}, true, 0, false, kIconCross});
+            }
             break;
         }
         case ActScreen::SpacePick: {
@@ -671,6 +681,9 @@ void App::ActDo(const ActRow& row) {
             CompressFromConsole(app);
             break;
         }
+        case kSigpatchInfo: OpenSigpatchInfo(); break; // 5B
+        case kSigpatchOff: SigpatchesOff(); break;
+        case kSendReport: SendReport(); break; // 4A
         case kUpdateShop: UpdateFromShop(m_shop_focus); break; // 15A
         case kUsb3: OpenUsb3(); break;                         // USB A
         case kViewWrap:

@@ -47,6 +47,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # mod packages put and taken away
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -o /tmp/mods_test tests/mods_test.cpp source/mods.cpp source/zip.cpp /usr/lib/x86_64-linux-gnu/libz.so.1
   /tmp/mods_test
+  # the report for the library: only the logs, the history and the newest crash reports, deflated
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -o /tmp/report_test tests/report_test.cpp source/report.cpp source/zip.cpp /usr/lib/x86_64-linux-gnu/libz.so.1
+  /tmp/report_test /tmp
   # the MTP responder of NXDock, with a fake cable
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/mtp_test tests/mtp_test.cpp source/mtp_proto.cpp source/mtp_storage.cpp
   /tmp/mtp_test /tmp
@@ -60,7 +63,8 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -o /tmp/errors_test tests/errors_test.cpp source/errors.cpp source/i18n_more.cpp source/precheck.cpp
   /tmp/errors_test
   gcc -O1 -c -o /tmp/yyjson.o build/_deps/yyjson-src/src/yyjson.c
-  g++ -std=c++20 -Wall -Wextra -O1 -Ibuild/_deps/yyjson-src/src -o /tmp/catalog_test tests/catalog_test.cpp source/catalog.cpp /tmp/yyjson.o && /tmp/catalog_test
+  # the catalog, what the web sends (to install or to remove) and its answer, and the inventory with the console and the play time
+  g++ -std=c++20 -Wall -Wextra -O1 -Ibuild/_deps/yyjson-src/src -o /tmp/catalog_test tests/catalog_test.cpp source/catalog.cpp source/json.cpp /tmp/yyjson.o && /tmp/catalog_test
   # the styles of Settings › Look: colours that read well, the change between two, every language
   gcc -O1 -c -Ibuild/_deps/nanovg-src/include -Ibuild/_deps/nanovg-src/include/nanovg -Ibuild/_deps/stb_nanovg-src -o /tmp/nanovg.o build/_deps/nanovg-src/source/nanovg.c
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -Iinclude -Icompat -Ibuild/_deps/nanovg-src/include -o /tmp/style_test tests/style_test.cpp source/i18n_more.cpp /tmp/nanovg.o -lm
@@ -102,7 +106,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # the recipe of a merged game, and its base made again for a newer update (25E)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -Iinclude -o /tmp/merge_recipe_test tests/merge_recipe_test.cpp source/merge_recipe.cpp source/patch_view.cpp source/romfs_lz4.cpp /tmp/lz4nintendo.o
   /tmp/merge_recipe_test
-  # the list of compressed games, the look for sigpatches and the CNMT made again (24A)
+  # the list of compressed games, the look for sigpatches (and the line of the page of a game) and the CNMT made again (24A)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/compress_meta_test tests/compress_meta_test.cpp source/compress_meta.cpp
   /tmp/compress_meta_test
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/cnmt_patch_test tests/cnmt_patch_test.cpp source/cnmt_patch.cpp

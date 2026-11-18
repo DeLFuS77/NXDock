@@ -78,13 +78,67 @@ int main() {
     Expect(pushed.size() == 1 && pushed[0].id == "p1" && pushed[0].from == "ana" && pushed[0].size == 123 &&
                pushed[0].title_id == 0x0100000000010000ull && pushed[0].url == "/install/f/f1/Game.nsz",
            "push: a file of the app only, never another address");
+    Expect(pushed.size() == 1 && pushed[0].action == "install" && !pushed[0].Remove(), "push: an install when no action is said");
     Expect(!ParsePush("nope", pushed) && !ParsePush(R"({"items":1})", pushed), "push: not an answer");
+
+    // a game the library asks to remove (2bA): its application, never without an id or a title
+    Expect(ParsePush(R"({"items":[
+        {"id":"r1","action":"remove","titleId":"0100000000010000","game":"Game One","from":"ana"},
+        {"id":"r2","action":"remove","titleId":"0100000000020800","game":"Game Two"},
+        {"id":"r3","action":"remove","titleId":"0100000000031002","game":"Game Three"},
+        {"id":"r4","action":"remove","game":"No title"},
+        {"action":"remove","titleId":"0100000000040000"},
+        {"id":"r5","action":"eject","titleId":"0100000000050000","url":"/install/f/f5/x.nsp"},
+        {"id":"p6","action":"install","fileId":"f6","url":"/install/f/f6/Game.nsp","game":"Game","kind":"game"}]})", pushed),
+           "push remove: it reads");
+    Expect(pushed.size() == 4, "push remove: one without an id or a title, or of an action not known, is left out");
+    Expect(pushed.size() == 4 && pushed[0].Remove() && pushed[0].id == "r1" && pushed[0].title_id == 0x0100000000010000ull &&
+               pushed[0].game == "Game One" && pushed[0].url.empty(),
+           "push remove: the game, without a file");
+    Expect(pushed.size() == 4 && pushed[1].title_id == 0x0100000000020000ull, "push remove: an update names its game");
+    Expect(pushed.size() == 4 && pushed[2].title_id == 0x0100000000030000ull, "push remove: a DLC names its game");
+    Expect(pushed.size() == 4 && !pushed[3].Remove() && pushed[3].id == "p6", "push remove: an install said as such stays one");
+
+    // what the console answers (/install/push/answer)
+    Expect(PushAnswerJson("p1", true) == R"({"id":"p1","accepted":true})", "answer: an install");
+    Expect(PushAnswerJson("r1", false) == R"({"id":"r1","accepted":false})", "answer: kept");
+    Expect(PushAnswerJson("r1", true, "removed") == R"({"id":"r1","accepted":true,"result":"removed"})", "answer: removed");
+    Expect(PushAnswerJson("r2", true, "failed") == R"({"id":"r2","accepted":true,"result":"failed"})", "answer: failed");
+    Expect(PushAnswerJson("r3", false, "missing") == R"({"id":"r3","accepted":false,"result":"missing"})", "answer: not there");
+    Expect(PushAnswerJson("a\"b", true) == R"({"id":"a\"b","accepted":true})", "answer: the id escaped");
 
     // the inventory, only sent when the user says yes
     const std::string inv = InventoryJson({{0x0100000000010000ull, 0x80, 0, false}, {0x0100000000010800ull, 0x81, 65536, true}});
     Expect(inv == R"({"items":[{"titleId":"0100000000010000","type":"game","version":0,"storage":"sd"},{"titleId":"0100000000010800","type":"update","version":65536,"storage":"nand"}]})",
            "inventory: the JSON of the app");
     Expect(InventoryJson({}) == R"({"items":[]})", "inventory: empty");
+
+    // with the console and the play time: "items" stays as it was, the rest after it
+    ConsoleFacts facts;
+    facts.firmware = "19.0.1";
+    facts.atmosphere = "1.8.0";
+    facts.emummc = 1;
+    facts.sd_free = 123;
+    facts.sd_total = 456;
+    facts.nand_free = 789;
+    facts.nand_total = 1011;
+    facts.sigpatches = "sys-patch";
+    facts.mem_used = 5; // only for a report
+    const std::vector<PlayEntry> play = {{0x0100000000010000ull, 2040, 57, 1763400000}, {0x0100000000020000ull, -1, -1, 0}};
+    Expect(InventoryJson({{0x0100000000010000ull, 0x80, 0, false}}, &facts, &play) ==
+               R"({"items":[{"titleId":"0100000000010000","type":"game","version":0,"storage":"sd"}],)"
+               R"("console":{"firmware":"19.0.1","atmosphere":"1.8.0","emummc":true,"sdFree":123,"sdTotal":456,"nandFree":789,"nandTotal":1011,"sigpatches":"sys-patch"},)"
+               R"("play":[{"titleId":"0100000000010000","minutes":2040,"launches":57,"lastPlayed":1763400000},)"
+               R"({"titleId":"0100000000020000","minutes":0,"launches":0,"lastPlayed":0}]})",
+           "inventory: the console and the play time, unknowns as 0");
+    // unknown facts: no Atmosphère, emuMMC not known, sizes not read; text escaped
+    ConsoleFacts unknown;
+    unknown.firmware = "19.0.1 \"x\"\\\n";
+    const std::vector<PlayEntry> none;
+    Expect(InventoryJson({}, &unknown, &none) ==
+               R"({"items":[],"console":{"firmware":"19.0.1 \"x\"\\\n","atmosphere":"","emummc":false,"sdFree":0,"sdTotal":0,"nandFree":0,"nandTotal":0,"sigpatches":""},"play":[]})",
+           "inventory: unknown facts and escaped text");
+    Expect(InventoryJson({}, nullptr, &none) == R"({"items":[],"play":[]})", "inventory: play without the console");
 
     std::printf(failures ? "%d failed\n" : "all passed\n", failures);
     return failures ? 1 : 0;

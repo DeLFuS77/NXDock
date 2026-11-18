@@ -8,6 +8,7 @@
 #include "perf.hpp"
 #include "i18n_more.hpp"
 #include "log.hpp"
+#include "space.hpp"
 #endif
 
 #include <yyjson.h>
@@ -208,8 +209,17 @@ bool ParsePush(const std::string& json, std::vector<PushItem>& out) {
         p.title_id = ParseTitleId(yyjson_get_str(yyjson_obj_get(v, "titleId")));
         p.version = u32(yyjson_get_uint(yyjson_obj_get(v, "version")));
         p.size = yyjson_get_uint(yyjson_obj_get(v, "size"));
-        // only a file of the app: a path on it, never another address
-        if (!p.id.empty() && p.url.size() > 1 && p.url[0] == '/' && p.url[1] != '/') {
+        const std::string action = Str(v, "action");
+        if (!action.empty()) p.action = action;
+        if (p.id.empty()) continue;
+        if (p.Remove()) {
+            // a game to remove: its application, also when an update or a DLC of it is named
+            if (!p.title_id) continue;
+            const u64 low = p.title_id & 0xFFF;
+            p.title_id = ApplicationOf(p.title_id, low == 0 ? CatalogFile::Kind::Game : low == 0x800 ? CatalogFile::Kind::Update : CatalogFile::Kind::Dlc);
+            out.push_back(std::move(p));
+        } else if (p.action == "install" && p.url.size() > 1 && p.url[0] == '/' && p.url[1] != '/') {
+            // only a file of the app: a path on it, never another address
             out.push_back(std::move(p));
         }
     }
@@ -217,9 +227,15 @@ bool ParsePush(const std::string& json, std::vector<PushItem>& out) {
     return true;
 }
 
-std::string InventoryJson(const std::vector<InstalledContent>& items) {
+std::string PushAnswerJson(const std::string& id, bool accepted, const std::string& result) {
+    std::string out = "{\"id\":" + http::JsonQuote(id) + ",\"accepted\":" + (accepted ? "true" : "false");
+    if (!result.empty()) out += ",\"result\":" + http::JsonQuote(result);
+    return out + "}";
+}
+
+std::string InventoryJson(const std::vector<InstalledContent>& items, const ConsoleFacts* console, const std::vector<PlayEntry>* play) {
     std::string out = "{\"items\":[";
-    char entry[160];
+    char entry[200];
     for (size_t i = 0; i < items.size(); i++) {
         const auto& c = items[i];
         const char* type = c.type == 0x81 ? "update" : c.type == 0x82 ? "dlc" : "game";
@@ -227,7 +243,28 @@ std::string InventoryJson(const std::vector<InstalledContent>& items) {
                       i ? "," : "", (unsigned long long)c.title_id, type, c.version, c.nand ? "nand" : "sd");
         out += entry;
     }
-    return out + "]}";
+    out += "]";
+    if (console) {
+        // sizes in bytes; one not read goes as 0
+        const auto bytes = [](long long v) { return v > 0 ? v : 0ll; };
+        out += ",\"console\":{\"firmware\":" + http::JsonQuote(console->firmware) + ",\"atmosphere\":" + http::JsonQuote(console->atmosphere);
+        std::snprintf(entry, sizeof(entry), ",\"emummc\":%s,\"sdFree\":%lld,\"sdTotal\":%lld,\"nandFree\":%lld,\"nandTotal\":%lld",
+                      console->emummc == 1 ? "true" : "false", bytes(console->sd_free), bytes(console->sd_total), bytes(console->nand_free),
+                      bytes(console->nand_total));
+        out += entry;
+        out += ",\"sigpatches\":" + http::JsonQuote(console->sigpatches) + "}";
+    }
+    if (play) {
+        out += ",\"play\":[";
+        for (size_t i = 0; i < play->size(); i++) {
+            const auto& p = (*play)[i];
+            std::snprintf(entry, sizeof(entry), "%s{\"titleId\":\"%016llX\",\"minutes\":%lld,\"launches\":%lld,\"lastPlayed\":%lld}", i ? "," : "",
+                          (unsigned long long)p.title_id, std::max(0ll, p.minutes), std::max(0ll, p.launches), std::max(0ll, p.last_played));
+            out += entry;
+        }
+        out += "]";
+    }
+    return out + "}";
 }
 
 #ifdef __SWITCH__
@@ -323,6 +360,31 @@ std::map<u64, InstalledState> ReadInstalled(std::vector<InstalledContent>* list)
     if (ncm) ncmExit();
     nsExit();
     return installed;
+}
+
+std::string ReadInventory(const SystemInfo& sys) {
+    std::vector<InstalledContent> list;
+    ReadInstalled(&list);
+    const ConsoleFacts facts = ReadConsoleFacts(sys);
+    // the play time of every game installed, once each
+    std::vector<unsigned long long> apps;
+    for (const auto& c : list) {
+        if (c.type == NcmContentMetaType_Application && std::find(apps.begin(), apps.end(), c.title_id) == apps.end()) apps.push_back(c.title_id);
+    }
+    const auto stats = ReadPlayStats(apps);
+    std::vector<PlayEntry> play;
+    for (const auto app : apps) {
+        PlayEntry e;
+        e.title_id = app;
+        const auto it = stats.find(app);
+        if (it != stats.end()) {
+            e.minutes = it->second.play_minutes;
+            e.launches = it->second.launches;
+            e.last_played = it->second.last_played;
+        }
+        play.push_back(e);
+    }
+    return InventoryJson(list, &facts, &play);
 }
 #endif
 

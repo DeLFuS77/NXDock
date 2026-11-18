@@ -9,6 +9,7 @@
 
 #include <switch.h>
 #include <memory>
+#include <utility>
 #include <vector>
 #include "catalog.hpp"
 #include "file_source.hpp"
@@ -41,6 +42,9 @@
 #include "file_match.hpp"
 #include "text_view.hpp"
 #include "usb30.hpp"
+#include "compress_meta.hpp"
+#include "report.hpp"
+#include <deque>
 
 namespace nxdock {
 
@@ -83,7 +87,7 @@ private:
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
                          ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, RemoveStop, TicketRow,
-                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip };
+                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip, SigpatchInfo, SendReport };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -531,6 +535,19 @@ private:
     void CheckSdSpace();
     void Notice(const std::string& text);
     void NoticeOk(const std::string& text); // in green, with a tick: something was done
+    void NoticeBusy(const std::string& text);  // with a ring that spins, until another notice: something at work
+    void NoticeError(const std::string& text); // in red, with its mark: something could not be done
+    // The report for the library (4A, report.hpp, app_report.cpp): from Settings › Help and the
+    // error cards of the queue and of Compress games; sent on a thread of its own while a notice spins.
+    bool CanSendReport(); // a library is paired
+    void SendReport();
+    void FollowReport();
+    // its button on an error card, its right edge at `right`; returns where it starts
+    float DrawReportButton(NVGcontext* vg, float right, float cy);
+    std::thread m_lib_report_thread;
+    std::atomic<bool> m_lib_report_ready{false};
+    bool m_lib_report_running = false;
+    report::Result m_lib_report_result;
     void DrawPairing(NVGcontext* vg, const Link::View& v);
     // Without network: said in large, in place of what needs it (the pairing, the library).
     void DrawNoNetwork(NVGcontext* vg, const char* retry);
@@ -618,6 +635,8 @@ private:
         bool verify_bar = false, verify_running = false;
         bool tick = false;  // ConsoleRemove: the box of the saves (3A)
         bool tick2 = false; // ConsoleRemove: the box of its mods and its tickets (7A)
+        std::string qr, qr_text; // a QR code and what it opens, beside it (5B)
+        bool danger = false; // the action deletes: its button in red letters, not filled (2bA)
         std::string cancel_label;
         float verify_frac = 0;
         std::string verify_text;
@@ -725,7 +744,7 @@ private:
     SpaceRead m_space_read;
     std::string m_notice;
     double m_notice_until = 0;
-    bool m_notice_ok = false;
+    bool m_notice_ok = false, m_notice_busy = false, m_notice_err = false;
     int m_pair_focus = 0; // row in focus on the pairing screen
     std::string m_manual_url; // typed in Settings, until the key is typed too
     SpeedTest m_speed;
@@ -916,7 +935,7 @@ private:
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, CompressDone, CompressStop, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
                             UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
-                            Usb3, Usb3Reboot, RemoveStopped };
+                            Usb3, Usb3Reboot, RemoveStopped, SigpatchInfo, PushRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -943,6 +962,7 @@ private:
         int extra_mods = 0;              // ConsoleRemove: the folders of mods found
         int extra_common = 0, extra_personal = 0; // ConsoleRemove: the tickets found
         std::vector<char> marks;         // UpdateHere: the jobs ticked (15A)
+        bool report = false;             // VaultError: the error can be sent in a report (4A)
     };
     // "Send to console" and the inventory (only when the user said yes)
     std::unique_ptr<Push> m_push;
@@ -950,6 +970,27 @@ private:
     unsigned m_inventory_sent = ~0u;    // the queue version the last inventory was read at
     std::string m_inventory_url;
     void FollowPush();
+    // The games the library asks to remove (2bA, app_remove.cpp): asked one by one, never while
+    // the queue or Compress games is at work; taken off as In the console does, then answered.
+    std::deque<PushItem> m_remove_asks;
+    std::string m_remove_scanned; // the ask the console was last read again for
+    struct PushRemoving {
+        std::string id;
+        unsigned long long app = 0;
+        int finished = 0; // Space's count of tasks ended when it began
+        bool on = false;
+    };
+    PushRemoving m_push_rm;
+    void FollowRemoveAsks();
+    void FollowPushRemoving();
+    void ConfirmPushRemove();
+    bool CompressAtWork() const;
+    std::string LibraryName();
+    // the saves of a game copied before it goes, as Settings › Saves says (3A); several games
+    // whole, as In the console takes them off (false: it could not start)
+    std::function<std::string(unsigned long long)> CopySavesFirst();
+    bool RemoveWholeGames(const std::vector<unsigned long long>& apps, std::function<std::string(unsigned long long)> before,
+                          std::function<void(unsigned long long)> after);
     void FollowQueueAsk(); // a copy of the saves that failed: go on? (18A)
     // the queue told to the library app (22A) and its end to the phone (21A)
     void FollowQueueWeb();
@@ -973,6 +1014,20 @@ private:
     forwarder::Status m_home; // where NXDock is and whether its HOME menu shortcut is there
     SystemInfo m_sysinfo;           // the firmware and Atmosphère, for the check before installing
     bool m_risk_ok = false;
+    // 5B: no sigpatches found, while its option is on: an orange line on the page of a game, every
+    // time, never in the way of installing. The SD card is read once and again when NXDock is back
+    // in focus (they may have been put there meanwhile).
+    bool SigpatchShown();
+    float DrawSigpatchLine(NVGcontext* vg, float x, float y, float w, bool y_info);
+    bool SigpatchByY(const Game& g); // Y opens its explanation (and not the check) on this page
+    void OpenSigpatchInfo();
+    void SigpatchesOff();
+    SigpatchCache m_sigcache;
+    int m_sig_game = -1;   // the game whose page last showed the line, for its entrance
+    double m_sig_at = -100;
+    AppletHookCookie m_focus_hook{};
+    bool m_focus_hooked = false, m_focus_back = false;
+    static void OnFocus(AppletHookType hook, void* param);
     std::string m_update_hint;
     Dialog m_dialog;
     // A dialog of this kind, with nothing left of the one before.
