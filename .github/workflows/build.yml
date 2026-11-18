@@ -52,9 +52,20 @@ jobs:
           fi
           echo "VERSION=${version}" >> "${GITHUB_ENV}"
 
-      # devkitpro/devkita64 through Docker, as tools/build.sh runs it on a computer
+      # devkitpro/devkita64 through Docker, as tools/build.sh runs it on a computer. NXDOCK_OFFICIAL:
+      # the name and the icon of NXDock, for the versions of this repository only (TRADEMARKS.md); a
+      # build without it is an unofficial build
       - name: Build
+        env:
+          NXDOCK_OFFICIAL: "ON"
         run: sh tools/build.sh
+
+      - name: The program is an official build
+        run: |
+          if grep -q "NXDock (unofficial build)" build/NXDock.nro; then
+            echo "build/NXDock.nro is an unofficial build" >&2
+            exit 1
+          fi
 
       - name: Test
         run: sh tools/test.sh

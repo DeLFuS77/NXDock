@@ -251,6 +251,23 @@ target_compile_definitions(nxdock PRIVATE
     NXDOCK_RELEASE_KEYS="${NXDOCK_RELEASE_KEYS}"
 )
 
+# The name and the icon of NXDock are for its official versions only (TRADEMARKS.md): the workflow
+# of this repository turns this on (NXDOCK_OFFICIAL=ON tools/build.sh). Without it the program is
+# called "NXDock (unofficial build)" and has a plain icon, and the code is told so
+# (source/brand.hpp, whose names are the ones here).
+option(NXDOCK_OFFICIAL "The name and the icon of NXDock, for the versions of its repository only" OFF)
+# Each has a NACP file of its own: the one made before is not made again when the name changes.
+if(NXDOCK_OFFICIAL)
+    set(NXDOCK_NAME "NXDock")
+    set(NXDOCK_ICON ${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.jpg)
+    set(NXDOCK_NACP nxdock.nacp)
+    target_compile_definitions(nxdock PRIVATE NXDOCK_OFFICIAL=1)
+else()
+    set(NXDOCK_NAME "NXDock (unofficial build)")
+    set(NXDOCK_ICON ${CMAKE_CURRENT_SOURCE_DIR}/assets/unofficial.jpg)
+    set(NXDOCK_NACP nxdock-unofficial.nacp)
+endif()
+
 target_compile_options(nxdock PRIVATE -Wall -Wextra -O2)
 
 # Timing for development (source/perf.hpp): the boot, every frame, and a script of inputs.
@@ -276,14 +293,14 @@ target_include_directories(nxdock PRIVATE ${curl_inc} ${zstd_inc})
 target_link_libraries(nxdock PRIVATE yati nanovg yyjson qrcodegen stb_nanovg libusbhsfs monocypher ${deko3d_lib} ${curl_lib} ${z_lib})
 
 nx_generate_nacp(
-    OUTPUT nxdock.nacp
-    NAME "NXDock"
+    OUTPUT ${NXDOCK_NACP}
+    NAME "${NXDOCK_NAME}"
     AUTHOR "DeLFuS77"
     VERSION "${NXDOCK_FULL_VERSION}"
 )
 
 nx_create_nro(nxdock
     OUTPUT ${CMAKE_BINARY_DIR}/NXDock.nro
-    ICON ${CMAKE_CURRENT_SOURCE_DIR}/assets/icon.jpg
-    NACP nxdock.nacp
+    ICON ${NXDOCK_ICON}
+    NACP ${NXDOCK_NACP}
 )

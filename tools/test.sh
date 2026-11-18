@@ -21,6 +21,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   /tmp/minisig_test
   # the order of versions and betas, for updating itself
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/version_test tests/version_test.cpp && /tmp/version_test
+  # the name and the icon of an unofficial build and of an official one, as the NACP has them
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/brand_test tests/brand_test.cpp && /tmp/brand_test CMakeLists.txt
+  g++ -std=c++20 -Wall -Wextra -O1 -Isource -DNXDOCK_OFFICIAL=1 -o /tmp/brand_official_test tests/brand_test.cpp && /tmp/brand_official_test CMakeLists.txt
   # In the console: the orders, the play time in words, without the game, the folders of mods
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/console_order_test tests/console_order_test.cpp source/console_order.cpp
   /tmp/console_order_test /tmp

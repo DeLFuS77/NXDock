@@ -12,6 +12,17 @@ body:
 
         [Reporting a problem](https://github.com/DeLFuS77/NXDock/wiki/Reporting-a-problem) in the wiki says where the
         logs are. Security problems are reported privately: see SECURITY.md.
+
+        This tracker is for the official versions of NXDock, the ones published at https://github.com/DeLFuS77/NXDock/releases.
+        A build made or changed by someone else (the Homebrew Menu calls it "NXDock (unofficial build)") is supported
+        by whoever made it: report its problems there.
+  - type: checkboxes
+    id: official
+    attributes:
+      label: Official version
+      options:
+        - label: I use an official version of NXDock, downloaded from its releases page or updated by NXDock itself, not a modified or self-built copy.
+          required: true
   - type: input
     id: version
     attributes:

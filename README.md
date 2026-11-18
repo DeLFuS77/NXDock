@@ -190,6 +190,10 @@ tools/build.sh   # builds build/NXDock.nro in the official devkitpro/devkita64 c
 tools/test.sh    # the tests that need no console
 ```
 
+A program built this way is an unofficial build: it is called "NXDock (unofficial build)" and has a plain icon. The name
+and the logo of NXDock (`NXDOCK_OFFICIAL`) are for the versions published here, built by the workflow of this repository
+([TRADEMARKS.md](TRADEMARKS.md)).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how the code is laid out.
 
 ## Credits
