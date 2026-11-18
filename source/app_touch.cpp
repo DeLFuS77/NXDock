@@ -223,6 +223,11 @@ bool App::Tap(float x, float y, u64& down) {
             case HitKind::Button: down |= it->rect.button; break;
             case HitKind::Tab: m_tab = Tab(it->index); break;
             case HitKind::Wifi: m_wifi_open = true; break;
+            case HitKind::BuildNote:
+                // "Unofficial" in the top bar: what it means, in Settings › Help › Code and license
+                m_tab = Tab::Settings;
+                m_setting = kRowLicense;
+                break;
             case HitKind::Chip:
                 if (m_filter != it->index) m_wave_at = m_time; // the covers come in as a wave (9A)
                 m_filter = it->index;

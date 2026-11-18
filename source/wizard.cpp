@@ -11,6 +11,7 @@
 //  5. saver mode, and the speed test if wanted;
 //  6. done, and a walk of ten seconds through Library, Queue and Installed.
 #include "app.hpp"
+#include "brand.hpp"
 #include "draw.hpp"
 
 #include <algorithm>
@@ -448,9 +449,19 @@ void App::DrawWizard(NVGcontext* vg) {
         AddHit(x - 6, y - 6, w + 12, h + 12, HitKind::WizMusic);
     };
 
+    // a program built without NXDOCK_OFFICIAL says so after the step, as the top bar does
+    // later (brand.hpp)
+    const auto step_line = [&](float x, float y, float size) {
+        const float end = ui::Text(vg, x, y, size, t.muted, step_text);
+        if (!brand::kOfficial) {
+            const float dot = ui::Text(vg, end + 8, y, size, t.muted, "·");
+            ui::Text(vg, dot + 8, y, size, t.warn, TrT().ub_version);
+        }
+    };
+
     if (pairing) {
         // the step on top, then the pairing screen as it always is
-        ui::Text(vg, 48, 30, 14, t.muted, step_text);
+        step_line(48, 30, 14);
         ui::Text(vg, 48, 60, 26, t.text, titles[1]);
         music_button(kWidth - 48 - music_width(), 30);
         {
@@ -518,7 +529,7 @@ void App::DrawWizard(NVGcontext* vg) {
     nvgGlobalAlpha(vg, in);
     const float slide = 24 * (1 - in) * (1 - in);
     float y = 64;
-    ui::Text(vg, kBodyX + slide, y, 15, t.muted, step_text);
+    step_line(kBodyX + slide, y, 15);
     y += 40;
     nvgSave(vg);
     nvgScissor(vg, kBodyX, y - 26, kBodyW, 52);

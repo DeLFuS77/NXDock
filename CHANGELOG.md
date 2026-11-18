@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Settings › Help › Code and license: who makes NXDock, its license and that it has no warranty, with a QR to the code
+- An unofficial build has another name and a plain icon, and says so in the top bar, in its version and on opening
+
 ## 0.9.0-beta.9
 
 - Compress games: a collection of several programs is read with all its contents, so its metadata is never left out

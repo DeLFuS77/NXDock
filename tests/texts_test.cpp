@@ -2,7 +2,8 @@
 // Copyright (C) 2026 DeLFuS77
 //
 // The texts of source/texts in every language: none empty, and each with the same % fields as the
-// English one, in the same order (a missing or extra %s would read the wrong value, or crash).
+// English one, in the same order (a missing or extra %s would read the wrong value, or crash). The
+// notice of Code and license keeps the name of NXDock, who makes it and its license as they are.
 #include "i18n.hpp"
 #include "i18n_more.hpp"
 #include "i18n_tools.hpp"
@@ -62,6 +63,11 @@ int main() {
         Check("Tr", english, Tr(), LanguageName(l));
         Check("TrM", english_more, TrM(), LanguageName(l));
         Check("TrT", english_tools, TrT(), LanguageName(l));
+        // Settings › Help › Code and license, which a modified version keeps (TRADEMARKS.md)
+        if (std::string(TrT().lic_sub).rfind("NXDock © 2026 DeLFuS77 · GPL-3.0 ", 0) != 0) {
+            std::printf("FAIL %s: Code and license says \"%s\"\n", LanguageName(l), TrT().lic_sub);
+            g_failed++;
+        }
     }
     std::printf(g_failed ? "%d failed\n" : "all passed\n", g_failed);
     return g_failed ? 1 : 0;

@@ -142,8 +142,8 @@ inline bool AskText(const char* guide, const std::string& initial, bool secret, 
     return true;
 }
 
-// Settings, in groups: the library, installing, the saves, notices, the look, the wizard, the HOME
-// menu, connecting by hand.
+// Settings, in groups: the library, installing, the saves, notices, the look, the wizard, NXDock
+// itself, the HOME menu, connecting by hand, help.
 enum SettingRow {
     kRowLibrary, kRowForget, kRowShare, kRowUpdates, kRowVersionsList, kRowSpeed,
     kRowDest, kRowPick, kRowScreen,
@@ -154,6 +154,7 @@ enum SettingRow {
     kRowSelfUpdate, kRowSelfNotice, kRowSelfBack,
     kRowHome, kRowHomeRemove,
     kRowAddress, kRowKey,
+    kRowLicense, // Help › Code and license: who makes NXDock, its license, the code (TRADEMARKS.md)
     kSettingRows
 };
 
