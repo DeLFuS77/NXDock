@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Shared with the library, when allowed: the firmware, Atmosphère, emuMMC, free space and sigpatches of the console,
+  and how long each game was played.
+- The page of a game says in an orange line when no sigpatches are found; the game installs all the same. The line
+  can be turned off in + and back on in Settings › Installing.
+
 ## 0.9.0-beta.9
 
 - Compress games: a collection of several programs is read with all its contents, so its metadata is never left out

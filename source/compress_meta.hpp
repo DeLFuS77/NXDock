@@ -34,16 +34,20 @@ struct Sigpatches {
 // `sd` is the root of the SD card ("sdmc:" on the console, a folder on the computer).
 Sigpatches FindSigpatches(const std::string& sd);
 
-// The notice before installing when no sigpatches are found: once a session, at the first install,
-// while its option (sigpatch_notice) is on. Only a notice: installing goes on all the same.
-class SigpatchNotice {
+// The look for sigpatches, kept: the SD card is read the first time they are asked for, and again
+// only after Refresh (NXDock back in focus: they may have been put on the SD card meanwhile).
+class SigpatchCache {
 public:
-    // Called as installs are added to the queue: true when the notice is due now. The SD card is
-    // looked at only the first time, and only with the option on.
-    bool Due(bool option_on, const std::string& sd);
+    const Sigpatches& Get(const std::string& sd);
+    void Refresh() { m_read = false; }
 
 private:
-    bool m_checked = false;
+    Sigpatches m_found;
+    bool m_read = false;
 };
+
+// The orange line on the page of a game (5B): its option (sigpatch_notice) on and no sigpatches
+// found. Only a warning, never in the way of installing. With the option off, the SD card is not read.
+bool SigpatchLine(bool option_on, SigpatchCache& cache, const std::string& sd);
 
 } // namespace nxdock

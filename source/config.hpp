@@ -39,7 +39,7 @@ struct UiPrefs {
     bool finish_effect = true;  // when the queue ends: notice, vibration and sound
     bool battery_notice = true; // a notice before installing with little battery and no charger
     int battery_level = 15;     // from which %
-    bool sigpatch_notice = true; // a notice before the first install of a session when no sigpatches are found
+    bool sigpatch_notice = true; // an orange line on the page of a game when no sigpatches are found (5B)
     bool check_updates = true;  // at start, say how many updates the library has for what is installed
     bool saver = true;          // dims the screen after a while without touching anything while installing
     bool screen_off_auto = false; // turns the screen off when a long queue starts (11A)

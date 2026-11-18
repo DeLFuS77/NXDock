@@ -129,6 +129,17 @@ App::Fill App::DialogInstallText(DialogContent& dc) {
             dc.cancel_label = s.not_now;
             break;
         }
+        case DialogKind::SigpatchInfo: {
+            // the orange line of the page of a game (5B): what they are, where they go, the wiki
+            const More& m = TrM();
+            dc.title = m.sg_info_title;
+            dc.body = m.sg_info_body;
+            dc.qr = "https://github.com/DeLFuS77/NXDock/wiki/FAQ";
+            dc.qr_text = m.sg_info_qr;
+            dc.note = m.sg_info_where;
+            m_dialog.single = true;
+            break;
+        }
         case DialogKind::Risk: {
             dc.title = s.risk_title;
             // the reasons, then what is recommended

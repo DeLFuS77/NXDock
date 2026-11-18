@@ -287,6 +287,7 @@ bool App::Tap(float x, float y, u64& down) {
                 m_files_nand = it->index == 1;
                 break;
             case HitKind::NoRoomUse: UseNandOnce(it->index); break; // 12A
+            case HitKind::SigpatchInfo: OpenSigpatchInfo(); break;  // the i of the line of sigpatches (5B)
 
             case HitKind::QueueRow:
                 if (m_queue_focus == it->index) {

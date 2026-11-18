@@ -196,6 +196,9 @@ bool App::Init() {
     m_last_input = m_time;
     m_home = forwarder::Query();
     perf::Mark("HOME shortcut looked at");
+    // back in focus (from the HOME menu, the keyboard, sleep): the SD card may have changed meanwhile
+    appletHook(&m_focus_hook, OnFocus, this);
+    m_focus_hooked = true;
     if (!m_ui.wizard_done) {
         OpenWizard(); // only the first time; repeated from Settings
     } else if (net::IsAppletMode() && !m_home.installed && m_home.nro_found) {
@@ -257,6 +260,8 @@ void App::Exit() {
     }
     // the backlight on again before leaving
     ScreenOn();
+    if (m_focus_hooked) appletUnhook(&m_focus_hook);
+    m_focus_hooked = false;
     if (m_space_thread.joinable()) m_space_thread.join();
     if (m_lbl) lblExit();
     // a check or a download of a new version is let go
@@ -532,9 +537,19 @@ void App::Update(u64 down, u64 held) {
     }
 }
 
+void App::OnFocus(AppletHookType hook, void* param) {
+    // called inside appletMainLoop, on this thread
+    if (hook == AppletHookType_OnFocusState && appletGetFocusState() == AppletFocusState_InFocus) static_cast<App*>(param)->m_focus_back = true;
+}
+
 bool App::Frame() {
     if (!appletMainLoop() || m_quit) {
         return false;
+    }
+    if (m_focus_back) {
+        // back in focus: sigpatches may have been put on the SD card (or taken) meanwhile (5B)
+        m_focus_back = false;
+        m_sigcache.Refresh();
     }
     perf::FrameBegin();
     const double now = Now();

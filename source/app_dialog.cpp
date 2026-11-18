@@ -95,7 +95,9 @@ void App::DrawDialog(NVGcontext* vg) {
     const float body_h = body.empty() ? 0 : BoxHeight(vg, iw, 17, body.c_str()) + 16;
     const float note_h = note.empty() ? 0 : BoxHeight(vg, iw, 15, note.c_str()) + 14;
     const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
-    const float rest = pad + 40 + body_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + tick_h + 60 + pad - 8;
+    // a QR code (5B): a square with what it opens beside it
+    const float qr_s = 140, qr_h = dc.qr.empty() ? 0.f : qr_s + 18;
+    const float rest = pad + 40 + body_h + qr_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + tick_h + 60 + pad - 8;
     // as many rows as fit with the buttons on the screen: fewer rows, and "and N more" grows
     const float room = kHeight - 56 - 2 * 24;
     const int shown = lines.empty() ? 0 : RowsThatFit(int(lines.size()), cap, rest + 12 + 16, lp, 30, room);
@@ -131,6 +133,22 @@ void App::DrawDialog(NVGcontext* vg) {
     if (!body.empty()) {
         TextBox(vg, x + pad, cy, iw, 17, t.muted, body.c_str());
         cy += body_h;
+    }
+    if (!dc.qr.empty()) {
+        // the QR on the left; on its right what it is for, and its address without the scheme
+        ui::Qr(vg, x + pad, cy, qr_s, dc.qr);
+        const float tx = x + pad + qr_s + 22, tw = iw - qr_s - 22;
+        const size_t scheme = dc.qr.find("://");
+        const std::string where = dc.qr.substr(scheme == std::string::npos ? 0 : scheme + 3);
+        const float th = dc.qr_text.empty() ? 0.f : BoxHeight(vg, tw, 15, dc.qr_text.c_str());
+        const float block = th + (th > 0 ? 12 : 0) + BoxHeight(vg, tw, 15, where.c_str());
+        float qy = cy + std::max(0.f, (qr_s - block) / 2);
+        if (th > 0) {
+            TextBox(vg, tx, qy, tw, 15, t.muted, dc.qr_text.c_str());
+            qy += th + 12;
+        }
+        TextBox(vg, tx, qy, tw, 15, t.text, where.c_str());
+        cy += qr_h;
     }
     if (!lines.empty()) {
         const float lh = shown * lp + (more ? 30 : 0) + 12;

@@ -42,6 +42,7 @@
 #include "file_match.hpp"
 #include "text_view.hpp"
 #include "usb30.hpp"
+#include "compress_meta.hpp"
 
 namespace nxdock {
 
@@ -84,7 +85,7 @@ private:
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
                          ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, RemoveStop, TicketRow,
-                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip };
+                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip, SigpatchInfo };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -619,6 +620,7 @@ private:
         bool verify_bar = false, verify_running = false;
         bool tick = false;  // ConsoleRemove: the box of the saves (3A)
         bool tick2 = false; // ConsoleRemove: the box of its mods and its tickets (7A)
+        std::string qr, qr_text; // a QR code and what it opens, beside it (5B)
         std::string cancel_label;
         float verify_frac = 0;
         std::string verify_text;
@@ -917,7 +919,7 @@ private:
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, CompressDone, CompressStop, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
                             UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
-                            Usb3, Usb3Reboot, RemoveStopped };
+                            Usb3, Usb3Reboot, RemoveStopped, SigpatchInfo };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -974,11 +976,20 @@ private:
     forwarder::Status m_home; // where NXDock is and whether its HOME menu shortcut is there
     SystemInfo m_sysinfo;           // the firmware and Atmosphère, for the check before installing
     bool m_risk_ok = false;
-    // no sigpatches found before the first install of a session (while its option is on): the
-    // interface takes it once to show a notice; installing never waits on it
-    SigpatchNotice m_sigpatch_check;
-    bool m_sigpatch_due = false;
-    bool TakeSigpatchNotice() { return std::exchange(m_sigpatch_due, false); }
+    // 5B: no sigpatches found, while its option is on: an orange line on the page of a game, every
+    // time, never in the way of installing. The SD card is read once and again when NXDock is back
+    // in focus (they may have been put there meanwhile).
+    bool SigpatchShown();
+    float DrawSigpatchLine(NVGcontext* vg, float x, float y, float w, bool y_info);
+    bool SigpatchByY(const Game& g); // Y opens its explanation (and not the check) on this page
+    void OpenSigpatchInfo();
+    void SigpatchesOff();
+    SigpatchCache m_sigcache;
+    int m_sig_game = -1;   // the game whose page last showed the line, for its entrance
+    double m_sig_at = -100;
+    AppletHookCookie m_focus_hook{};
+    bool m_focus_hooked = false, m_focus_back = false;
+    static void OnFocus(AppletHookType hook, void* param);
     std::string m_update_hint;
     Dialog m_dialog;
     // A dialog of this kind, with nothing left of the one before.

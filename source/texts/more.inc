@@ -8,3 +8,4 @@
 #include "more_compress.inc"
 #include "more_console.inc"
 #include "more_look.inc"
+#include "more_library.inc"
