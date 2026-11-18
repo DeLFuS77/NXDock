@@ -3,6 +3,7 @@
 //
 // Settings: its rows, the help of the row in focus, the speed test, Wi-Fi and pairing with the library app.
 #include "app_shared.hpp"
+#include "brand.hpp"
 
 namespace nxdock {
 
@@ -12,6 +13,9 @@ namespace {
 
 // the first row of each group
 constexpr int kGroupStarts[] = {kRowLibrary, kRowDest, kRowSaveCopy, kRowFinish, kRowLanguage, kRowWizard, kRowSelfUpdate, kRowHome, kRowAddress};
+
+// where the code and the license of NXDock are, for the QR of Code and license
+constexpr const char* kCodeUrl = "https://github.com/DeLFuS77/NXDock";
 
 constexpr int kGroups = int(std::size(kGroupStarts));
 
@@ -44,6 +48,7 @@ const char* SettingHelp(int row) {
         case kRowSelfBack: return tt.h_self_back;
         case kRowHome: return tt.h_home;
         case kRowHomeRemove: return tt.h_home_remove;
+        case kRowLicense: return tt.h_license;
         default: return nullptr;
     }
 }
@@ -406,7 +411,10 @@ void App::DrawSettings(NVGcontext* vg) {
     const Updater::View up = m_updater ? m_updater->Snapshot() : Updater::View{};
     const bool self_newer = up.stage == Updater::Stage::Newer;
     char self_update[160];
+    // a program built without NXDOCK_OFFICIAL says so after its version, in orange (brand.hpp)
+    const bool unofficial = !brand::kOfficial && !self_newer;
     if (self_newer) std::snprintf(self_update, sizeof(self_update), TrT().up_have_new_fmt, NXDOCK_VERSION, up.version.c_str());
+    else if (unofficial) std::snprintf(self_update, sizeof(self_update), "%s · %s", NXDOCK_VERSION, TrT().ub_version);
     else std::snprintf(self_update, sizeof(self_update), TrT().up_have_fmt, NXDOCK_VERSION);
     const Row rows[kSettingRows] = {
         {s.library, library, linked},
@@ -433,6 +441,7 @@ void App::DrawSettings(NVGcontext* vg) {
         {m.st_touch_rumble, yes(m_ui.touch_rumble), m_ui.touch_rumble},
         {s.wiz_row, s.wiz_repeat, true},
         {m.rp_row, "", false},
+        {TrT().lic_row, "", false},
         {TrT().up_row, self_update, self_newer},
         {TrT().up_notice_row, yes(m_ui.self_update_notice), m_ui.self_update_notice},
         {TrT().up_back_row, m_update_has_old ? TrT().up_back_kept : TrT().up_back_none, false},
@@ -443,13 +452,15 @@ void App::DrawSettings(NVGcontext* vg) {
     };
     const char* groups[kGroups] = {m.st_g_library, m.st_g_install, TrT().st_g_saves, m.st_g_notices, m.st_g_look, m.st_g_help, TrT().st_g_nxdock, m.st_g_home, m.st_g_manual};
     const float x = 48, w = 540, h = 56, gap = 8, head = 34;
+    // Code and license is taller: under its name, who makes NXDock and its license
+    const auto height = [&](int row) { return row == kRowLicense ? 80.f : h; };
     // where each row goes: a title before the first of each group
     float top_of[kSettingRows];
     float at = 0;
     for (int i = 0; i < kSettingRows; i++) {
         if (std::find(std::begin(kGroupStarts), std::end(kGroupStarts), i) != std::end(kGroupStarts)) at += head;
         top_of[i] = at;
-        at += h + gap;
+        at += height(i) + gap;
     }
     // the rows scroll when they do not fit, keeping the one in focus (and its title) in sight
     const float view_top = 88, view_bottom = 652;
@@ -458,7 +469,8 @@ void App::DrawSettings(NVGcontext* vg) {
     const float focus_top = top_of[m_setting] - (first_of_group ? head : 0);
     float target = m_settings_scroll;
     if (focus_top - target < 0) target = focus_top;
-    if (top_of[m_setting] + h + 12 - target > view_bottom - view_top) target = top_of[m_setting] + h + 12 - (view_bottom - view_top);
+    const float focus_h = height(m_setting);
+    if (top_of[m_setting] + focus_h + 12 - target > view_bottom - view_top) target = top_of[m_setting] + focus_h + 12 - (view_bottom - view_top);
     if (m_setting == kSettingRows - 1) target = std::max(target, list_h - (view_bottom - view_top));
     m_settings_scroll = std::clamp(target, 0.f, std::max(0.f, list_h - (view_bottom - view_top)));
     nvgSave(vg);
@@ -471,37 +483,53 @@ void App::DrawSettings(NVGcontext* vg) {
             if (y > view_top - 8 && y - 26 < view_bottom) draw::Section(vg, t, x + 6, y - 13, groups[group]);
             group++;
         }
+        const float rh = height(i);
         // only the rows in sight are drawn (the GPU has room for so many strokes a frame)
-        if (y + h + 12 < view_top - 8 || y - 12 > view_bottom) continue;
+        if (y + rh + 12 < view_top - 8 || y - 12 > view_bottom) continue;
         const bool dim = ((i == kRowForget || i == kRowSpeed || i == kRowShare) && !linked) ||
                          (i == kRowHomeRemove && (!m_home.installed || m_home.running_from)) ||
                          (i == kRowHome && m_home.running_from) || (i == kRowSelfBack && !m_update_has_old) ||
                          (i == kRowReport && !linked);
         nvgGlobalAlpha(vg, dim ? 0.45f : 1.f);
-        Panel(vg, t, x, y, w, h, 14);
+        Panel(vg, t, x, y, w, rh, 14);
         if (i == m_setting) {
-            ui::Focus(vg, t, x, y, w, h, 14, m_time);
+            ui::Focus(vg, t, x, y, w, rh, 14, m_time);
         }
         // only the part in sight can be tapped
-        const float hit_top = std::max(y, view_top - 8), hit_bottom = std::min(y + h, view_bottom);
+        const float hit_top = std::max(y, view_top - 8), hit_bottom = std::min(y + rh, view_bottom);
         if (hit_bottom > hit_top) {
             AddHit(x, hit_top, w, hit_bottom - hit_top, HitKind::SettingsRow, i);
         }
-        const float vw = std::min(260.f, ui::TextWidth(vg, 16, rows[i].value.c_str()));
+        const char* value = rows[i].value.c_str();
+        float vsize = 16;
+        float vw = std::min(260.f, ui::TextWidth(vg, 16, value));
+        if (i == kRowSelfUpdate && unofficial) {
+            // the version of an unofficial build is said whole: the room its name leaves, and a
+            // little smaller when even that is short
+            const float room = std::max(260.f, w - 44 - ui::TextWidth(vg, 18, rows[i].label) - 24);
+            const float full = ui::TextWidth(vg, 16, value);
+            if (full > room) vsize = std::max(13.f, 16 * room / full);
+            vw = std::min(room, ui::TextWidth(vg, vsize, value));
+        }
         nvgSave(vg);
-        nvgIntersectScissor(vg, x + 16, y, w - 32 - vw - 14, h);
+        nvgIntersectScissor(vg, x + 16, y, w - 32 - vw - 14, rh);
         if (i == kRowReport) {
             // the report (4A): what it is for, small, under its name; a ring while it goes
-            ui::Text(vg, x + 22, y + h / 2 - 10, 18, t.text, rows[i].label);
-            ui::Text(vg, x + 22, y + h / 2 + 13, 13, t.muted, m.rp_row_sub);
+            ui::Text(vg, x + 22, y + rh / 2 - 10, 18, t.text, rows[i].label);
+            ui::Text(vg, x + 22, y + rh / 2 + 13, 13, t.muted, m.rp_row_sub);
+        } else if (i == kRowLicense) {
+            // its name, and under it who makes NXDock, its license and that it has no warranty
+            ui::Text(vg, x + 22, y + 28, 18, t.text, rows[i].label);
+            ui::Text(vg, x + 22, y + 54, 15, t.muted, TrT().lic_sub);
         } else {
-            ui::Text(vg, x + 22, y + h / 2, 18, i == kRowForget ? t.warn : t.text, rows[i].label);
+            ui::Text(vg, x + 22, y + rh / 2, 18, i == kRowForget ? t.warn : t.text, rows[i].label);
         }
         nvgRestore(vg);
-        if (i == kRowReport && m_lib_report_running) ui::Spinner(vg, x + w - 34, y + h / 2, 9, t.work, m_time);
+        if (i == kRowReport && m_lib_report_running) ui::Spinner(vg, x + w - 34, y + rh / 2, 9, t.work, m_time);
         nvgSave(vg);
-        nvgIntersectScissor(vg, x + w - 22 - vw, y, vw, h);
-        ui::Text(vg, x + w - 22, y + h / 2, 16, rows[i].accent ? t.work : t.muted, rows[i].value.c_str(), NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgIntersectScissor(vg, x + w - 22 - vw, y, vw, rh);
+        const NVGcolor tone = i == kRowSelfUpdate && unofficial ? t.warn : rows[i].accent ? t.work : t.muted;
+        ui::Text(vg, x + w - 22, y + rh / 2, vsize, tone, value, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         nvgRestore(vg);
         nvgGlobalAlpha(vg, 1.f);
     }
@@ -536,7 +564,10 @@ void App::DrawSettings(NVGcontext* vg) {
                     std::snprintf(now, sizeof(now), TrT().st_now_fmt, pill.c_str());
                     pill = now;
                 }
-                DrawSettingHelp(vg, px, py, pw, ph, rows[row].label, pill.c_str(), rows[row].accent, SettingHelp(row), alpha);
+                const NVGcolor tone = row == kRowSelfUpdate && unofficial ? t.warn : rows[row].accent ? t.work : t.muted;
+                // Code and license: the QR of the code under its help, for a phone
+                DrawSettingHelp(vg, px, py, pw, ph, rows[row].label, pill.c_str(), tone, SettingHelp(row), alpha,
+                                row == kRowLicense ? kCodeUrl : nullptr);
                 break;
             }
             default: DrawSpeedPanel(vg, px, py, pw, ph); break;
@@ -574,6 +605,12 @@ void App::DrawSettings(NVGcontext* vg) {
     else if (m_setting == kRowReport) act = m.rp_send;
     if (m_setting == kRowStyle) {
         ui::HintBar(vg, t, nullptr, {{ui::glyph::DPad, act, HidNpadButton_AnyRight}, {ui::glyph::B, s.back, HidNpadButton_B}}, m_hint_rects);
+        return;
+    }
+    if (m_setting == kRowLicense) {
+        // only read: nothing to change with A
+        ui::HintBar(vg, t, nullptr, {{ui::glyph::X, running ? s.cancel : s.speed_test, HidNpadButton_X}, {ui::glyph::B, s.back, HidNpadButton_B}},
+                    m_hint_rects);
         return;
     }
     ui::HintBar(vg, t, nullptr,
@@ -770,8 +807,8 @@ void App::DrawPairing(NVGcontext* vg, const Link::View& v) {
                 m_hint_rects);
 }
 
-void App::DrawSettingHelp(NVGcontext* vg, float x, float y, float w, float h, const char* name, const char* value, bool accent,
-                          const char* help, float alpha) {
+void App::DrawSettingHelp(NVGcontext* vg, float x, float y, float w, float h, const char* name, const char* value, NVGcolor tone,
+                          const char* help, float alpha, const char* qr) {
     const Theme& t = m_theme;
     nvgGlobalAlpha(vg, alpha);
     draw::Panel(vg, t, x, y, w, h, 16);
@@ -798,16 +835,23 @@ void App::DrawSettingHelp(NVGcontext* vg, float x, float y, float w, float h, co
         // what it is now, in a pill
         const char* now = value;
         const float nw = std::min(pw, ui::TextWidth(vg, 15, now) + 28);
-        NVGcolor fill = accent ? t.work : t.muted;
+        NVGcolor fill = tone;
         fill.a = 0.16f;
         ui::FillRound(vg, px, cy, nw, 30, 15, fill);
         nvgSave(vg);
         nvgIntersectScissor(vg, px, cy, nw, 30);
-        ui::Text(vg, px + 14, cy + 15, 15, accent ? t.work : t.muted, now);
+        ui::Text(vg, px + 14, cy + 15, 15, tone, now);
         nvgRestore(vg);
         cy += 52;
     }
-    draw::Box(vg, px, cy, pw, 18, t.text, help);
+    cy += draw::Box(vg, px, cy, pw, 18, t.text, help);
+    if (qr) {
+        // a QR for a phone, as the pairing screen draws one, and the address under it to type
+        const float qs = 180, qy = cy + 26;
+        ui::Qr(vg, px, qy, qs, qr);
+        const char* plain = std::strstr(qr, "://");
+        ui::Text(vg, px, qy + qs + 24, 15, t.muted, plain ? plain + 3 : qr);
+    }
     nvgGlobalAlpha(vg, 1);
 }
 

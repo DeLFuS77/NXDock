@@ -11,6 +11,8 @@
   can be turned off in + and back on in Settings › Installing.
 - The library can ask to remove a game. NXDock always asks first, copies its saves as Settings › Saves says, and
   removes the game with its update and DLC.
+- Settings › Help › Code and license: who makes NXDock, its license and that it has no warranty, with a QR to the code
+- An unofficial build has another name and a plain icon, and says so in the top bar, in its version and on opening
 
 ## 0.9.0-beta.9
 

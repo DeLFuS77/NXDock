@@ -6,12 +6,14 @@
 // NXDock's shortcut on the HOME menu: three NCAs made in memory and installed to the SD card.
 //  - program: the ExeFS of a small loader (hbl/, from nx-hbloader) and a RomFS saying which .nro
 //    to open (nextNroPath, nextArgv);
-//  - control: the NACP and the icon of NXDock.nro itself, so the name and the icon always match it;
+//  - control: the NACP and the icon of NXDock.nro itself, so the name and the icon always match it
+//    (an unofficial build gives its own name and plain icon, brand.hpp);
 //  - meta: the CNMT of an Application with those two.
 // Their headers are encrypted with the header key the console makes (spl); nothing is read from
 // prod.keys. Like any homebrew shortcut, it needs sigpatches to open.
 #include "forwarder.hpp"
 
+#include "brand.hpp"
 #include "yati/nx/keys.hpp"
 #include "yati/nx/nca.hpp"
 #include "yati/nx/ncm.hpp"
@@ -313,8 +315,9 @@ bool patch_npdm(std::vector<u8>& data, u64 tid) {
     std::memcpy(&aci0, data.data() + meta.aci0_offset, sizeof(aci0));
     std::memcpy(&acid, data.data() + meta.acid_offset, sizeof(acid));
 
+    static_assert(sizeof(brand::kShortName) <= sizeof(meta.title_name));
     std::memset(meta.title_name, 0, sizeof(meta.title_name));
-    std::memcpy(meta.title_name, "NXDock", 6);
+    std::memcpy(meta.title_name, brand::kShortName, sizeof(brand::kShortName) - 1);
     std::memset(meta.product_code, 0, sizeof(meta.product_code));
     meta.flags = (meta.flags & ~ADDRESS_SPACE_MASK) | (1 << ADDRESS_SPACE_SHIFT); // 36-bit, as Sphaira
     aci0.program_id = tid;

@@ -3,6 +3,7 @@
 //
 // The app: start and exit, a frame, the screens drawn in turn, the end of a queue, notices.
 #include "app_shared.hpp"
+#include "brand.hpp"
 
 namespace nxdock {
 
@@ -840,6 +841,10 @@ void App::Draw(NVGcontext* vg) {
     const float capsule = ui::TopBar(vg, m_theme, int(m_tab), queued, tabs, m_sd_free.c_str(), m_battery, m_charging, m_wifi, &m_wifi_rect, sd_used,
                                      from_tab, slide);
     if (m_wifi > -2) m_hits.push_back({m_wifi_rect, HitKind::Wifi, 0});
+    if (!brand::kOfficial) {
+        // "Unofficial", at the start of the capsule: a tap shows Settings › Help › Code and license
+        m_hits.push_back({{capsule, 0, 16 + ui::TextWidth(vg, 16, TrT().ub_cap) + 8, 72, 0}, HitKind::BuildNote, 0});
+    }
     if (m_shop_active && m_tab == Tab::Library) {
         // which shop the library shows
         char badge[160];
@@ -1301,7 +1306,9 @@ void App::DrawBoot(NVGcontext* vg) {
     if (name > 0.01f) {
         nvgGlobalAlpha(vg, name);
         if (t.style == kStyleHuntress) nvgTextLetterSpacing(vg, 6);
-        ui::Title(vg, kWidth / 2, 448, 36, t.text, t.style == kStyleHuntress ? "NXDOCK" : "NXDock", NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        // the name of the program as the HOME menu has it: an unofficial build has its own (brand.hpp)
+        const std::string title = t.style == kStyleHuntress ? AsciiUpper(brand::kName) : std::string(brand::kName);
+        ui::Title(vg, kWidth / 2, 448, 36, t.text, title.c_str(), NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         nvgTextLetterSpacing(vg, 0);
     }
     nvgGlobalAlpha(vg, 1.f);

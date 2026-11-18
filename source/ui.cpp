@@ -6,9 +6,11 @@
 #include <cmath>
 #include <cstdio>
 #include <ctime>
+#include "brand.hpp"
 #include "gfx.hpp"
 #include "i18n.hpp"
 #include "i18n_more.hpp"
+#include "i18n_tools.hpp"
 #include "motion.hpp"
 
 extern "C" {
@@ -370,6 +372,15 @@ void DockPart(NVGcontext* vg, float x, float y, float k, bool back, float bar, f
 } // namespace
 
 void Brand(NVGcontext* vg, float x, float y, float s, float card, float bar, float lamp) {
+    if (!brand::kOfficial) {
+        // the logo of NXDock is for its official versions only (TRADEMARKS.md): an unofficial
+        // build has a plain grey mark, as its icon (assets/unofficial.jpg)
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x, y, s, s, s * 0.22f);
+        nvgFillColor(vg, Hex(0x6b7380));
+        nvgFill(vg);
+        return;
+    }
     const float k = s / 256.f;
     const auto rect = [&](float rx, float ry, float rw, float rh, float r, NVGcolor c) {
         nvgBeginPath(vg);
@@ -570,7 +581,9 @@ float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect t
     Brand(vg, 36, 19, 34);
     const auto& s = Tr();
     const char* tabs[] = {s.library, TrM().t_shops, s.queue, s.installed, TrM().more_tab, s.settings};
-    // Right side, in a capsule: the SD card, the WiFi, the battery and the clock (measured first).
+    // Right side, in a capsule: the SD card, the WiFi, the battery and the clock (measured first);
+    // before them, in orange, a program built without NXDOCK_OFFICIAL says it is not official
+    // (brand.hpp), always in sight
     char clock[16];
     const time_t now = time(nullptr);
     const struct tm* lt = localtime(&now);
@@ -583,6 +596,8 @@ float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect t
     if (wifi > -2) inner += gap + 26;
     const bool sd = sd_free && sd_free[0];
     if (sd) inner += gap + 12 + 7 + (sd_used >= 0 ? 38 + 7 : 0) + TextWidth(vg, 16, sd_free);
+    const char* unofficial = brand::kOfficial ? nullptr : TrT().ub_cap;
+    if (unofficial) inner += gap + TextWidth(vg, 16, unofficial);
     const float cap_x = 1244 - inner - 2 * pad;
     // the tabs, every one with its icon and its name (2A): in a long language the names get a
     // little smaller first; only when even that does not fit before the capsule do the tabs not
@@ -688,6 +703,10 @@ float TopBar(NVGcontext* vg, const Theme& t, int tab, int queue_count, HitRect t
         nvgStrokeWidth(vg, 1.6f);
         nvgLineJoin(vg, NVG_ROUND);
         nvgStroke(vg);
+        right -= 12 + gap;
+    }
+    if (unofficial) {
+        Text(vg, right, 36, 16, t.warn, unofficial, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
     }
 
     nvgBeginPath(vg);

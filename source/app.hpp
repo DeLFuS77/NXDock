@@ -87,7 +87,7 @@ private:
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
                          ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, RemoveStop, TicketRow,
-                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip, SigpatchInfo, SendReport };
+                         NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip, SigpatchInfo, SendReport, BuildNote };
     struct Hit {
         ui::HitRect rect;
         HitKind kind;
@@ -657,9 +657,10 @@ private:
     void FollowQueue();
     void DrawSettings(NVGcontext* vg);
     void DrawSpeedPanel(NVGcontext* vg, float x, float y, float w, float h);
-    // what the row in focus does, its value now, and a few lines (S2 A of 14/11)
-    void DrawSettingHelp(NVGcontext* vg, float x, float y, float w, float h, const char* name, const char* value, bool accent,
-                         const char* help, float alpha);
+    // what the row in focus does, its value now in a pill of `tone`, and a few lines (S2 A of
+    // 14/11); with `qr`, a QR of that address under them (Code and license)
+    void DrawSettingHelp(NVGcontext* vg, float x, float y, float w, float h, const char* name, const char* value, NVGcolor tone,
+                         const char* help, float alpha, const char* qr = nullptr);
     int m_help_row = -1, m_help_prev = -1; // the row the panel on the right is of, and the one before
     double m_help_at = -100;               // when it changed, for its fade
     // the four styles as cards with a small picture of each, while the row Style is in focus
