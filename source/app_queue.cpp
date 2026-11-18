@@ -345,6 +345,8 @@ void App::FollowQueueAsk() {
 }
 
 void App::FollowPush() {
+    // a game the library asked to remove: answered once it is gone, also when the network is away
+    FollowPushRemoving();
     const Link::View link = m_link.Snapshot();
     const Config c = m_link.CurrentConfig();
     const bool connected = link.state == Link::State::Connected && c.Linked();
@@ -353,7 +355,9 @@ void App::FollowPush() {
         return;
     }
     for (auto& item : m_push->Take()) {
-        m_pushed.push_back(std::move(item));
+        // a game to remove (2bA) is asked about on its own, after what is sent to install
+        if (item.Remove()) m_remove_asks.push_back(std::move(item));
+        else m_pushed.push_back(std::move(item));
     }
     if (m_dialog.kind != DialogKind::None || m_wizard || TourActive()) {
         return; // the wizard asks about sharing itself; what the web sent waits for it to end
@@ -398,6 +402,9 @@ void App::FollowPush() {
         m_pushed.clear();
         return;
     }
+    // a game the library asks to remove (2bA): one by one, after the queue, always asked first
+    FollowRemoveAsks();
+    if (m_dialog.kind != DialogKind::None) return;
     // the inventory, when the user said yes: at the start and after every install or removal; what
     // is installed, the console and the play time, read on the thread of Push
     if (m_prefs.share_installed == 1 && (m_inventory_sent != m_queue->Version() || m_inventory_url != c.url) && !m_queue->Busy()) {

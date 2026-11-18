@@ -368,13 +368,15 @@ void App::DrawDialog(NVGcontext* vg) {
         if (m_dialog.focus == it->index && m_dialog.tick_focus < 0) {
             ui::Focus(vg, t, bx, by, bw, bh, 12, m_time);
         }
-        if (it->primary) {
+        // an action that deletes is not filled: its words in red (2bA)
+        const bool filled = it->primary && !dc.danger;
+        if (filled) {
             ui::FillRound(vg, bx, by, bw, bh, 12, t.work);
         } else {
             ui::FillRound(vg, bx, by, bw, bh, 12, t.panel2);
             ui::StrokeRound(vg, bx + 1, by + 1, bw - 2, bh - 2, 12, t.line, 2);
         }
-        const NVGcolor fg = it->primary ? t.on_work : t.text;
+        const NVGcolor fg = filled ? t.on_work : it->primary ? t.err : t.text;
         ui::Symbol(vg, t, bx + (small ? 27 : 34), by + bh / 2, small ? 21 : 24, it->glyph, fg, it->mask);
         ui::Text(vg, bx + (small ? 45 : 56), by + bh / 2, small ? 15 : 18, fg, it->label.c_str());
         nvgGlobalAlpha(vg, 1.f);
@@ -503,8 +505,8 @@ void App::UpdateDialog(u64 down, u64 held) {
         } else if (m_dialog.kind == DialogKind::Usb3Reboot) {
             // later: the chip stays orange until the console reboots
             NoticeOk(m_usb3_written_on ? TrT().u3_toast : TrT().u3_toast_off);
-        } else if (m_dialog.kind == DialogKind::Push) {
-            for (const auto& id : m_dialog.push) m_push->Answer(id, false);
+        } else if (m_dialog.kind == DialogKind::Push || m_dialog.kind == DialogKind::PushRemove) {
+            for (const auto& id : m_dialog.push) m_push->Answer(id, false); // a game asked to remove: kept (2bA)
         } else if (m_dialog.kind == DialogKind::Share) {
             m_prefs.share_installed = 0;
             m_prefs.Save();
@@ -752,6 +754,9 @@ void App::ConfirmDialog() {
             for (const auto& id : m_dialog.push) m_push->Answer(id, true);
             AddJobs(std::move(m_dialog.jobs));
             break;
+        case DialogKind::PushRemove:
+            ConfirmPushRemove(); // answered once it is gone (2bA)
+            return;
         case DialogKind::Risk:
             m_risk_ok = true;
             AddJobs(std::move(m_dialog.jobs));
@@ -803,26 +808,9 @@ void App::ConfirmDialog() {
             return;
         }
         case DialogKind::ConsoleRemove: {
-            // the saves first, when asked (3A): to the library when one is linked, else to the SD
-            // card; a copy that fails stops the removal of that game, and nothing of it goes
+            // the saves first, when asked (3A); a copy that fails stops the removal of that game
             std::function<std::string(unsigned long long)> before;
-            if (m_dialog.keep_saves && ConsoleRemoveTakesGame()) {
-                const Config c = m_link.CurrentConfig();
-                const std::string url = c.Linked() ? c.url : std::string{}, key = c.Linked() ? c.key : std::string{};
-                const std::string note = TrM().sc_note_remove;
-                std::map<unsigned long long, unsigned> versions; // the version installed, kept with the copy
-                if (m_space) {
-                    for (const auto& a : m_space->Snapshot().apps) {
-                        for (const auto& ct : a.contents) {
-                            if (ct.type == NcmContentMetaType_Patch) versions[a.app_id] = std::max(versions[a.app_id], unsigned(ct.version));
-                        }
-                    }
-                }
-                before = [url, key, note, versions](unsigned long long app) {
-                    const auto it = versions.find(app);
-                    return CopySavesBefore(url, key, app, it == versions.end() ? 0 : it->second, note, {});
-                };
-            }
+            if (m_dialog.keep_saves && ConsoleRemoveTakesGame()) before = CopySavesFirst();
             // then its mods and its tickets, when asked (7A); the tickets are saved to the SD card first
             std::function<void(unsigned long long)> after;
             if (m_dialog.remove_extra && ConsoleRemoveTakesGame()) after = RemoveGameExtras;
@@ -831,39 +819,7 @@ void App::ConfirmDialog() {
                 Notice(TrM().cz_busy);
             } else if (!m_dialog.ids.empty()) {
                 // several games, whole: what the console has of each
-                const auto v = m_space ? m_space->Snapshot() : Space::View{};
-                std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games;
-                u64 bytes = 0;
-                m_console_done.clear();
-                m_console_done_ids.clear();
-                m_console_rm_stop = false;
-                for (const auto app : m_dialog.ids) {
-                    for (const auto& a : v.apps) {
-                        if (a.app_id != app || a.contents.empty()) continue;
-                        games.push_back({app, a.contents});
-                        bytes += a.Bytes();
-                        HistoryEntry e;
-                        e.when = std::time(nullptr);
-                        e.game = a.name;
-                        e.label = TrM().ic_whole_game;
-                        e.size = a.Bytes();
-                        e.nand = a.nand_bytes > 0 && a.sd_bytes == 0;
-                        e.result = HistoryEntry::Result::Removed;
-                        m_console_done.push_back(e);
-                        m_console_done_ids.push_back(app);
-                    }
-                }
-                char text[200];
-                std::snprintf(text, sizeof(text), TrM().ic_done_many_fmt, int(games.size()), SizeText(bytes).c_str());
-                m_console_done_text = text;
-                if (m_space && m_space->StartRemove(games, before, after)) {
-                    m_console_removing.clear();
-                    for (const auto& g : games) m_console_removing.insert(g.first);
-                    m_console_picked.clear();
-                } else {
-                    m_console_done.clear();
-                    Notice(TrM().cz_busy);
-                }
+                if (RemoveWholeGames(m_dialog.ids, before, after)) m_console_picked.clear();
             } else if (m_space && m_space->StartRemove(m_console_app, m_console_remove, before, after)) {
                 // one game, or a part of it
                 u64 bytes = 0;
@@ -943,6 +899,71 @@ void App::ConfirmDialog() {
             break;
         default: ConfirmToolDialog(); break;
     }
+}
+
+std::function<std::string(unsigned long long)> App::CopySavesFirst() {
+    // to the library when one is linked, else to the SD card; a copy that fails stops the removal
+    // of that game, and nothing of it goes
+    const Config c = m_link.CurrentConfig();
+    const std::string url = c.Linked() ? c.url : std::string{}, key = c.Linked() ? c.key : std::string{};
+    const std::string note = TrM().sc_note_remove;
+    std::map<unsigned long long, unsigned> versions; // the version installed, kept with the copy
+    if (m_space) {
+        for (const auto& a : m_space->Snapshot().apps) {
+            for (const auto& ct : a.contents) {
+                if (ct.type == NcmContentMetaType_Patch) versions[a.app_id] = std::max(versions[a.app_id], unsigned(ct.version));
+            }
+        }
+    }
+    return [url, key, note, versions](unsigned long long app) {
+        const auto it = versions.find(app);
+        return CopySavesBefore(url, key, app, it == versions.end() ? 0 : it->second, note, {});
+    };
+}
+
+bool App::RemoveWholeGames(const std::vector<unsigned long long>& apps, std::function<std::string(unsigned long long)> before,
+                           std::function<void(unsigned long long)> after) {
+    // what the console has of each: its bar while it goes, a line "Removed" for each in the history
+    // and the green notice when it ends (FollowSpace)
+    const auto v = m_space ? m_space->Snapshot() : Space::View{};
+    std::vector<std::pair<unsigned long long, std::vector<InstalledApp::Content>>> games;
+    u64 bytes = 0;
+    m_console_done.clear();
+    m_console_done_ids.clear();
+    m_console_rm_stop = false;
+    std::string name;
+    for (const auto app : apps) {
+        for (const auto& a : v.apps) {
+            if (a.app_id != app || a.contents.empty()) continue;
+            games.push_back({app, a.contents});
+            bytes += a.Bytes();
+            name = a.name;
+            HistoryEntry e;
+            e.when = std::time(nullptr);
+            e.game = a.name;
+            e.label = TrM().ic_whole_game;
+            e.size = a.Bytes();
+            e.nand = a.nand_bytes > 0 && a.sd_bytes == 0;
+            e.result = HistoryEntry::Result::Removed;
+            m_console_done.push_back(e);
+            m_console_done_ids.push_back(app);
+        }
+    }
+    // one game by its name, more by their count
+    char text[300];
+    if (games.size() == 1) std::snprintf(text, sizeof(text), TrM().ic_done_one_fmt, name.c_str(), SizeText(bytes).c_str());
+    else std::snprintf(text, sizeof(text), TrM().ic_done_many_fmt, int(games.size()), SizeText(bytes).c_str());
+    m_console_done_text = text;
+    if (!games.empty() && m_space && m_space->StartRemove(games, std::move(before), std::move(after))) {
+        m_console_removing.clear();
+        for (const auto& g : games) m_console_removing.insert(g.first);
+        return true;
+    }
+    m_console_done.clear();
+    m_console_done_ids.clear();
+    m_console_done_text.clear();
+    Notice(TrM().cz_busy);
+    return false;
 }
 
 } // namespace nxdock

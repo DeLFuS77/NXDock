@@ -39,10 +39,10 @@ std::vector<PushItem> Push::Take() {
     return std::exchange(m_items, {});
 }
 
-void Push::Answer(const std::string& id, bool accepted) {
+void Push::Answer(const std::string& id, bool accepted, const std::string& result) {
     {
         std::lock_guard lock(m_mutex);
-        m_posts.push_back({"/install/push/answer", "{\"id\":" + http::JsonQuote(id) + ",\"accepted\":" + (accepted ? "true" : "false") + "}"});
+        m_posts.push_back({"/install/push/answer", PushAnswerJson(id, accepted, result)});
     }
     m_cv.notify_all();
 }

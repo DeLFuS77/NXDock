@@ -29,7 +29,8 @@ public:
     void SetLink(const std::string& url, const std::string& key);
     // What arrived since the last call.
     std::vector<PushItem> Take();
-    void Answer(const std::string& id, bool accepted);
+    // Whether what was sent was accepted; a remove says too what became of it (PushAnswerJson).
+    void Answer(const std::string& id, bool accepted, const std::string& result = {});
     // The inventory to send, or off to delete it in the app.
     void SendInventory(std::string json);
     // The same, read by `make` on the thread of Push when its turn comes (it asks the system for a

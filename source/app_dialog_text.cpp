@@ -471,6 +471,45 @@ App::Fill App::DialogConsoleText(DialogContent& dc) {
             dc.title = TrM().ic_rm_stopped_t;
             dc.body = m_dialog.text;
             break;
+        case DialogKind::PushRemove: {
+            // the library asks to remove a game (2bA): what of it is installed, from which library,
+            // and whether its saves are copied first; Keep it in focus, Remove in red
+            const More& m = TrM();
+            const unsigned long long app = m_dialog.ids.empty() ? 0 : m_dialog.ids.front();
+            unsigned update = 0;
+            int dlc = 0;
+            if (m_space) {
+                for (const auto& a : m_space->Snapshot().apps) {
+                    if (a.app_id != app) continue;
+                    for (const auto& c : a.contents) {
+                        if (c.type == NcmContentMetaType_Patch) update = std::max(update, unsigned(c.version));
+                        dlc += c.type == NcmContentMetaType_AddOnContent;
+                    }
+                }
+            }
+            // "game, update 3 and 2 DLC", as installed
+            std::vector<std::string> parts = {m.rq_game};
+            char text[600];
+            if (update) {
+                std::snprintf(text, sizeof(text), m.rq_update_fmt, (update >> 16) ? update >> 16 : update);
+                parts.push_back(text);
+            }
+            if (dlc == 1) {
+                parts.push_back(m.ic_dlc_one);
+            } else if (dlc > 1) {
+                std::snprintf(text, sizeof(text), m.ic_dlc_fmt, dlc);
+                parts.push_back(text);
+            }
+            std::string what;
+            for (size_t i = 0; i < parts.size(); i++) what += (i == 0 ? "" : i + 1 == parts.size() ? m.rq_and : m.ic_list_sep) + parts[i];
+            std::snprintf(text, sizeof(text), m.rq_body_fmt, m_dialog.text.c_str(), what.c_str(), m_dialog.from.c_str());
+            dc.title = m.rq_title;
+            dc.body = std::string(text) + " " + (m_ui.save_copy ? m.rq_saves_on : m.rq_saves_off);
+            dc.primary = m.rq_remove;
+            dc.cancel_label = m.rq_keep;
+            dc.danger = true;
+            break;
+        }
         case DialogKind::Play: {
             const More& m = TrM();
             char text[300];

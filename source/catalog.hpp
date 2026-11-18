@@ -101,14 +101,23 @@ private:
 bool ParseCatalog(const std::string& json, std::vector<Game>& out);
 
 // A file the library sends from the web ("Send to console"); the console asks before installing.
+// Or, with "action":"remove", a game the library asks to remove: title_id is its application
+// (base game) and game its name; the console asks first, and its update and DLC go with it.
 struct PushItem {
     std::string id, file_id, url, game, kind, format, name, from;
+    std::string action = "install"; // "install" (also when the app sends none) or "remove"
     u64 title_id = 0;
     u32 version = 0;
     u64 size = 0;
+    bool Remove() const { return action == "remove"; }
 };
-// Reads the answer of /install/push/wait; false when it is not one. Tested on the computer.
+// Reads the answer of /install/push/wait; false when it is not one. An install needs a path of
+// the app, a remove a title ID; an action not known is left out. Tested on the computer.
 bool ParsePush(const std::string& json, std::vector<PushItem>& out);
+// The body of /install/push/answer: the id of what was sent, whether the user accepted it and,
+// for a remove accepted or a game not there, what became of it ("removed", "failed", "missing";
+// empty: none). Tested on the computer.
+std::string PushAnswerJson(const std::string& id, bool accepted, const std::string& result = {});
 
 // One content on the console, for the inventory shared with the app (only when the user agrees).
 struct InstalledContent {

@@ -44,6 +44,7 @@
 #include "usb30.hpp"
 #include "compress_meta.hpp"
 #include "report.hpp"
+#include <deque>
 
 namespace nxdock {
 
@@ -635,6 +636,7 @@ private:
         bool tick = false;  // ConsoleRemove: the box of the saves (3A)
         bool tick2 = false; // ConsoleRemove: the box of its mods and its tickets (7A)
         std::string qr, qr_text; // a QR code and what it opens, beside it (5B)
+        bool danger = false; // the action deletes: its button in red letters, not filled (2bA)
         std::string cancel_label;
         float verify_frac = 0;
         std::string verify_text;
@@ -933,7 +935,7 @@ private:
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, CompressDone, CompressStop, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
                             UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
-                            Usb3, Usb3Reboot, RemoveStopped, SigpatchInfo };
+                            Usb3, Usb3Reboot, RemoveStopped, SigpatchInfo, PushRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
         int focus = 0;                  // 0: Cancel (or Close), 1: the action
@@ -968,6 +970,27 @@ private:
     unsigned m_inventory_sent = ~0u;    // the queue version the last inventory was read at
     std::string m_inventory_url;
     void FollowPush();
+    // The games the library asks to remove (2bA, app_remove.cpp): asked one by one, never while
+    // the queue or Compress games is at work; taken off as In the console does, then answered.
+    std::deque<PushItem> m_remove_asks;
+    std::string m_remove_scanned; // the ask the console was last read again for
+    struct PushRemoving {
+        std::string id;
+        unsigned long long app = 0;
+        int finished = 0; // Space's count of tasks ended when it began
+        bool on = false;
+    };
+    PushRemoving m_push_rm;
+    void FollowRemoveAsks();
+    void FollowPushRemoving();
+    void ConfirmPushRemove();
+    bool CompressAtWork() const;
+    std::string LibraryName();
+    // the saves of a game copied before it goes, as Settings › Saves says (3A); several games
+    // whole, as In the console takes them off (false: it could not start)
+    std::function<std::string(unsigned long long)> CopySavesFirst();
+    bool RemoveWholeGames(const std::vector<unsigned long long>& apps, std::function<std::string(unsigned long long)> before,
+                          std::function<void(unsigned long long)> after);
     void FollowQueueAsk(); // a copy of the saves that failed: go on? (18A)
     // the queue told to the library app (22A) and its end to the phone (21A)
     void FollowQueueWeb();

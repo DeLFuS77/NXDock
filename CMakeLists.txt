@@ -155,6 +155,7 @@ add_executable(nxdock
     source/app_installed.cpp
     source/app_library.cpp
     source/app_queue.cpp
+    source/app_remove.cpp
     source/app_report.cpp
     source/app_settings.cpp
     source/app_touch.cpp

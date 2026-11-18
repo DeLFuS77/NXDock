@@ -209,13 +209,28 @@ bool ParsePush(const std::string& json, std::vector<PushItem>& out) {
         p.title_id = ParseTitleId(yyjson_get_str(yyjson_obj_get(v, "titleId")));
         p.version = u32(yyjson_get_uint(yyjson_obj_get(v, "version")));
         p.size = yyjson_get_uint(yyjson_obj_get(v, "size"));
-        // only a file of the app: a path on it, never another address
-        if (!p.id.empty() && p.url.size() > 1 && p.url[0] == '/' && p.url[1] != '/') {
+        const std::string action = Str(v, "action");
+        if (!action.empty()) p.action = action;
+        if (p.id.empty()) continue;
+        if (p.Remove()) {
+            // a game to remove: its application, also when an update or a DLC of it is named
+            if (!p.title_id) continue;
+            const u64 low = p.title_id & 0xFFF;
+            p.title_id = ApplicationOf(p.title_id, low == 0 ? CatalogFile::Kind::Game : low == 0x800 ? CatalogFile::Kind::Update : CatalogFile::Kind::Dlc);
+            out.push_back(std::move(p));
+        } else if (p.action == "install" && p.url.size() > 1 && p.url[0] == '/' && p.url[1] != '/') {
+            // only a file of the app: a path on it, never another address
             out.push_back(std::move(p));
         }
     }
     yyjson_doc_free(doc);
     return true;
+}
+
+std::string PushAnswerJson(const std::string& id, bool accepted, const std::string& result) {
+    std::string out = "{\"id\":" + http::JsonQuote(id) + ",\"accepted\":" + (accepted ? "true" : "false");
+    if (!result.empty()) out += ",\"result\":" + http::JsonQuote(result);
+    return out + "}";
 }
 
 std::string InventoryJson(const std::vector<InstalledContent>& items, const ConsoleFacts* console, const std::vector<PlayEntry>* play) {
