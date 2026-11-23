@@ -7,6 +7,8 @@
 
 // NXDock: without nxtc, the title block of a NACP is kept as it is (NXDock does not show it).
 #include <cstdlib>
+#include <cstring>
+#include <zlib.h>
 
 namespace sphaira::nca {
 namespace {
@@ -229,6 +231,7 @@ Result ParseControl(const fs::FsPath& path, u64 program_id, void* nacp_out, s64 
         if (nacp_off == 0) {
             NacpStruct nacp;
             R_TRY(file.Read(0, &nacp, sizeof(NacpStruct), 0, &bytes_read));
+            UncompressNacpNames(&nacp);
 
             std::memcpy(nacp_out, &nacp, nacp_size);
         } else {
@@ -287,6 +290,36 @@ Result ParseControl(const fs::FsPath& path, u64 program_id, void* nacp_out, s64 
     }
 
     R_SUCCEED();
+}
+
+bool UncompressNacpNames(NacpStruct* nacp) {
+    static_assert(sizeof(NacpStruct) == 0x4000 && sizeof(nacp->lang) == 16 * 0x300);
+    auto* raw = reinterpret_cast<u8*>(nacp);
+    if (raw[0x3215] != 1) {
+        return true;
+    }
+    u16 size;
+    std::memcpy(&size, raw, sizeof(size));
+    std::vector<u8> names(32 * 0x300);
+    bool ok = false;
+    if (size != 0 && size <= sizeof(nacp->lang) - sizeof(size)) {
+        z_stream stream{};
+        if (inflateInit2(&stream, -MAX_WBITS) == Z_OK) {
+            stream.next_in = raw + sizeof(size);
+            stream.avail_in = size;
+            stream.next_out = names.data();
+            stream.avail_out = names.size();
+            ok = inflate(&stream, Z_FINISH) == Z_STREAM_END && stream.avail_out == 0;
+            inflateEnd(&stream);
+        }
+    }
+    if (ok) {
+        std::memcpy(nacp->lang, names.data(), sizeof(nacp->lang));
+    } else {
+        std::memset(nacp->lang, 0, sizeof(nacp->lang));
+    }
+    raw[0x3215] = 0;
+    return ok;
 }
 
 auto GetKeyGenStr(u8 key_gen) -> const char* {

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Games that keep their names compressed in the control data show a readable name in Space, in Saves and for
+  the game card.
+
 ## 0.9.0-beta.10
 
 These changes have not been tested in depth yet, so some bugs may remain.

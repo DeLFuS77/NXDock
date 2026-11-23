@@ -326,6 +326,12 @@ Result VerifyFixedKey(const Header& header);
 Result ParseCnmt(const fs::FsPath& path, u64 program_id, ncm::PackagedContentMeta& header, std::vector<u8>& extended_header, std::vector<NcmPackagedContentInfo>& infos);
 Result ParseControl(const fs::FsPath& path, u64 program_id, void* nacp_out = nullptr, s64 nacp_size = 0, std::vector<u8>* icon_out = nullptr, s64 nacp_off = 0);
 
+// The names of a NACP put where nacpGetLanguageEntry reads them. When its byte 0x3215 is 1 they
+// are kept compressed in the first 0x3000 bytes (a u16 size, then deflate without a header, 32
+// entries of 0x300 with Polish and Thai after the 16): the first 16 are written back in place.
+// False, with the names left empty, when they cannot be read.
+bool UncompressNacpNames(NacpStruct* nacp);
+
 auto GetKeyGenStr(u8 key_gen) -> const char*;
 
 // finds and decrypts the title key, also decrypts header key area if needed.

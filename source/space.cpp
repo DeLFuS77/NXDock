@@ -9,6 +9,7 @@
 #include "http.hpp"
 #include "i18n_more.hpp"
 #include "yati/nx/es.hpp"
+#include "yati/nx/nca.hpp"
 #include "yati/nx/ncm.hpp"
 #include "yati/nx/ns.hpp"
 #include "install_queue.hpp"
@@ -473,6 +474,7 @@ void Space::NameLater() {
                 for (const auto source : {NsApplicationControlSource_CacheOnly, NsApplicationControlSource_Storage}) {
                     if (R_SUCCEEDED(nsGetApplicationControlData(source, app, control.get(), sizeof(*control), &size))) {
                         NacpLanguageEntry* lang = nullptr;
+                        sphaira::nca::UncompressNacpNames(&control->nacp);
                         if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang && lang->name[0]) {
                             name = lang->name;
                             break;
@@ -1263,6 +1265,7 @@ GameCard ReadGameCard() {
         u64 size = 0;
         if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, card.app, control.get(), sizeof(*control), &size))) {
             NacpLanguageEntry* lang = nullptr;
+            sphaira::nca::UncompressNacpNames(&control->nacp);
             if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang && lang->name[0]) card.name = lang->name;
         }
         nsExit();
