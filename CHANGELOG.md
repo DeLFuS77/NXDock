@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Compressing a game and merging it with its update leave 64 MB free on the card, and installing an NSZ or
+  XCZ counts the room each part takes once it is decompressed.
+
 ## 0.9.0-beta.11
 
 These changes have not been tested in depth yet, so some bugs may remain.
