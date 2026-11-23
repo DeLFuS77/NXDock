@@ -10,6 +10,7 @@
 #include "http.hpp"
 #include "i18n_more.hpp"
 #include "log.hpp"
+#include "yati/nx/nca.hpp"
 #include "zip.hpp"
 
 #include <array>
@@ -308,6 +309,7 @@ std::vector<Vault::Save> Vault::Saves(const User& user, int kind) {
             u64 size = 0;
             if (R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, s.app_id, control.get(), sizeof(*control), &size))) {
                 NacpLanguageEntry* lang = nullptr;
+                sphaira::nca::UncompressNacpNames(&control->nacp);
                 if (R_SUCCEEDED(nacpGetLanguageEntry(&control->nacp, &lang)) && lang) s.name = lang->name;
             }
         }
