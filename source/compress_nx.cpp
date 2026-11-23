@@ -378,6 +378,17 @@ Result CopyRaw(NcmContentStorage& cs, const NcmContentId& id, Writer& w, u64 fro
     R_SUCCEED();
 }
 
+// What a work leaves free on the storage, so the card is never filled up.
+constexpr u64 kRoomMargin = 64ull << 20;
+
+// Whether the storage has room for need more bytes and the margin. One that does not say what is
+// free is left to the placeholder, which fails without room.
+bool HasRoom(NcmContentStorage& cs, u64 need) {
+    s64 free_b = 0;
+    if (R_FAILED(ncmContentStorageGetFreeSpaceSize(&cs, &free_b)) || free_b < 0) return true;
+    return u64(free_b) >= need + kRoomMargin;
+}
+
 // A placeholder registered as a content id other than the one it was made for: the folder of the
 // new id is made first, by a placeholder of nothing made for it.
 Result RegisterAs(NcmContentStorage& cs, const NcmContentId& id, const NcmPlaceHolderId& ph) {
@@ -921,7 +932,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         once = bound > 0 && R_SUCCEEDED(ncmContentStorageGeneratePlaceHolderId(&s.cs, &random)) &&
                R_SUCCEEDED(ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph));
         std::memcpy(&once_temp, &random, sizeof(once_temp));
-        once = once && R_SUCCEEDED(ncmContentStorageCreatePlaceHolder(&s.cs, &once_temp, &ph, s64(bound)));
+        once = once && HasRoom(s.cs, bound) && R_SUCCEEDED(ncmContentStorageCreatePlaceHolder(&s.cs, &once_temp, &ph, s64(bound)));
     }
     g_meter.Start(p.before, virt);
     g_meter.why = once ? 0 : 1;
@@ -1021,7 +1032,7 @@ void MergeOne(Storage& s, u64 app, const keys::Keys& k, const Pair& p, const std
         }
     }
     if (!once) {
-        if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
+        if (!HasRoom(s.cs, new_size) || R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
             R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &p.patch_program, &ph, s64(new_size)))) {
             log_write("[NXDock] %016llX: merge: no room for the placeholder, 0x%X\n", (unsigned long long)app, rc);
             error = Packed(m.cz_room_t, m.cz_room_d, rc);
@@ -1348,7 +1359,8 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
         once = g.program_size > 0 && R_SUCCEEDED(ncmContentStorageGeneratePlaceHolderId(&s.cs, &random)) &&
                R_SUCCEEDED(ncmContentStorageGeneratePlaceHolderId(&s.cs, &once_ph));
         std::memcpy(&once_temp, &random, sizeof(once_temp));
-        once = once && R_SUCCEEDED(ncmContentStorageCreatePlaceHolder(&s.cs, &once_temp, &once_ph, s64(g.program_size)));
+        once = once && HasRoom(s.cs, g.program_size) &&
+               R_SUCCEEDED(ncmContentStorageCreatePlaceHolder(&s.cs, &once_temp, &once_ph, s64(g.program_size)));
     }
     const auto drop_once = [&] {
         if (once) ncmContentStorageDeletePlaceHolder(&s.cs, &once_ph);
@@ -1570,7 +1582,7 @@ void CompressNca(Storage& s, const keys::Keys& k, GameContents& g, const std::at
     }
     if (!once) {
         // 4B. two passes: written in order into a placeholder of its size, encrypted and hashed
-        if (R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
+        if (!HasRoom(s.cs, new_size) || R_FAILED(rc = ncmContentStorageGeneratePlaceHolderId(&s.cs, &ph)) ||
             R_FAILED(rc = ncmContentStorageCreatePlaceHolder(&s.cs, &g.program, &ph, s64(new_size)))) {
             log_write("[NXDock] %016llX: no room for the placeholder, 0x%X\n", (unsigned long long)g.key.id, rc);
             error = Packed(m.cz_room_t, m.cz_room_d, rc);

@@ -1031,6 +1031,17 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                     log_write("skipping nca verification\n");
                 }
 
+                // NXDock: a compressed part grows to the size its header gives; the room for that
+                // was not counted before it came, so it is here, with the 64 MB left free.
+                if (header.size > u64(t->nca->size)) {
+                    s64 free_space{};
+                    if (R_SUCCEEDED(ncmContentStorageGetFreeSpaceSize(std::addressof(cs), std::addressof(free_space))) &&
+                        header.size - u64(t->nca->size) + 64ull * 1024 * 1024 > u64(free_space)) {
+                        log_write("[NXDock] %s grows to %llu bytes: no room for it\n", t->nca->name.c_str(), (unsigned long long)header.size);
+                        R_THROW(Result_NotEnoughSpace);
+                    }
+                }
+
                 t->write_size = header.size;
                 log_write("setting placeholder size: %zu\n", t->write_size.load());
                 R_TRY(ncmContentStorageSetPlaceHolderSize(std::addressof(cs), std::addressof(t->nca->placeholder_id), t->write_size));
@@ -2347,7 +2358,8 @@ Result InstallInternalStream(ui::ProgressBox* pbox, source::Base* source, contai
     // the tickets are known by name; their bytes come in their turn
     R_TRY(yati->ParseTicketsIntoCollection(tickets, collections, false));
 
-    // a first look at the room: the parts as they come (a compressed one takes more)
+    // a first look at the room: the parts as they come; a compressed one takes more, and that is
+    // looked at when its header gives its size
     u64 needed = 0;
     for (const auto& c : collections) {
         if (c.name.ends_with(".nca") || c.name.ends_with(".ncz")) needed += u64(c.size);
