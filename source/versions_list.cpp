@@ -17,7 +17,12 @@ namespace {
 
 constexpr const char* kPath = "sdmc:/switch/NXDock/versions.txt";
 constexpr const char* kTemp = "sdmc:/switch/NXDock/versions.txt.new";
-constexpr const char* kUrl = "https://raw.githubusercontent.com/blawar/titledb/master/versions.txt";
+// blawar/titledb stops for weeks at times and borntohonk/titledb, with the same file, goes on: the
+// second is tried first, and the first when it cannot be reached
+constexpr const char* kUrls[] = {
+    "https://raw.githubusercontent.com/borntohonk/titledb/master/versions.txt",
+    "https://raw.githubusercontent.com/blawar/titledb/master/versions.txt",
+};
 
 int HexDigit(char c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -39,10 +44,10 @@ int OnProgress(void* user, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
     return static_cast<const std::atomic<bool>*>(user)->load() ? 1 : 0;
 }
 
-bool Download(std::string& body, const std::atomic<bool>* stop) {
+bool DownloadFrom(const char* url, std::string& body, const std::atomic<bool>* stop) {
     CURL* curl = curl_easy_init();
     if (!curl) return false;
-    curl_easy_setopt(curl, CURLOPT_URL, kUrl);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // what it says is only shown, never installed
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -61,6 +66,15 @@ bool Download(std::string& body, const std::atomic<bool>* stop) {
     const bool ok = curl_easy_perform(curl) == CURLE_OK && curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status) == CURLE_OK && status == 200;
     curl_easy_cleanup(curl);
     return ok;
+}
+
+bool Download(std::string& body, const std::atomic<bool>* stop) {
+    for (const char* url : kUrls) {
+        body.clear();
+        if (DownloadFrom(url, body, stop)) return true;
+        if (stop->load()) return false;
+    }
+    return false;
 }
 #endif
 
