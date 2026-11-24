@@ -5,6 +5,8 @@
 - An Atmosphère with the signature patches built in (such as the fork by borntohonk for firmware 23.5.0) counts as
   sigpatches: the warning on the page of a game and the "No sigpatches" mark in the library no longer show with it
   (switch-library-manager-web#204, thanks @TerrorSource).
+- After sending a report to the library, NXDock says where to find it: in Switch Library Manager Web, on the card of
+  the console in Consoles, and in Diagnostics (switch-library-manager-web#205, thanks @TerrorSource).
 
 ## 0.9.0-beta.13
 
