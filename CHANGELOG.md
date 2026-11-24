@@ -3,6 +3,8 @@
 ## Unreleased
 
 - The newest version of each update is known again: the list comes from the titledb that is still updated.
+- When the console refuses the signature of a game (2002-4058), the error says that the sigpatches are missing or
+  are not for this firmware, instead of blaming the SD card.
 
 ## 0.9.0-beta.12
 

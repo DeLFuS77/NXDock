@@ -42,7 +42,16 @@ int main() {
         CHECK(ExplainError(Result_UpdateStopsGame, {}).what.find("2002-4021") != std::string::npos);
         CHECK(ExplainError(Result_UpdateInGame, {}).title != other.title);
     }
+    // the console refusing the signature of an NCA speaks of sigpatches, not of the card
+    for (g_lang = 0; g_lang < 11; g_lang++) {
+        const auto sig = ExplainError(0x1FB402, {});
+        CHECK(!sig.title.empty() && !sig.what.empty() && !sig.todo.empty());
+        CHECK(sig.title != ExplainError(MAKERESULT(2, 1), {}).title);
+        CHECK(sig.code == "2002-4058");
+        CHECK(ExplainError(MAKERESULT(2, 4543), {}).title == sig.title);
+    }
     g_lang = 0;
+    CHECK(ExplainError(0x1FB402, {}).what.find("sigpatches") != std::string::npos);
 
     // the figures go in
     ErrorContext ctx;
