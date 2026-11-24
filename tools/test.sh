@@ -74,6 +74,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   /tmp/style_test
   # the rows a dialog shows so its buttons stay on the screen, and "1 update, 2 DLC"
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -o /tmp/dialog_fit_test tests/dialog_fit_test.cpp && /tmp/dialog_fit_test
+  # the mark on a cover while its game installs or waits in the queue, and its place
+  g++ -std=c++23 -Wall -Wextra -O1 -Isource -o /tmp/queue_mark_test tests/queue_mark_test.cpp
+  /tmp/queue_mark_test
   # the texts of every language: none empty, the same % fields as the English one
   g++ -std=c++23 -Wall -Wextra -O1 -Itests/shim -Isource -o /tmp/texts_test tests/texts_test.cpp source/i18n.cpp source/i18n_more.cpp source/i18n_tools.cpp
   /tmp/texts_test

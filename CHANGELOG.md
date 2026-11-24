@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- While a game installs or waits in the queue, its cover in the library shows a blue ring with the percentage or a
+  blue clock; installing it again says its place in the queue.
+
+## Unreleased
+
 - The newest version of each update is known again: the list comes from the titledb that is still updated.
 - When the console refuses the signature of a game (2002-4058), the error says that the sigpatches are missing or
   are not for this firmware, instead of blaming the SD card.
