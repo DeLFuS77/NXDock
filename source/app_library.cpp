@@ -3,6 +3,7 @@
 //
 // The library: its grid, filters and orders, the A-Z bar, the menu, the game in focus and the quick menu.
 #include "app_shared.hpp"
+#include "queue_mark.hpp"
 
 namespace nxdock {
 
@@ -73,11 +74,79 @@ float App::MaxScroll() const {
 // On a cover of the library: Installed in green; what it lacks of the library (its update, its DLC)
 // in cyan below.
 void App::InstalledBadge(NVGcontext* vg, const Game& g, float x, float y, float s) {
+    const Theme& t = m_theme;
+    const float r = s < 110 ? 10.f : 13.f;
+    // installing or waiting in the queue (2A): a round mark where the tick goes, a blue ring that
+    // fills with the percentage, or a blue clock; the tick comes back once it is installed
+    if (m_queue) {
+        const QueueMark q = QueueMarkOf(QueueJobs(), g.title_id, g.key);
+        if (q.state != QueueMark::State::None) {
+            const bool installing = q.state == QueueMark::State::Installing;
+            const float rr = installing ? r + (s < 110 ? 5.f : 8.f) : r + (s < 110 ? 1.f : 3.f);
+            const float cx = x + s - 8 - rr, cy = y + 8 + rr;
+            nvgBeginPath(vg);
+            nvgCircle(vg, cx, cy, rr + 2.5f);
+            nvgFillColor(vg, nvgRGBAf(0, 0, 0, 0.42f));
+            nvgFill(vg);
+            if (installing) {
+                const auto live = m_queue->GetLive();
+                const float frac = live.running && live.total > 0 ? std::clamp(JobFraction(live), 0.f, 1.f) : 0.f;
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx, cy, rr);
+                nvgFillColor(vg, t.dark ? nvgRGB(15, 18, 24) : nvgRGB(255, 255, 255));
+                nvgFill(vg);
+                const float ring = rr - (s < 110 ? 2.5f : 3.5f), width = s < 110 ? 3.f : 4.f;
+                NVGcolor track = t.work;
+                track.a = 0.25f;
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx, cy, ring);
+                nvgStrokeColor(vg, track);
+                nvgStrokeWidth(vg, width);
+                nvgStroke(vg);
+                nvgBeginPath(vg);
+                if (live.running && live.total > 0) {
+                    nvgArc(vg, cx, cy, ring, -NVG_PI / 2, -NVG_PI / 2 + 2 * NVG_PI * std::max(0.01f, frac), NVG_CW);
+                } else {
+                    // preparing: a short arc that turns (still when there are no animations)
+                    const float a0 = ui::Still() ? -NVG_PI / 2 : float(m_time) * 5.f;
+                    nvgArc(vg, cx, cy, ring, a0, a0 + 1.5f, NVG_CW);
+                }
+                nvgStrokeColor(vg, t.work);
+                nvgStrokeWidth(vg, width);
+                nvgLineCap(vg, NVG_ROUND);
+                nvgStroke(vg);
+                if (live.running && live.total > 0 && s >= 110) {
+                    char pct[8];
+                    std::snprintf(pct, sizeof(pct), "%d", int(frac * 100));
+                    ui::Text(vg, cx, cy + 0.5f, 12, t.text, pct, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                }
+            } else {
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx, cy, rr);
+                nvgFillColor(vg, t.work);
+                nvgFill(vg);
+                // a clock: its face and two hands, the long one turning slowly
+                const float k = rr * 0.58f;
+                nvgBeginPath(vg);
+                nvgCircle(vg, cx, cy, k);
+                nvgStrokeColor(vg, t.on_work);
+                nvgStrokeWidth(vg, s < 110 ? 1.8f : 2.2f);
+                nvgStroke(vg);
+                const float a = ui::Still() ? 0.f : float(m_time) * 1.2f;
+                nvgBeginPath(vg);
+                nvgMoveTo(vg, cx, cy);
+                nvgLineTo(vg, cx, cy - k * 0.7f);
+                nvgMoveTo(vg, cx, cy);
+                nvgLineTo(vg, cx + std::cos(a) * k * 0.6f, cy + std::sin(a) * k * 0.6f);
+                nvgLineCap(vg, NVG_ROUND);
+                nvgStroke(vg);
+            }
+            return;
+        }
+    }
     // only what the console has, as small round marks in the corner (5A): a green tick when the
     // game is on it, under it a cyan arrow when an update is missing, a cyan plus for a DLC
     if (!g.installed.base) return;
-    const Theme& t = m_theme;
-    const float r = s < 110 ? 10.f : 13.f;
     const float cx = x + s - 8 - r;
     float cy = y + 8 + r;
     const auto mark = [&](NVGcolor fill) {

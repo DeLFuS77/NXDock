@@ -3,6 +3,7 @@
 //
 // The queue: the jobs added, what the web and the library app send, updates that would stop a game, its screen.
 #include "app_shared.hpp"
+#include "queue_mark.hpp"
 
 namespace nxdock {
 
@@ -642,11 +643,18 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
         return;
     }
     int added = 0, duplicate = 0;
+    // the first one already there, to say where it is in the queue (2A)
+    u64 dup_tid = 0;
+    std::string dup_key, dup_game;
     for (auto& job : jobs) {
+        const u64 tid = job.title_id;
+        std::string key = job.color_key, game = job.game;
         if (m_queue->Add(std::move(job))) {
             added++;
-        } else {
-            duplicate++;
+        } else if (duplicate++ == 0) {
+            dup_tid = tid;
+            dup_key = std::move(key);
+            dup_game = std::move(game);
         }
     }
     if (added) {
@@ -661,7 +669,20 @@ void App::AddJobs(std::vector<InstallJob> jobs) {
         // back to the library: the strip shows the install going on
         m_detail = false;
     } else if (duplicate) {
-        Notice(m_queue->Undoing() ? s.removing : s.already_in_queue);
+        if (m_queue->Undoing()) {
+            Notice(s.removing);
+        } else {
+            // which place it has in the queue (2A)
+            const auto all = m_queue->Jobs();
+            const QueueMark q = QueueMarkOf(all, dup_tid, dup_key);
+            if (q.state == QueueMark::State::Waiting && !dup_game.empty()) {
+                char text[300];
+                std::snprintf(text, sizeof(text), TrM().aq_place_fmt, dup_game.c_str(), q.place);
+                Notice(text);
+            } else {
+                Notice(s.already_in_queue);
+            }
+        }
     }
 }
 
