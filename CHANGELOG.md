@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.14
+
+These changes have not been tested in depth yet, so some bugs may remain.
 
 - An Atmosphère with the signature patches built in (such as the fork by borntohonk for firmware 23.5.0) counts as
   sigpatches: the warning on the page of a game and the "No sigpatches" mark in the library no longer show with it
