@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.13
+
+These changes have not been tested in depth yet, so some bugs may remain.
 
 - While a game installs or waits in the queue, its cover in the library shows a blue ring with the percentage or a
   blue clock; installing it again says its place in the queue.
