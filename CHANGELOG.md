@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Installed › On the console finds games that are installed but not on the HOME menu (its list lost them), and +
+  puts them back with their update and DLC. Only that list changes.
+
+## Unreleased
+
 - The newest version of each update is known again: the list comes from the titledb that is still updated.
 - When the console refuses the signature of a game (2002-4058), the error says that the sigpatches are missing or
   are not for this firmware, instead of blaming the SD card.

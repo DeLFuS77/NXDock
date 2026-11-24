@@ -86,7 +86,7 @@ private:
                          MoreTile, MorePlace, MoreRow, MoreMark, MoreSide, VaultGame, VaultCopy, SpaceAction, PickRow, ShopRow, ModRow, SdChoice, DialogLine, VersionChip, CompressRow, CompressMark, CompressFilter, Wifi, SearchChip,
                          OpenBubble, QuickRow, QuickBack, StyleCard,
                          FilesMenuRow, FilesMenuBack, FilesView, FilesAfter, ConsoleMissing, MtpUnit, VaultKind, VaultMenuRow,
-                         ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, DialogTickExtra, RemoveStop, TicketRow,
+                         ActRow, ActBack, DialogTick, ConsoleButton, ConsoleOrphans, ConsoleHidden, DialogTickExtra, RemoveStop, TicketRow,
                          NoRoomUse, CardRow, CardInstall, CardDest, ViewerArea, UsbChip, SigpatchInfo, SendReport, BuildNote };
     struct Hit {
         ui::HitRect rect;
@@ -593,6 +593,7 @@ private:
     void DrawConsolePage(NVGcontext* vg, const Space::View& v);
     void DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library);
     void DrawRemoveProgress(NVGcontext* vg, const Space::View& v);
+    void DrawHomeProgress(NVGcontext* vg, const Space::View& v);
     // a shortcut of homebrew on the HOME menu, not a game (shortcut_filter.hpp)
     static bool IsShortcut(const InstalledApp& a);
     // what In the console lists: the games, and the shortcuts of homebrew only when asked in +
@@ -836,6 +837,7 @@ private:
     // In the console, group 2 (14/11): check and repair a game from its page (1A), play it (2A), the
     // order of the list (4A), the updates and DLC without their game (5C)
     bool m_console_orphans = false;                       // only those without their game
+    bool m_console_hidden = false;                        // only those the HOME menu does not show (1A)
     double m_console_check_at = -100;                     // when that check was asked for
     bool m_console_check_focus = false;                   // the check ended with something to repair: Repair in focus
     std::vector<TicketId> m_ticket_delete;                // the tickets the question deletes
@@ -927,6 +929,7 @@ private:
     void DrawTickets(NVGcontext* vg);
     void UpdateTickets(u64 down, u64 held);
     void AskDeleteTickets();
+    void AskHomeBack();
     // what else of a game goes with it when asked (7A): its mods folder and its tickets
     void ConsoleRemoveExtras(const std::vector<unsigned long long>& apps);
     int m_installed_focus = 0;
@@ -935,7 +938,7 @@ private:
     // the question shown over everything, if any
     enum class DialogKind { None, Nand, Undo, ClearHistory, HistoryInfo, UpdateAll, Verify, Push, Share, Where, Risk, PreCheck, MtpNand, VaultRestore, VaultError, SaveCopyAsk, ModsAsk, Versions, Downgrade, WebCancel, Resume, CompressGo, CompressUndo, CompressInfo, CompressDone, CompressStop, SpaceClean, SpaceArchive, SpaceMove, SpaceCard, SpaceDump, ShopRemove, ConsoleRemove, Reinstall, Preflight, DlcNeeds, QueueCancel, Quit, Forget, ResumeDiscard, HomeAdd, HomeRemove,
                             FilesDelete, FilesWork, FilesProps, SelfUpdate, SelfBack, ContentDetails, SaveDelete,
-                            UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, UpdateHere, PlayRandom, OpenNro,
+                            UpdateStops, CompressStopsOriginal, CompressStopsRemove, Play, TicketsDelete, HomeBack, UpdateHere, PlayRandom, OpenNro,
                             Usb3, Usb3Reboot, RemoveStopped, SigpatchInfo, PushRemove };
     struct Dialog {
         DialogKind kind = DialogKind::None;
