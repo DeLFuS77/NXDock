@@ -94,6 +94,31 @@ int main(int argc, char** argv) {
     const unsigned char rights[16] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x08, 0x00, 0, 0, 0, 0, 0, 0, 0, 0x11};
     Check(TitleOfRights(rights) == 0x0100000000010800ull, "the title of a rights id");
     Check(TicketFileName(rights, ".tik") == "01000000000108000000000000000011.tik", "the name of its copy");
+    // games the HOME menu does not show (1A): only one installed with its game, not archived
+    {
+        InstalledApp lost;
+        lost.app_id = 0x0100000000010000ull;
+        lost.hidden = true;
+        lost.contents = {{0x0100000000010000ull, 0, 0x80, false, 100, 0},       // the game, on the SD card
+                         {0x0100000000010800ull, 65536, 0x81, false, 10, 0},   // an older update
+                         {0x0100000000010800ull, 131072, 0x81, true, 12, 0},   // the newest, in the internal memory
+                         {0x0100000000011001ull, 0, 0x82, false, 5, 0},        // a DLC
+                         {0x0100000000011001ull, 65536, 0x83, false, 1, 0}};   // its update: left to the console
+        Check(NotOnHome(lost), "a game without its record is not on HOME");
+        const auto back = HomeRecordContents(lost.contents);
+        Check(back.size() == 3, "the game, its newest update and its DLC go back");
+        Check(back.size() == 3 && back[0].type == 0x80 && back[1].version == 131072 && back[1].nand && back[2].type == 0x82,
+              "in the order the console keeps them, each where it is");
+        InstalledApp shown = lost;
+        shown.hidden = false;
+        Check(!NotOnHome(shown), "a game with its record is on HOME");
+        InstalledApp alone = lost;
+        alone.contents.erase(alone.contents.begin());
+        Check(!NotOnHome(alone) && HomeRecordContents(alone.contents).empty(), "an update and a DLC alone are never put back");
+        InstalledApp archived = lost;
+        archived.archived = true;
+        Check(!NotOnHome(archived), "an archived game is on HOME already");
+    }
     if (failed) return 1;
     std::printf("console_order_test: ok\n");
     return 0;

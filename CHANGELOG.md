@@ -4,6 +4,8 @@
 
 - While a game installs or waits in the queue, its cover in the library shows a blue ring with the percentage or a
   blue clock; installing it again says its place in the queue.
+- Installed › On the console finds games that are installed but not on the HOME menu (its list lost them), and +
+  puts them back with their update and DLC. Only that list changes.
 
 ## Unreleased
 

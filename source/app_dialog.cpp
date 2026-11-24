@@ -4,6 +4,7 @@
 // The dialogs over any screen: drawn, moved through and confirmed.
 #include "app_shared.hpp"
 #include "dialog_fit.hpp"
+#include "console_order.hpp"
 
 namespace nxdock {
 
@@ -705,6 +706,20 @@ void App::ConfirmDialog() {
             AddJobs(std::move(jobs));
             if (m_dialog.kind == DialogKind::None) NoticeOk(text);
             return;
+        }
+        case DialogKind::HomeBack: {
+            // the games the HOME menu does not show, put back in its list (1A); not while something
+            // installs, which writes records too
+            std::vector<unsigned long long> apps;
+            if (m_space) {
+                for (const auto& a : m_space->Snapshot().apps) {
+                    if (NotOnHome(a)) apps.push_back(a.app_id);
+                }
+            }
+            if ((m_queue && (m_queue->Busy() || m_queue->Undoing())) || !m_space || !m_space->StartRestoreHome(apps)) {
+                Notice(TrM().cz_busy);
+            }
+            break;
         }
         case DialogKind::TicketsDelete:
             // they wait while something installs: an install writes tickets

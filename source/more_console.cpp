@@ -229,10 +229,11 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& raw) {
             x -= 6;
         }
         // the filter: only the games missing an update or a DLC (6A)
-        int missing = 0, orphans = 0;
+        int missing = 0, orphans = 0, hidden = 0;
         for (const auto& a : all.apps) {
             missing += !a.archived && !WithoutGame(a) && MissingOf(a.app_id).Any();
             orphans += WithoutGame(a);
+            hidden += NotOnHome(a);
         }
         char text[96];
         std::snprintf(text, sizeof(text), tt.ms_filter_fmt, missing);
@@ -251,6 +252,16 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& raw) {
             else ui::StrokeRound(vg, x, 80, ow, 24, 12, t.orange, 1.2f);
             ui::Text(vg, x + ow / 2, 92, 13, m_console_orphans ? t.on_work : t.orange, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
             AddHit(x - 2, 72, ow + 4, 48, HitKind::ConsoleOrphans, 0);
+        }
+        // the games the HOME menu does not show, in orange (1A); only when there are some
+        if (hidden > 0 || m_console_hidden) {
+            std::snprintf(text, sizeof(text), m.hb_chip_fmt, hidden);
+            const float hw = ui::TextWidth(vg, 13, text) + 22;
+            x -= 8 + hw;
+            if (m_console_hidden) ui::FillRound(vg, x, 80, hw, 24, 12, t.orange);
+            else ui::StrokeRound(vg, x, 80, hw, 24, 12, t.orange, 1.2f);
+            ui::Text(vg, x + hw / 2, 92, 13, m_console_hidden ? t.on_work : t.orange, text, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            AddHit(x - 2, 72, hw + 4, 48, HitKind::ConsoleHidden, 0);
         }
         // the order chosen in + (4A), when there is room left of the filters
         std::snprintf(text, sizeof(text), m.so_head_fmt, SortName(m, m_ui.console_sort));
@@ -300,6 +311,7 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& raw) {
         nvgScissor(vg, 134, y, 920, pitch);
         float x = ui::Text(vg, 134, y + 23, 18, t.text, a.name.c_str()) + 12;
         if (orphan) x = Tag(vg, x, y + 23, m.og_tag, t.orange);
+        if (NotOnHome(a)) x = Tag(vg, x, y + 23, m.hb_tag, t.orange);
         if (library && !g) x = Tag(vg, x, y + 23, m.ic_not_lib, t.orange);
         if (a.archived) x = Tag(vg, x, y + 23, m.archived_tag, t.muted);
         bool newer = false;
@@ -356,6 +368,7 @@ void App::DrawConsole(NVGcontext* vg, const Space::View& raw) {
     PickedText(v, left, sizeof(left));
     DrawListLetter(vg, kWidth / 2, 360);
     DrawRemoveProgress(vg, v);
+    DrawHomeProgress(vg, v);
     ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
 }
 
@@ -369,6 +382,24 @@ void App::StopRemove() {
         if (a.app_id == v.remove_app) m_console_rm_stop_name = a.name;
     }
     m_space->Cancel();
+}
+
+// While games are put back on the HOME menu (1A): which one, and how far, over the hint bar.
+void App::DrawHomeProgress(NVGcontext* vg, const Space::View& v) {
+    if (v.task != Space::Task::Home) return;
+    const Theme& t = m_theme;
+    const More& m = TrM();
+    char text[300];
+    std::snprintf(text, sizeof(text), m.hb_progress_fmt, v.current.c_str());
+    const float w = 760, h = 70, x = (kWidth - w) / 2, y = kHeight - 56 - h - 14;
+    draw::Popup(vg, t, x, y, w, h, 16);
+    ui::Spinner(vg, x + 32, y + 26, 9, t.work, m_time);
+    nvgSave(vg);
+    nvgIntersectScissor(vg, x + 52, y + 8, w - 72, 36);
+    ui::Text(vg, x + 52, y + 26, 17, t.text, text);
+    nvgRestore(vg);
+    const float frac = v.total ? float(double(v.done) / double(v.total)) : 0.f;
+    ui::Progress(vg, t, x + 20, y + 50, w - 40, 8, frac, t.work, m_time, true);
 }
 
 // While games are taken off: which one, of how many, copying its saves or deleting it, over the
@@ -463,6 +494,7 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
             by += 22;
         };
         if (orphan) badge(m.og_tag, t.orange);
+        if (NotOnHome(a)) badge(m.hb_tag, t.orange);
         if (library && !g) badge(m.ic_not_lib, t.orange);
         if (newer) badge(m.ic_dlc_needs_tag, t.orange);
         if (a.archived) badge(m.archived_tag, t.muted);
@@ -501,6 +533,7 @@ void App::DrawConsoleGrid(NVGcontext* vg, const Space::View& v, bool library) {
     char left[160] = "";
     PickedText(v, left, sizeof(left));
     DrawRemoveProgress(vg, v);
+    DrawHomeProgress(vg, v);
     ui::HintBar(vg, t, left[0] ? left : nullptr, ConsoleHints(), m_hint_rects);
 }
 
@@ -589,7 +622,8 @@ void App::DrawConsolePage(NVGcontext* vg, const Space::View& v) {
     nvgSave(vg);
     nvgScissor(vg, x0, 90, w - idw - 20, 60);
     float nx = ui::Text(vg, x0, 116, 26, t.text, a.name.c_str()) + 14;
-    if (orphan) Tag(vg, nx, 118, m.og_tag, t.orange);
+    if (orphan) nx = Tag(vg, nx, 118, m.og_tag, t.orange);
+    if (NotOnHome(a)) Tag(vg, nx, 118, m.hb_tag, t.orange);
     nvgRestore(vg);
     float hy = 150;
     if (a.archived) {
@@ -1234,13 +1268,16 @@ Space::View App::ConsoleView(const Space::View& raw) {
     }
     const Space::View& v = *from;
     // the filters (what is missing, 6A; without the game, 5C), then the order (4A)
-    if (!m_console_missing && !m_console_orphans && m_ui.console_sort == kSortName) return v;
+    if (!m_console_missing && !m_console_orphans && !m_console_hidden && m_ui.console_sort == kSortName) return v;
     if (m_console_missing) FollowMissing(v);
     Space::View out = v;
-    if (m_console_missing || m_console_orphans) {
+    if (m_console_missing || m_console_orphans || m_console_hidden) {
         out.apps.clear();
         for (const auto& a : v.apps) {
-            if (m_console_orphans ? WithoutGame(a) : (!a.archived && !WithoutGame(a) && MissingOf(a.app_id).Any())) out.apps.push_back(a);
+            const bool keep = m_console_hidden    ? NotOnHome(a)
+                              : m_console_orphans ? WithoutGame(a)
+                                                  : (!a.archived && !WithoutGame(a) && MissingOf(a.app_id).Any());
+            if (keep) out.apps.push_back(a);
         }
     }
     SortConsole(out.apps, m_ui.console_sort);

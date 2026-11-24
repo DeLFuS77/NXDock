@@ -21,6 +21,7 @@ struct InstalledApp {
     std::string name;
     unsigned long long sd_bytes = 0, nand_bytes = 0;
     bool archived = false; // a record without content: archived from the HOME menu or here
+    bool hidden = false;   // installed with its game, but without a record: the HOME menu does not show it
     long long idle_minutes = -1; // since it was last played (-1: never, or unknown)
     long long play_minutes = -1; // how long it was played, all told (-1: unknown)
     int launches = -1;           // how many times it was opened (-1: unknown)
@@ -109,7 +110,7 @@ std::map<unsigned long long, PlayStats> ReadPlayStats(const std::vector<unsigned
 
 class Space {
 public:
-    enum class Task { None, Scan, Clean, Archive, Move, Dump, Remove, Tickets };
+    enum class Task { None, Scan, Clean, Archive, Move, Dump, Remove, Tickets, Home };
     struct View {
         Task task = Task::None;
         bool scanned = false;
@@ -127,6 +128,7 @@ public:
         unsigned long long card_bytes = 0;
         int tickets_all = -1; // every ticket of the console, at the last scan (6A)
         int tickets_done = 0, tickets_kept = 0; // the last Tickets task: deleted, and kept as their copy failed
+        int home_done = 0, home_total = 0;      // the last Home task: games put back on the HOME menu, of how many
         // a Remove task: the game at work (its saves being copied, or its contents going), which of
         // how many, and the games already gone (out of the list at once, until the next scan)
         unsigned long long remove_app = 0;
@@ -157,6 +159,10 @@ public:
                      std::function<std::string(unsigned long long)> before = {}, std::function<void(unsigned long long)> after = {});
     // Deletes tickets (6A), each saved to the SD card first; one whose copy fails stays.
     bool StartDeleteTickets(std::vector<TicketId> tickets);
+    // Puts games installed in full but not on the HOME menu back in its list (their records): only
+    // that list changes. Each game with its newest update and its DLC; it stops at the first the
+    // console turns down. Nothing is done when a list of what is installed cannot be read.
+    bool StartRestoreHome(std::vector<unsigned long long> apps);
     // A dump to the library app (PUT /install/upload/{name}): an installed content, or the game
     // card (its secure partition), as an NSP.
     bool StartDump(const std::string& url, const std::string& key, unsigned long long content_id, unsigned version, unsigned char type,

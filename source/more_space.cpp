@@ -218,6 +218,15 @@ void App::FollowSpace() {
         case Space::Task::Archive: NoticeOk(m.done_archive); break;
         case Space::Task::Move: NoticeOk(m.done_move); break;
         case Space::Task::Dump: NoticeOk(m.done_dump); break;
+        case Space::Task::Home: {
+            // how many came back on the HOME menu (1A); one the console turned down is offered again
+            char text[200];
+            std::snprintf(text, sizeof(text), m.hb_done_fmt, v.home_done, v.home_total);
+            if (v.home_done == v.home_total) NoticeOk(text);
+            else Notice(text);
+            m_console_hidden = false;
+            break;
+        }
         case Space::Task::Tickets: {
             // how many went, and where their copies are (6A); the list is read again
             char text[300];
@@ -399,6 +408,7 @@ void App::DrawSpace(NVGcontext* vg) {
                            : v.task == Space::Task::Archive ? m.st_archiving
                            : v.task == Space::Task::Move    ? m.st_moving
                            : v.task == Space::Task::Tickets ? m.tk_deleting
+                           : v.task == Space::Task::Home    ? m.hb_back
                                                             : m.st_dumping;
         draw::Panel(vg, t, lx, 548, kWidth - 96, 104, 12);
         ui::Text(vg, lx + 22, 570, 17, t.text, what);
@@ -864,6 +874,17 @@ void App::UpdateTickets(u64 down, u64 held) {
     if (Repeat(down, held, HidNpadButton_AnyDown) && m_ticket_focus < n - 1) m_ticket_focus++;
     m_ticket_focus = std::clamp(m_ticket_focus, 0, n - 1);
     if (down & (HidNpadButton_Y | HidNpadButton_A)) m_ticket_marks[size_t(m_ticket_focus)] = !m_ticket_marks[size_t(m_ticket_focus)];
+}
+
+// Puts the games the HOME menu does not show back in its list (1A): it asks first.
+void App::AskHomeBack() {
+    if (!m_space || m_space->Busy() || (m_queue && (m_queue->Busy() || m_queue->Undoing()))) {
+        Notice(TrM().cz_busy);
+        return;
+    }
+    const auto v = m_space->Snapshot();
+    if (std::none_of(v.apps.begin(), v.apps.end(), NotOnHome)) return;
+    OpenDialog(DialogKind::HomeBack);
 }
 
 void App::AskDeleteTickets() {

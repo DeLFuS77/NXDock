@@ -395,6 +395,7 @@ bool App::Tap(float x, float y, u64& down) {
             case HitKind::ConsoleOrphans:
                 m_console_orphans = !m_console_orphans;
                 m_console_missing = false;
+                m_console_hidden = false;
                 m_console_focus = 0;
                 m_console_list_at = m_time;
                 break;
@@ -480,9 +481,18 @@ bool App::Tap(float x, float y, u64& down) {
                 else m_usb_chip_focus = true;
                 OpenUsb3();
                 break;
+            case HitKind::ConsoleHidden:
+                // only the games the HOME menu does not show (1A)
+                m_console_hidden = !m_console_hidden;
+                m_console_missing = false;
+                m_console_orphans = false;
+                m_console_focus = 0;
+                m_console_list_at = m_time;
+                break;
             case HitKind::ConsoleMissing:
                 m_console_missing = !m_console_missing;
                 m_console_orphans = false;
+                m_console_hidden = false;
                 m_console_focus = 0;
                 m_console_list_at = m_time;
                 break;

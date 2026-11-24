@@ -36,7 +36,7 @@ constexpr float kActW = 470, kActRow = 56;
 enum : int { kButton, kRemovePicked, kRemoveMarked, kMarkAll, kUnmarkAll, kMissing, kShortcuts, kSize, kScreenOff, kShopRemove, kVersions, kClearHistory,
              kOrphans, kSort, kPlay, kCheck, kRepair, kInstallBase, kTicketsDelete, kTicketsOrphans, kInvert, kRandom, kViewWrap, kViewEnd,
              kViewTop, kViewClose, kUpdateShop, kUsb3, kCompress, kCompressAll, kCzGo, kCzFilter, kCzUnqueue, kSigpatchInfo, kSigpatchOff,
-             kSendReport, kSortBase = 100 };
+             kSendReport, kHidden, kHomeBack, kSortBase = 100 };
 
 // The pictures: 0 to 9 those of the menu of files (install, list, copy, cut, paste, cross, rename,
 // folder, i, bin); then a box ticked, an empty box, pause, play, the screen off, again, a shield,
@@ -323,6 +323,18 @@ std::vector<App::ActRow> App::ActRows(ActScreen screen, std::string& title) {
                     std::snprintf(text, sizeof(text), "%d", orphans);
                     rows.push_back({kOrphans, m_console_orphans ? tt.ms_hint_all : m.og_filter, m_console_orphans ? std::string{} : text, true, 0, false,
                                     kIconFunnel});
+                }
+            }
+            // the games the HOME menu does not show (1A), when there are some: put back, or only them
+            {
+                const auto all = m_space->Snapshot();
+                const int hidden = int(std::count_if(all.apps.begin(), all.apps.end(), NotOnHome));
+                if (hidden) {
+                    std::snprintf(text, sizeof(text), "%d", hidden);
+                    rows.push_back({kHomeBack, m.hb_back, text, !m_space->Busy(), 0, false, kIconAgain});
+                }
+                if (hidden || m_console_hidden) {
+                    rows.push_back({kHidden, m_console_hidden ? tt.ms_hint_all : m.hb_filter, {}, true, 0, false, kIconFunnel});
                 }
             }
             // a game at random (21A of groups 3 and 4)
@@ -694,10 +706,20 @@ void App::ActDo(const ActRow& row) {
         case kViewEnd: m_text_top = 1 << 30; break; // clamped when drawn
         case kViewTop: m_text_top = 0; break;
         case kViewClose: m_more = MoreScreen::Files; break;
+        case kHomeBack: AskHomeBack(); break;
+        case kHidden:
+            // only the games the HOME menu does not show (1A)
+            m_console_hidden = !m_console_hidden;
+            m_console_missing = false;
+            m_console_orphans = false;
+            m_console_focus = 0;
+            m_console_list_at = m_time;
+            break;
         case kOrphans:
             // only the updates and DLC without their game (5C)
             m_console_orphans = !m_console_orphans;
             m_console_missing = false;
+            m_console_hidden = false;
             m_console_focus = 0;
             m_console_list_at = m_time;
             break;
@@ -716,6 +738,7 @@ void App::ActDo(const ActRow& row) {
             // the filter of what is missing (6A)
             m_console_missing = !m_console_missing;
             m_console_orphans = false;
+            m_console_hidden = false;
             m_console_focus = 0;
             m_console_list_at = m_time;
             break;

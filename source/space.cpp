@@ -143,6 +143,19 @@ std::set<u64> RecordApps() {
     return out;
 }
 
+// The games in the list of the HOME menu (their records); false when it could not be read whole.
+bool ListRecordApps(std::set<u64>& out) {
+    out.clear();
+    NsApplicationRecord records[64];
+    s32 offset = 0, count = 0;
+    while (true) {
+        if (R_FAILED(nsListApplicationRecord(records, 64, offset, &count))) return false;
+        if (count <= 0) return true;
+        for (s32 i = 0; i < count; i++) out.insert(records[i].application_id);
+        offset += count;
+    }
+}
+
 // ES command 3, DeleteTicket: the tickets of these rights ids go.
 Result DeleteTickets(const std::vector<FsRightsId>& ids) {
     if (ids.empty()) R_SUCCEED();
@@ -547,7 +560,11 @@ void Space::ScanNow() {
     int tickets_all = -1;
     Storage st;
     std::set<u64> installed_ids;
+    // every list of what is installed was read: only then is a game without a record told (a list
+    // not read would make games look lost from the HOME menu)
+    bool lists_read = false;
     if (R_SUCCEEDED(ncmInitialize())) {
+        lists_read = true;
         // how many to read, for the bar of the screen
         unsigned long long total = 0, done = 0;
         for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
@@ -557,7 +574,10 @@ void Space::ScanNow() {
         Progress(0, total);
         for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
             Store s(sid);
-            if (!s.ok) continue;
+            if (!s.ok) {
+                lists_read = false;
+                continue;
+            }
             const bool nand = sid == NcmStorageId_BuiltInUser;
             s64 free_b = -1, total_b = -1;
             ncmContentStorageGetFreeSpaceSize(&s.cs, &free_b);
@@ -565,7 +585,10 @@ void Space::ScanNow() {
             (nand ? st.nand_free : st.sd_free) = free_b;
             (nand ? st.nand_total : st.sd_total) = total_b;
             std::set<std::string> referenced;
-            for (const auto& key : s.Keys()) {
+            bool read = true;
+            const auto keys = s.Keys(&read);
+            lists_read = lists_read && read;
+            for (const auto& key : keys) {
                 if ((++done & 15) == 0) Progress(done, total);
                 if (key.type != NcmContentMetaType_Application && key.type != NcmContentMetaType_Patch && key.type != NcmContentMetaType_AddOnContent) continue;
                 installed_ids.insert(key.id);
@@ -651,13 +674,24 @@ void Space::ScanNow() {
     }
     // archived games (a record without content) and the names
     if (R_SUCCEEDED(nsInitialize())) {
-        for (const u64 app : RecordApps()) {
+        std::set<u64> recorded;
+        const bool records_read = ListRecordApps(recorded);
+        for (const u64 app : recorded) {
             if (!by_app.count(app)) {
                 by_app[app] = apps.size();
                 InstalledApp a;
                 a.app_id = app;
                 a.archived = true;
                 apps.push_back(a);
+            }
+        }
+        // installed with the game itself, but not in the list of the HOME menu: it does not show it
+        if (lists_read && records_read) {
+            for (auto& a : apps) {
+                const bool game = std::any_of(a.contents.begin(), a.contents.end(), [](const InstalledApp::Content& c) {
+                    return c.type == NcmContentMetaType_Application;
+                });
+                a.hidden = !a.archived && game && !recorded.count(a.app_id);
             }
         }
         // when each game was last played, how long and how many times it was opened (3A), read
@@ -961,6 +995,83 @@ bool Space::StartDeleteTickets(std::vector<TicketId> tickets) {
         std::lock_guard lock(m_mutex);
         m_view.tickets_done = done;
         m_view.tickets_kept = kept;
+        return {};
+    });
+    return true;
+}
+
+bool Space::StartRestoreHome(std::vector<unsigned long long> apps) {
+    if (Busy() || apps.empty()) return false;
+    Run(Task::Home, [this, apps]() -> std::string {
+        const More& m = TrM();
+        {
+            std::lock_guard lock(m_mutex);
+            m_view.home_done = 0;
+            m_view.home_total = int(apps.size());
+        }
+        Result rc = ncmInitialize();
+        if (R_FAILED(rc)) return Packed(m.e_storage_t, m.e_storage_d, rc);
+        ON_SCOPE_EXIT(ncmExit());
+        // what is installed of each game, read again; a list that cannot be read stops it all
+        std::map<u64, std::vector<InstalledApp::Content>> found;
+        const std::set<u64> wanted(apps.begin(), apps.end());
+        for (const auto sid : {NcmStorageId_SdCard, NcmStorageId_BuiltInUser}) {
+            Store s(sid);
+            bool read = false;
+            const auto keys = s.ok ? s.Keys(&read) : std::vector<NcmContentMetaKey>{};
+            if (!s.ok || !read) return Packed(m.e_storage_t, m.e_storage_d);
+            for (const auto& k : keys) {
+                if (!wanted.count(AppOf(k.id))) continue;
+                found[AppOf(k.id)].push_back({k.id, k.version, k.type, sid == NcmStorageId_BuiltInUser, 0, 0});
+            }
+        }
+        rc = nsx::Initialize();
+        if (R_FAILED(rc)) return Packed(m.e_storage_t, m.e_storage_d, rc);
+        ON_SCOPE_EXIT(nsx::Exit());
+        // nsx opens ns too
+        std::set<u64> recorded;
+        const bool records_read = ListRecordApps(recorded);
+        if (!records_read) return Packed(m.e_storage_t, m.e_storage_d);
+        int done = 0;
+        u64 i = 0;
+        for (const u64 app : apps) {
+            std::string name;
+            {
+                std::lock_guard lock(m_mutex);
+                for (const auto& a : m_view.apps) {
+                    if (a.app_id == app) name = a.name;
+                }
+            }
+            Progress(i++, apps.size(), name);
+            if (m_cancel) break;
+            // put back already, or not whole any more: left as it is
+            if (recorded.count(app)) {
+                done++;
+                continue;
+            }
+            const auto contents = HomeRecordContents(found[app]);
+            if (contents.empty()) continue;
+            std::vector<ncmx::ContentStorageRecord> records;
+            for (const auto& c : contents) {
+                ncmx::ContentStorageRecord r{};
+                r.key.id = c.id;
+                r.key.version = c.version;
+                r.key.type = c.type;
+                r.key.install_type = NcmContentInstallType_Full;
+                r.storage_id = c.nand ? NcmStorageId_BuiltInUser : NcmStorageId_SdCard;
+                records.push_back(r);
+            }
+            rc = nsx::PushApplicationRecord(app, records.data(), u32(records.size()));
+            if (R_FAILED(rc)) break; // the console turned it down: the rest is offered the next time
+            nsx::SetLowestLaunchVersion(app, records);
+            nsx::InvalidateApplicationControlCache(app);
+            done++;
+            std::lock_guard lock(m_mutex);
+            m_view.home_done = done;
+        }
+        Progress(apps.size(), apps.size());
+        std::lock_guard lock(m_mutex);
+        m_view.home_done = done;
         return {};
     });
     return true;

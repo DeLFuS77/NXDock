@@ -5,6 +5,7 @@
 // (app_dialog.cpp) draws them all in the same card.
 #include "app_shared.hpp"
 #include "dialog_fit.hpp"
+#include "console_order.hpp"
 
 namespace nxdock {
 
@@ -550,6 +551,24 @@ App::Fill App::DialogConsoleText(DialogContent& dc) {
                 if (lost) dc.lines.push_back({m.nro_lost, "", "", t.text});
             }
             dc.primary = m.open;
+            break;
+        }
+        case DialogKind::HomeBack: {
+            // the games the HOME menu does not show, put back in its list (1A)
+            const More& m = TrM();
+            char text[200];
+            int n = 0;
+            if (m_space) {
+                for (const auto& a : m_space->Snapshot().apps) {
+                    if (!NotOnHome(a)) continue;
+                    n++;
+                    dc.lines.push_back({a.name, draw::Size(a.Bytes()), m.hb_tag, t.orange});
+                }
+            }
+            std::snprintf(text, sizeof(text), m.hb_title_fmt, n);
+            dc.title = text;
+            dc.body = m.hb_body;
+            dc.primary = m.hb_go;
             break;
         }
         case DialogKind::TicketsDelete: {

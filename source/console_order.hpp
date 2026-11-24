@@ -26,6 +26,15 @@ void SortConsole(std::vector<InstalledApp>& apps, int sort);
 // game itself.
 bool WithoutGame(const InstalledApp& a);
 
+// A game installed in full that the HOME menu does not show (its record lost), as the scan marks it:
+// the game itself is there, it is not archived, and every list could be read.
+bool NotOnHome(const InstalledApp& a);
+
+// What goes back in the record of a game not on the HOME menu, in the order the console keeps
+// them: the game, its newest update and its DLC (the updates of DLC are left to the console).
+// Empty when the game itself is not there: an update or a DLC alone is never put back.
+std::vector<InstalledApp::Content> HomeRecordContents(const std::vector<InstalledApp::Content>& contents);
+
 // The play time as "42 h 10 min", "15 h" or "25 min", with the formats of the language.
 std::string PlayTimeText(long long minutes, const char* h_min_fmt, const char* h_fmt, const char* min_fmt);
 

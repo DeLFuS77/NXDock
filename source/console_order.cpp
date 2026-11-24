@@ -44,6 +44,28 @@ bool WithoutGame(const InstalledApp& a) {
     return std::none_of(a.contents.begin(), a.contents.end(), [](const InstalledApp::Content& c) { return c.type == kTypeGame; });
 }
 
+bool NotOnHome(const InstalledApp& a) {
+    return a.hidden && !a.archived && !WithoutGame(a);
+}
+
+std::vector<InstalledApp::Content> HomeRecordContents(const std::vector<InstalledApp::Content>& contents) {
+    constexpr unsigned char kTypeUpdate = 0x81, kTypeDlc = 0x82; // NcmContentMetaType_Patch, _AddOnContent
+    std::vector<InstalledApp::Content> out;
+    for (const auto& c : contents) {
+        if (c.type == kTypeGame) out.push_back(c);
+    }
+    if (out.empty()) return {};
+    const InstalledApp::Content* newest = nullptr;
+    for (const auto& c : contents) {
+        if (c.type == kTypeUpdate && (!newest || c.version > newest->version)) newest = &c;
+    }
+    if (newest) out.push_back(*newest);
+    for (const auto& c : contents) {
+        if (c.type == kTypeDlc) out.push_back(c);
+    }
+    return out;
+}
+
 std::string PlayTimeText(long long minutes, const char* h_min_fmt, const char* h_fmt, const char* min_fmt) {
     if (minutes < 0) minutes = 0;
     char text[64];
