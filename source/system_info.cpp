@@ -64,7 +64,7 @@ ConsoleFacts ReadConsoleFacts(const SystemInfo& sys) {
     StorageSpace(NcmStorageId_BuiltInUser, free_bytes, total_bytes);
     f.nand_free = free_bytes;
     f.nand_total = total_bytes;
-    f.sigpatches = FindSigpatches("sdmc:").how;
+    f.sigpatches = FindSigpatches("sdmc:", AtmosphereEmbedsPatches()).how;
     f.applet = net::IsAppletMode();
     u64 v = 0;
     if (R_SUCCEEDED(svcGetInfo(&v, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0))) f.mem_total = (long long)v;

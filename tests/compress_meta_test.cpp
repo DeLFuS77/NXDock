@@ -52,6 +52,23 @@ int main() {
         Touch(sd + "/atmosphere/contents/420000000000000B/exefs.nsp");
         s = FindSigpatches(sd);
         CHECK(s.found && s.how == "sys-patch");
+        // the Atmosphère with the patches inside it (#204): asked of exosphère, or told by its
+        // template of exosphere.ini; the template of the Atmosphère of Atmosphere-NX is not it
+        std::system(("rm -rf " + sd + " && mkdir -p " + sd + "/atmosphere/config_templates").c_str());
+        CHECK(!FindSigpatches(sd).found);
+        s = FindSigpatches(sd, true);
+        CHECK(s.found && s.how == "Atmosphère+");
+        Touch(sd + "/atmosphere/config_templates/exosphere.ini", "[exosphere]\ndebugmode=1\nblank_prodinfo_sysmmc=0\n");
+        CHECK(!FindSigpatches(sd).found);
+        Touch(sd + "/atmosphere/config_templates/exosphere.ini",
+              "[exosphere]\ndebugmode=1\n\n[loader]\nenable_es_patches_sysmmc=u8!0x1\nenable_es_patches_emummc=u8!0x1\n");
+        s = FindSigpatches(sd);
+        CHECK(s.found && s.how == "Atmosphère+");
+        // with old .ips left beside it, the Atmosphère is the one told
+        std::system(("mkdir -p " + sd + "/atmosphere/kip_patches/fs_patches/old").c_str());
+        Touch(sd + "/atmosphere/kip_patches/fs_patches/old/ABCDEF.ips");
+        CHECK(FindSigpatches(sd).how == "Atmosphère+");
+        CHECK(!AtmosphereEmbedsPatches()); // on the computer, never
     }
     {
         // the line on the page of a game: every time without sigpatches with its option on; the

@@ -26,13 +26,20 @@ bool SaveCompressed(const std::string& path, const std::vector<CompressedGame>& 
 // patches of the file system ("sigpatches"). NXDock never installs them; it only looks for them.
 //  - atmosphere/kip_patches/fs_patches with .ips files (Atmosphère);
 //  - sys-patch, the system module that patches as the console runs (contents/420000000000000B);
-//  - FS patches in bootloader/patches.ini (Hekate's fss0).
+//  - FS patches in bootloader/patches.ini (Hekate's fss0);
+//  - an Atmosphère with the patches inside it, which leaves no file of them (the fork of
+//    borntohonk, "Atmosphère+", made for firmware 23.5.0, where the .ips of 23.0 no longer apply).
 struct Sigpatches {
     bool found = false;
     std::string how; // which of them, for the screen
 };
-// `sd` is the root of the SD card ("sdmc:" on the console, a folder on the computer).
-Sigpatches FindSigpatches(const std::string& sd);
+// `sd` is the root of the SD card ("sdmc:" on the console, a folder on the computer); `embedded`,
+// what AtmosphereEmbedsPatches() said.
+Sigpatches FindSigpatches(const std::string& sd, bool embedded = false);
+
+// Whether the running Atmosphère patches the signatures by itself (asked of exosphère once, on
+// the console; false on the computer).
+bool AtmosphereEmbedsPatches();
 
 // The look for sigpatches, kept: the SD card is read the first time they are asked for, and again
 // only after Refresh (NXDock back in focus: they may have been put on the SD card meanwhile).
