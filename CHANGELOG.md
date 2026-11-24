@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The newest version of each update is known again: the list comes from the titledb that is still updated.
+
 ## 0.9.0-beta.12
 
 These changes have not been tested in depth yet, so some bugs may remain.
