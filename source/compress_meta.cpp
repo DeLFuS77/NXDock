@@ -5,6 +5,10 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -41,7 +45,39 @@ int CountIps(const std::string& dir) {
     return n;
 }
 
+// Whether a file holds a text, read a piece at a time (a template of a few KB).
+bool FileHas(const std::string& path, const char* text) {
+    FILE* f = std::fopen(path.c_str(), "r");
+    if (!f) return false;
+    std::string all;
+    char buf[1024];
+    size_t n;
+    while (all.size() < 256 * 1024 && (n = std::fread(buf, 1, sizeof(buf), f)) > 0) all.append(buf, n);
+    std::fclose(f);
+    return all.find(text) != std::string::npos;
+}
+
 } // namespace
+
+bool AtmosphereEmbedsPatches() {
+#ifdef __SWITCH__
+    // the Atmosphère of borntohonk ("Atmosphère+") patches the file system inside mesosphère and
+    // loader, with no file on the SD card; its exosphère answers two settings of its own (65013, the
+    // patches turned off, and 65014), which the Atmosphère of Atmosphere-NX refuses
+    static int known = -1;
+    if (known < 0) {
+        known = 0;
+        if (R_SUCCEEDED(splInitialize())) {
+            u64 v = 0;
+            if (R_SUCCEEDED(splGetConfig(SplConfigItem(65013), &v))) known = 1;
+            splExit();
+        }
+    }
+    return known == 1;
+#else
+    return false;
+#endif
+}
 
 std::vector<CompressedGame> LoadCompressed(const std::string& path) {
     std::vector<CompressedGame> out;
@@ -74,8 +110,15 @@ bool SaveCompressed(const std::string& path, const std::vector<CompressedGame>& 
     return std::rename(tmp.c_str(), path.c_str()) == 0;
 }
 
-Sigpatches FindSigpatches(const std::string& sd) {
+Sigpatches FindSigpatches(const std::string& sd, bool embedded) {
     Sigpatches s;
+    // the patches inside Atmosphère: asked on the console, else told by the template of its
+    // exosphere.ini, which only that Atmosphère has with the settings of its patches
+    if (embedded || FileHas(sd + "/atmosphere/config_templates/exosphere.ini", "enable_es_patches")) {
+        s.found = true;
+        s.how = "Atmosphère+";
+        return s;
+    }
     if (CountIps(sd + "/atmosphere/kip_patches/fs_patches") > 0) {
         s.found = true;
         s.how = "atmosphere/kip_patches/fs_patches";
@@ -102,7 +145,7 @@ Sigpatches FindSigpatches(const std::string& sd) {
 
 const Sigpatches& SigpatchCache::Get(const std::string& sd) {
     if (!m_read) {
-        m_found = FindSigpatches(sd);
+        m_found = FindSigpatches(sd, AtmosphereEmbedsPatches());
         m_read = true;
     }
     return m_found;

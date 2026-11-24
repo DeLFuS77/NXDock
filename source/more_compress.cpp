@@ -43,7 +43,7 @@ unsigned long long DlcSaved(const std::vector<CompressedGame>& marks, unsigned l
 
 void App::OpenCompress() {
     if (!m_compress) m_compress = std::make_unique<Compressor>();
-    m_sigpatches = FindSigpatches("sdmc:");
+    m_sigpatches = FindSigpatches("sdmc:", AtmosphereEmbedsPatches());
     m_prodkeys = false;
     for (const char* path : {"sdmc:/switch/prod.keys", "sdmc:/prod.keys"}) {
         if (FILE* f = std::fopen(path, "r")) {
