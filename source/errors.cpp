@@ -12,6 +12,8 @@ namespace {
 
 constexpr char kSep = '\x1f';
 constexpr u32 kModuleFs = 2, kModuleNcm = 5;
+// RomNcaHeaderSignature1VerificationFailed (2-4058, 0x1FB402) and NcaHeaderSignature1VerificationFailed (2-4543)
+constexpr u32 kFsRomNcaHeaderSignature1 = 4058, kFsNcaHeaderSignature1 = 4543;
 
 std::string Size(unsigned long long bytes) {
     char t[32];
@@ -125,6 +127,10 @@ ErrorText ExplainError(unsigned rc, const ErrorContext& ctx) {
         // the file system has no room left (UsableSpaceNotEnough)
         if (ctx.nand) set(m.e_space_nand_t, Format(m.e_space_nand_w, Size(ctx.needed), free_text), m.e_space_nand_d);
         else set(m.e_space_t, Format(m.e_space_w, Size(ctx.needed), free_text), m.e_space_d);
+    } else if (module == kModuleFs && (desc == kFsRomNcaHeaderSignature1 || desc == kFsNcaHeaderSignature1)) {
+        // the signature of the header of an NCA: content that was converted or changed, which only
+        // passes with sigpatches for this firmware; not the card
+        set(m.e_signature_t, m.e_signature_w, m.e_signature_d);
     } else if (module == kModuleFs || module == kModuleNcm) {
         set(m.e_storage_t, m.e_storage_w, m.e_storage_d);
     } else {
