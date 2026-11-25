@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.15
+
+These changes have not been tested in depth yet, so some bugs may remain.
 
 - Going on with an update after the console went off no longer copies the saves and checks the mods a second time:
   that was done before the install stopped (#4, thanks @TerrorSource).
