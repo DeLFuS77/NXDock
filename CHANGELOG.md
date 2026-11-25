@@ -7,6 +7,11 @@
 - The log of an install that stopped is kept as install-stopped.log next to the new one, and goes with a report.
 - When the same install stops again on its way, NXDock says so in orange and puts Discard in focus, with "Try once
   more" beside it; opened from the Album, it also points to the HOME shortcut, which has more memory.
+- Opened from the Album, an install takes much less memory: about 36 MiB less up front for each part, and smaller
+  rounds for the threads. When memory still runs out, the install ends with the "Not enough memory" error instead of
+  closing NXDock and the HOME menu with it (#4).
+- A compressed part whose stream is only a few bytes long installs whole.
+- Ending an install no longer lets two of its threads into the same buffer at once, which could close NXDock.
 
 ## 0.9.0-beta.14
 

@@ -28,11 +28,13 @@
 #include "merged_updates.hpp"
 #include "update_over_game.hpp"
 #include "heap_lend.hpp"
+#include "install_buffers.hpp"
 
 #define ZSTD_STATIC_LINKING_ONLY // ZSTD_createDCtx_advanced, for the allocator of heap_lend.hpp
 #include <zstd.h>
 #include <algorithm>
 #include <atomic>
+#include <new>
 #include <cstring>
 #include <strings.h>
 
@@ -94,57 +96,7 @@ struct Yati;
 
 const u64 INFLATE_BUFFER_MAX = 1024*1024*4;
 
-struct ThreadBuffer {
-    ThreadBuffer() {
-        buf.reserve(INFLATE_BUFFER_MAX);
-    }
-
-    std::vector<u8> buf;
-    s64 off;
-};
-
-template<std::size_t Size>
-struct RingBuf {
-private:
-    ThreadBuffer buf[Size]{};
-    unsigned r_index{};
-    unsigned w_index{};
-
-    static_assert((sizeof(RingBuf::buf) & (sizeof(RingBuf::buf) - 1)) == 0, "Must be power of 2!");
-
-public:
-    void ringbuf_reset() {
-        this->r_index = this->w_index;
-    }
-
-    unsigned ringbuf_capacity() const {
-        return sizeof(this->buf) / sizeof(this->buf[0]);
-    }
-
-    unsigned ringbuf_size() const {
-        return (this->w_index - this->r_index) % (ringbuf_capacity() * 2U);
-    }
-
-    unsigned ringbuf_free() const {
-        return ringbuf_capacity() - ringbuf_size();
-    }
-
-    void ringbuf_push(std::vector<u8>& buf_in, s64 off_in) {
-        auto& value = this->buf[this->w_index % ringbuf_capacity()];
-        value.off = off_in;
-        std::swap(value.buf, buf_in);
-
-        this->w_index = (this->w_index + 1U) % (ringbuf_capacity() * 2U);
-    }
-
-    void ringbuf_pop(std::vector<u8>& buf_out, s64& off_out) {
-        auto& value = this->buf[this->r_index % ringbuf_capacity()];
-        off_out = value.off;
-        std::swap(value.buf, buf_out);
-
-        this->r_index = (this->r_index + 1U) % (ringbuf_capacity() * 2U);
-    }
-};
+// NXDock: the rings of buffers between the threads are in install_buffers.hpp (#4).
 
 struct ThreadData {
     ThreadData(Yati* _yati, std::span<TikCollection> _tik, NcaCollection* _nca)
@@ -176,6 +128,17 @@ struct ThreadData {
         }
 
         max_buffer_size = std::max(read_buffer_size, INFLATE_BUFFER_MAX);
+
+        // NXDock: as an applet, two buffers in each ring, taken as they fill; as an application,
+        // four of 4 MiB taken now. Eight of 4 MiB up front left too little of the applet heap
+        // beside the window of a long-window NSZ (#4).
+        if (env::IsAppletMode()) {
+            read_buffers.Limit(2, 0);
+            write_buffers.Limit(2, 0);
+        } else {
+            read_buffers.Limit(4, INFLATE_BUFFER_MAX);
+            write_buffers.Limit(4, INFLATE_BUFFER_MAX);
+        }
     }
 
     auto GetResults() volatile -> Result;
@@ -246,7 +209,7 @@ struct ThreadData {
 
         mutexLock(std::addressof(read_mutex));
         ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
-        while (!read_buffers.ringbuf_free()) {
+        while (!read_buffers.Free()) {
             R_TRY(GetResults());
             if (!decompress_running) {
                 R_SUCCEED();
@@ -255,14 +218,14 @@ struct ThreadData {
         }
 
         R_TRY(GetResults());
-        read_buffers.ringbuf_push(buf, off);
+        read_buffers.Push(buf, off);
         return condvarWakeOne(std::addressof(can_decompress));
     }
 
     Result GetDecompressBuf(std::vector<u8>& buf_out, s64& off_out) {
         mutexLock(std::addressof(read_mutex));
         ON_SCOPE_EXIT(mutexUnlock(std::addressof(read_mutex)));
-        while (!read_buffers.ringbuf_size()) {
+        while (!read_buffers.Used()) {
             R_TRY(GetResults());
             if (!read_running) {
                 buf_out.resize(0);
@@ -272,7 +235,7 @@ struct ThreadData {
         }
 
         R_TRY(GetResults());
-        read_buffers.ringbuf_pop(buf_out, off_out);
+        read_buffers.Pop(buf_out, off_out);
         return condvarWakeOne(std::addressof(can_read));
     }
 
@@ -286,7 +249,7 @@ struct ThreadData {
 
         mutexLock(std::addressof(write_mutex));
         ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
-        while (!write_buffers.ringbuf_free()) {
+        while (!write_buffers.Free()) {
             R_TRY(GetResults());
             if (!write_running) {
                 R_SUCCEED();
@@ -295,14 +258,14 @@ struct ThreadData {
         }
 
         R_TRY(GetResults());
-        write_buffers.ringbuf_push(buf, 0);
+        write_buffers.Push(buf, 0);
         return condvarWakeOne(std::addressof(can_write));
     }
 
     Result GetWriteBuf(std::vector<u8>& buf_out, s64& off_out) {
         mutexLock(std::addressof(write_mutex));
         ON_SCOPE_EXIT(mutexUnlock(std::addressof(write_mutex)));
-        while (!write_buffers.ringbuf_size()) {
+        while (!write_buffers.Used()) {
             R_TRY(GetResults());
             if (!decompress_running) {
                 buf_out.resize(0);
@@ -312,7 +275,7 @@ struct ThreadData {
         }
 
         R_TRY(GetResults());
-        write_buffers.ringbuf_pop(buf_out, off_out);
+        write_buffers.Pop(buf_out, off_out);
         return condvarWakeOne(std::addressof(can_decompress_write));
     }
 
@@ -335,8 +298,8 @@ struct ThreadData {
     UEvent m_uevent_done{};
     UEvent m_uevent_progres{};
 
-    RingBuf<4> read_buffers{};
-    RingBuf<4> write_buffers{};
+    nxdock::BufferRing<4> read_buffers{};
+    nxdock::BufferRing<4> write_buffers{};
 
     ncz::BlockHeader ncz_block_header{};
     std::vector<ncz::Section> ncz_sections{};
@@ -445,9 +408,9 @@ void ThreadData::WakeAllThreads() {
     condvarWakeAll(std::addressof(can_decompress));
     condvarWakeAll(std::addressof(can_decompress_write));
     condvarWakeAll(std::addressof(can_write));
-
-    mutexUnlock(std::addressof(read_mutex));
-    mutexUnlock(std::addressof(write_mutex));
+    // NXDock: only woken. The mutexes are held by the threads, never by the one that wakes them:
+    // unlocking one held by another thread let two of them into the ring at once. Every wait has
+    // a timeout and looks at the other side before it waits again (#4).
 }
 
 Result ThreadData::Read(void* buf, s64 size, u64* bytes_read) {
@@ -536,7 +499,7 @@ Result Yati::readFuncInternal(ThreadData* t) {
     // mode, so we instead store the data to the temp buffer and pre-pend it.
     std::vector<u8> temp_buf;
     buf.reserve(t->max_buffer_size);
-    temp_buf.reserve(t->max_buffer_size);
+    // NXDock: temp_buf holds a few bytes at most (a block header): nothing is taken for it (#4).
 
     // NXDock: the whole NCA is read in order from here.
     t->yati->source->HintRange(t->nca->offset, t->nca->size);
@@ -598,8 +561,8 @@ Result Yati::readFuncInternal(ThreadData* t) {
                 R_UNLESS(t->ncz_block_header.magic != NCZ_BLOCK_MAGIC || header.magic != NCZ_SECTION3_MAGIC, Result_NczBadTable);
                 if (t->ncz_block_header.magic != NCZ_BLOCK_MAGIC) {
                     // didn't find block, keep the data we just read in the temp buffer.
-                    temp_buf.resize(sizeof(t->ncz_block_header));
-                    std::memcpy(temp_buf.data(), std::addressof(t->ncz_block_header), temp_buf.size());
+                    // NXDock: only the bytes read; a stream shorter than a block header ends there (#4).
+                    nxdock::KeepLookedAhead(temp_buf, std::addressof(t->ncz_block_header), size_t(bytes_read));
                     log_write("storing temp data of size: %zu\n", temp_buf.size());
                 } else {
                     // validate block header.
@@ -633,6 +596,13 @@ Result Yati::readFuncInternal(ThreadData* t) {
         }
 
         R_TRY(t->SetDecompressBuf(buf, buffer_offset, buf_size));
+    }
+
+    // NXDock: the bytes read while looking for a block header, when the stream ended with them
+    // (a solid NCZ of a block header or less), go to the decompressor too (#4).
+    if (!temp_buf.empty() && R_SUCCEEDED(t->GetResults())) {
+        log_write("[NCZ] the last %zu bytes of the stream\n", temp_buf.size());
+        R_TRY(t->SetDecompressBuf(temp_buf, t->read_offset.load() - s64(temp_buf.size()), s64(temp_buf.size())));
     }
 
     log_write("read success\n");
@@ -848,6 +818,11 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
     std::vector<BlockJob> batch{};
     u64 batch_bytes{};
     BlockJob current{};
+    // NXDock: as an applet a round hands half as much to the threads: what it holds, in and out,
+    // is taken from the small heap of the Album beside the window of the stream (#4).
+    const bool applet = env::IsAppletMode();
+    const u64 batch_max = applet ? PARALLEL_BATCH_BYTES / 2 : PARALLEL_BATCH_BYTES;
+    const u64 lz4_batch_max = applet ? LZ4_BATCH_BYTES / 2 : LZ4_BATCH_BYTES;
 
     // NXDock: an NCZSECT3: its stream is cut into bytes as they are and LZ4 blocks to make again,
     // which are made on the threads a batch at a time.
@@ -1139,7 +1114,7 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                         batch.emplace_back(std::move(current));
                         current = {};
                         ncz_block = nullptr;
-                        if (batch_bytes >= PARALLEL_BATCH_BYTES || batch.size() >= PARALLEL_BATCH_BLOCKS) {
+                        if (batch_bytes >= batch_max || batch.size() >= PARALLEL_BATCH_BLOCKS) {
                             R_TRY(run_batch());
                         }
                     }
@@ -1218,7 +1193,7 @@ Result Yati::decompressFuncInternal(ThreadData* t) {
                                 lz4_batch_bytes += job.in.size();
                                 lz4_batch.emplace_back(std::move(job));
                             }
-                            if (lz4_batch_bytes >= LZ4_BATCH_BYTES || lz4_batch.size() >= LZ4_BATCH_JOBS) {
+                            if (lz4_batch_bytes >= lz4_batch_max || lz4_batch.size() >= LZ4_BATCH_JOBS) {
                                 R_TRY(run_lz4());
                             }
                             continue;
@@ -1319,22 +1294,35 @@ Result Yati::writeFuncInternal(ThreadData* t) {
     R_SUCCEED();
 }
 
+// NXDock: memory that runs out in a thread of the install is an error of the install, not the
+// end of NXDock. Opened from the Album, NXDock ending also closes the HOME menu (2144-0001, #4).
+template <typename F>
+Result OutOfMemoryIsAnError(const char* thread, F&& run) {
+    try {
+        return run();
+    } catch (const std::bad_alloc&) {
+        log_write("[NXDock] the %s thread ran out of memory\n", thread);
+        nxdock_log_memory("when it ran out");
+        return Result_OutOfMemory;
+    }
+}
+
 void readFunc(void* d) {
     auto t = static_cast<ThreadData*>(d);
-    t->SetReadResult(t->yati->readFuncInternal(t));
+    t->SetReadResult(OutOfMemoryIsAnError("read", [t] { return t->yati->readFuncInternal(t); }));
     log_write("read thread returned now\n");
 }
 
 void decompressFunc(void* d) {
     log_write("hello decomp thread func\n");
     auto t = static_cast<ThreadData*>(d);
-    t->SetDecompressResult(t->yati->decompressFuncInternal(t));
+    t->SetDecompressResult(OutOfMemoryIsAnError("decompress", [t] { return t->yati->decompressFuncInternal(t); }));
     log_write("decompress thread returned now\n");
 }
 
 void writeFunc(void* d) {
     auto t = static_cast<ThreadData*>(d);
-    t->SetWriteResult(t->yati->writeFuncInternal(t));
+    t->SetWriteResult(OutOfMemoryIsAnError("write", [t] { return t->yati->writeFuncInternal(t); }));
     log_write("write thread returned now\n");
 }
 
