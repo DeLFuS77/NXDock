@@ -15,6 +15,8 @@ extern "C" {
 
 void log_write(const char* s, ...) __attribute__((format(printf, 1, 2)));
 void log_write_arg(const char* s, va_list* v);
+// the memory at hand, as a line of the log (yati_env.cpp)
+void nxdock_log_memory(const char* when);
 
 #ifdef __cplusplus
 }
