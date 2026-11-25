@@ -309,7 +309,8 @@ void App::CheckResume() {
     if (!LoadResume(kResumeDir, *state)) return;
     m_resume = std::move(state);
     OpenDialog(DialogKind::Resume);
-    m_dialog.focus = 1;
+    // going on in focus; Discard when the same install already stopped again on its way (#4, A)
+    m_dialog.focus = !KeptForLater(*m_resume) && ResumeTries(m_resume->job) >= 2 ? 2 : 1;
 }
 
 void App::FollowQueueAsk() {

@@ -631,6 +631,7 @@ public:
 private:
     struct DialogContent {
         std::string title, body, note, primary, error;
+        std::string warn; // a warning that is not an error: in orange, above the note (#4)
         std::vector<DialogLine> lines;
         bool can = true, bar = false;
         bool verify_bar = false, verify_running = false;
