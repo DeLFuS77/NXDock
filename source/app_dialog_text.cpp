@@ -336,6 +336,18 @@ App::Fill App::DialogInstallText(DialogContent& dc) {
             dc.note = m.rs_note;
             dc.primary = m.rs_go;
             dc.cancel_label = m.rs_later;
+            // the same install stopped again on its way: said in orange, discarding in focus (#4, A)
+            const int tries = m_resume && !KeptForLater(*m_resume) ? ResumeTries(m_resume->job) : 1;
+            if (tries >= 2) {
+                dc.title = m.rs_again_title;
+                const std::string where = std::string(s.settings) + " \xE2\x80\xBA " + m.rp_row;
+                char text[400];
+                std::snprintf(text, sizeof(text), m.rs_again_fmt, tries, where.c_str());
+                dc.warn = text;
+                // opened from the Album: the HOME shortcut, with more memory, is said too
+                if (net::IsAppletMode()) dc.warn += std::string("\n") + m.rs_again_applet;
+                dc.primary = m.rs_again_go;
+            }
             break;
         }
         case DialogKind::QueueCancel: {

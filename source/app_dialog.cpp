@@ -95,10 +95,11 @@ void App::DrawDialog(NVGcontext* vg) {
     const float lp = std::any_of(lines.begin(), lines.end(), [](const Line& l) { return l.hit >= 0; }) ? 48.f : 40.f;
     const float body_h = body.empty() ? 0 : BoxHeight(vg, iw, 17, body.c_str()) + 16;
     const float note_h = note.empty() ? 0 : BoxHeight(vg, iw, 15, note.c_str()) + 14;
+    const float warn_h = dc.warn.empty() ? 0 : BoxHeight(vg, iw, 15, dc.warn.c_str()) + 14;
     const float err_h = error.empty() ? 0 : ErrorCard(vg, t, 0, 0, iw, error, false) + 14;
     // a QR code (5B): a square with what it opens beside it
     const float qr_s = 140, qr_h = dc.qr.empty() ? 0.f : qr_s + 18;
-    const float rest = pad + 40 + body_h + qr_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + note_h + tick_h + 60 + pad - 8;
+    const float rest = pad + 40 + body_h + qr_h + (bar ? 64 : 0) + (verify_bar ? 54 : 0) + err_h + warn_h + note_h + tick_h + 60 + pad - 8;
     // as many rows as fit with the buttons on the screen: fewer rows, and "and N more" grows
     const float room = kHeight - 56 - 2 * 24;
     const int shown = lines.empty() ? 0 : RowsThatFit(int(lines.size()), cap, rest + 12 + 16, lp, 30, room);
@@ -269,6 +270,10 @@ void App::DrawDialog(NVGcontext* vg) {
     if (!error.empty()) {
         ErrorCard(vg, t, x + pad, cy, iw, error, true);
         cy += err_h;
+    }
+    if (!dc.warn.empty()) {
+        TextBox(vg, x + pad, cy, iw, 15, t.warn, dc.warn.c_str());
+        cy += warn_h;
     }
     if (!note.empty()) {
         TextBox(vg, x + pad, cy, iw, 15, t.muted, note.c_str());

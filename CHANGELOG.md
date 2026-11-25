@@ -5,6 +5,8 @@
 - Going on with an update after the console went off no longer copies the saves and checks the mods a second time:
   that was done before the install stopped (#4, thanks @TerrorSource).
 - The log of an install that stopped is kept as install-stopped.log next to the new one, and goes with a report.
+- When the same install stops again on its way, NXDock says so in orange and puts Discard in focus, with "Try once
+  more" beside it; opened from the Album, it also points to the HOME shortcut, which has more memory.
 
 ## 0.9.0-beta.14
 
