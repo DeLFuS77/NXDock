@@ -151,6 +151,30 @@ int main(int argc, char** argv) {
         ResumePartOf(s, "A").checked = true;
         CHECK(s.parts.size() == 1 && s.parts[0].size == 5 && s.parts[0].checked);
     }
+    {
+        // #4: an update goes on after a stop without its saves copied again or its mods looked at
+        // again; a job that never got that far (one that waited) does both
+        const StepsBefore fresh = StepsBeforeInstall(true, false, false);
+        CHECK(fresh.mods && fresh.saves);
+        const StepsBefore again = StepsBeforeInstall(true, false, true);
+        CHECK(!again.mods && !again.saves);
+        const StepsBefore repair = StepsBeforeInstall(false, true, false);
+        CHECK(!repair.mods && repair.saves);
+        const StepsBefore game = StepsBeforeInstall(false, false, false);
+        CHECK(!game.mods && !game.saves);
+    }
+    {
+        // #4: the starts of the job of the journal, kept through a save and a load
+        ResumeState s = Sample();
+        CHECK(ResumeTries(s.job) == 1); // a journal of before the count
+        ResumeSetTries(s.job, 2);
+        ResumeState r;
+        CHECK(ParseResume(FormatResume(s), r) && ResumeTries(r.job) == 2);
+        r.job.fields["tries"] = "x";
+        CHECK(ResumeTries(r.job) == 1);
+        ResumeSetTries(r.job, 0);
+        CHECK(ResumeTries(r.job) == 1);
+    }
     std::printf(failures ? "%d failed\n" : "resume: all passed\n", failures);
     return failures ? 1 : 0;
 }

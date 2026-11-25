@@ -256,6 +256,23 @@ ResumePart& ResumePartOf(ResumeState& state, const std::string& content_id) {
     return state.parts.back();
 }
 
+StepsBefore StepsBeforeInstall(bool update, bool repair, bool done_before) {
+    StepsBefore s;
+    if (done_before) return s;
+    s.mods = update && !repair;
+    s.saves = update || repair;
+    return s;
+}
+
+int ResumeTries(const ResumeJob& job) {
+    const auto it = job.fields.find("tries");
+    if (it == job.fields.end()) return 1; // a journal of a version before the count: one start
+    const int n = std::atoi(it->second.c_str());
+    return n < 1 ? 1 : n;
+}
+
+void ResumeSetTries(ResumeJob& job, int tries) { job.fields["tries"] = std::to_string(tries < 1 ? 1 : tries); }
+
 int ResumeChecked(const ResumeState& state, long long* bytes) {
     int n = 0;
     long long b = 0;

@@ -65,6 +65,21 @@ ResumePart& ResumePartOf(ResumeState& state, const std::string& content_id);
 // The checked parts, and their bytes.
 int ResumeChecked(const ResumeState& state, long long* bytes = nullptr);
 
+// What a job does before it installs: the cheats and mods an update would break (19A), and the
+// copy of the saves before an update or a repair (18A). A job taken from a journal that says both
+// were done does not do them again (#4); one that never got that far (a job that waited, or one
+// left while it asked) does them.
+struct StepsBefore {
+    bool mods = false;
+    bool saves = false;
+};
+StepsBefore StepsBeforeInstall(bool update, bool repair, bool done_before);
+
+// How many times the job of the journal started: 1 the first time, one more each time NXDock
+// goes on with it. Two or more, and a journal found again, means it stopped again on its way (#4).
+int ResumeTries(const ResumeJob& job);
+void ResumeSetTries(ResumeJob& job, int tries);
+
 std::string ResumeHex(const void* data, size_t size);
 bool ResumeUnhex(const std::string& hex, void* out, size_t size);
 
