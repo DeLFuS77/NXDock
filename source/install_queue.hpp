@@ -52,6 +52,7 @@ struct InstallJob {
     bool downgrade = false;   // an older update in place of the one installed (20A)
     bool resumable = false;   // a journal is kept, to go on if the console goes off (23A)
     bool resumed = false;     // going on from the journal
+    bool before_done = false; // the cheats and mods were looked at and the saves copied (#4)
     State state = State::Waiting;
     std::string error;  // why it failed, as shown
     double seconds = 0; // how long it took

@@ -296,6 +296,7 @@ ResumeJob ToResume(const InstallJob& j) {
     f["version"] = std::to_string(j.version);
     f["downgrade"] = j.downgrade ? "1" : "0";
     f["firmware_ok"] = j.firmware_ok ? "1" : "0";
+    f["before"] = j.before_done ? "1" : "0";
     r.parts = j.parts;
     return r;
 }
@@ -330,6 +331,7 @@ InstallJob FromResume(const ResumeJob& r, const std::string& key, const std::str
     j.version = u32(std::strtoul(get("version").c_str(), nullptr, 10));
     j.downgrade = get("downgrade") == "1";
     j.firmware_ok = get("firmware_ok") == "1";
+    j.before_done = get("before") == "1";
     j.checked = true; // asked about before the console went off
     j.parts = r.parts;
     j.resumable = true;
@@ -819,6 +821,11 @@ void InstallQueue::RunJob(InstallJob& job) {
 
     // the CPU at its fast clock and the console awake until the job ends
     net::Boost boost;
+    if (job.resumed) {
+        // the log of the install that stopped is kept beside the new one, for a report (#4)
+        std::remove("sdmc:/switch/NXDock/install-stopped.log");
+        std::rename("sdmc:/switch/NXDock/install.log", "sdmc:/switch/NXDock/install-stopped.log");
+    }
     nxdock_log_open("sdmc:/switch/NXDock/install.log");
     log_write("[NXDock] %s: %s (%s) %s\n", NXDOCK_VERSION, job.game.c_str(), job.label.c_str(), job.format.c_str());
     nxdock_log_memory("at the start");
@@ -828,13 +835,24 @@ void InstallQueue::RunJob(InstallJob& job) {
     options.connections = ConnectionsFor(connections, applet);
     options.piece = applet ? 1024 * 1024 : 8 * 1024 * 1024;
     options.ahead = 2;
-    // the saves first, before an update or a repair (18A); a failed copy asks the user
+    // the saves first, before an update or a repair (18A); a failed copy asks the user. Going on
+    // after a stop, they were done already (#4)
     bool go_on = true;
-    if (job.kind == CatalogFile::Kind::Update && job.repair.empty()) {
+    const StepsBefore steps = StepsBeforeInstall(job.kind == CatalogFile::Kind::Update, !job.repair.empty(), job.before_done);
+    if (job.before_done) log_write("[NXDock] going on: the saves and mods were seen to before it stopped\n");
+    if (steps.mods) {
         go_on = ModsBefore(job.title_id & ~0x1FFFull, job.version, job.game);
     }
-    if (go_on && (job.kind == CatalogFile::Kind::Update || !job.repair.empty())) {
+    if (go_on && steps.saves) {
         go_on = CopyBefore(job.title_id & ~0x1FFFull, job.downgrade ? 3 : job.repair.empty() ? 0 : 1, job.version, job.game);
+    }
+    if (go_on) {
+        job.before_done = true;
+        // also on the job of the list, which is what is kept when another app is opened (22A)
+        std::lock_guard lock(m_mutex);
+        for (auto& j : m_jobs) {
+            if (j.id == job.id) j.before_done = true;
+        }
     }
     Result rc = go_on ? Result(0) : Result(Result_TransferCancelled);
     // the journal, to go on if the console goes off (23A): files from the library or a disk
@@ -842,13 +860,18 @@ void InstallQueue::RunJob(InstallJob& job) {
     std::mutex journal_mutex;
     const bool journaled = go_on && job.resumable && (job.origin == InstallJob::Origin::Library || job.origin == InstallJob::Origin::File);
     if (journaled) {
+        int tries = 1;
         if (job.resumed && LoadResume(kResumeDir, journal)) {
             // parts cut half way are written again: their placeholders go now
             DeletePlaceholders(ResumeTakeCut(journal));
+            tries = ResumeTries(journal.job) + 1;
         } else {
             journal = ResumeState{};
         }
         journal.job = ToResume(job);
+        // how many times it started: one that stops again on its way is said so (#4)
+        ResumeSetTries(journal.job, tries);
+        log_write("[NXDock] start %d of this install\n", tries);
         journal.waiting.clear();
         {
             std::lock_guard lock(m_mutex);

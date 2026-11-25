@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Going on with an update after the console went off no longer copies the saves and checks the mods a second time:
+  that was done before the install stopped (#4, thanks @TerrorSource).
+- The log of an install that stopped is kept as install-stopped.log next to the new one, and goes with a report.
+
 ## 0.9.0-beta.14
 
 These changes have not been tested in depth yet, so some bugs may remain.
