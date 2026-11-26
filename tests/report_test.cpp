@@ -4,7 +4,8 @@
 // The report for the library app on an SD card made up here: only the logs of NXDock, its history
 // and the newest crash reports go in (never keys, configuration or anything else), a long log
 // keeps its end and a long crash report its start, info.txt says what it should, and the zip,
-// deflated, reads back byte for byte.
+// deflated, reads back byte for byte; and what is taken out of them on the way (#4): URLs, hosts,
+// IP addresses, keys and pins, the names of games and of files, while the IDs, sizes and codes stay.
 #include "brand.hpp"
 #include "report.hpp"
 #include "zip.hpp"
@@ -152,6 +153,130 @@ int main(int argc, char** argv) {
     CHECK(got["crash_reports/" + newest] == crashes[newest].substr(0, report::kMaxCrash));
     CHECK(got["crash_reports/" + oldest] == crashes[oldest]);
     for (const auto& [name, text] : got) CHECK(text.find("master_key") == std::string::npos && text.find("secret") == std::string::npos);
+
+    // what is taken out (#4): addresses, the names of games and of files; IDs, sizes and codes stay
+    {
+        using report::RedactAddresses;
+        using report::RedactLine;
+        const auto same = [](const std::string& line) { return RedactLine(line) == line; };
+        // 1. URLs, hosts with a port, IPv4, IPv6, MAC, keys and tokens, pins
+        CHECK(RedactAddresses("shop https://shop.example.net:8443/api/list?id=7 answered 0x0") == "shop <address> answered 0x0");
+        CHECK(RedactAddresses("(see http://10.0.0.5/x).") == "(see <address>).");
+        CHECK(RedactAddresses("ftp://user:pw@files.lan/a b") == "<address> b");
+        CHECK(RedactAddresses("library at 192.168.1.20:3030, ok") == "library at <address>, ok");
+        CHECK(RedactAddresses("from 10.1.2.3") == "from <address>");
+        CHECK(RedactAddresses("nas:3030 and mybox.local and localhost:8080 and media.example.com") ==
+              "<address> and <address> and <address> and <address>");
+        CHECK(RedactAddresses("v6 fe80::1c2b:3cff:fe4d:5e6f%en0 and 2001:0db8:0000:0000:0000:ff00:0042:8329 and ::1") ==
+              "v6 <address>%en0 and <address> and <address>");
+        CHECK(RedactAddresses("wifi 3c:22:fb:10:aa:0e up") == "wifi <address> up");
+        CHECK(RedactAddresses("GET /list?key=abc123&page=2 token=zzz Password=hunter") == "GET /list?<address>&page=2 <address> <address>");
+        CHECK(RedactAddresses("Authorization: Bearer eyJhbGciOi.x.y") == "Authorization: <address>");
+        CHECK(RedactAddresses("https <address>: sha256//AbCd+/Ef0123456789=") == "https <address>: <address>");
+        // what is not an address stays as it was
+        for (const char* keep : {"[   12.34] [NXDock] 0.9.0-beta.15: start 1 of this install",
+                                 "2026-11-26 10:00:00 mods: deleted 0100A1B2C3D40000/romfs/a.bin",
+                                 "[NXDock] 0100A1B2C3D40000: done, 120 MB saved, firmware 19.0.1, result 0x2A3",
+                                 "Result: 2168-0002 at 17:20:00 UTC, X[00]: 0000007100004000 (main + 0x1234)",
+                                 "[NXDock] prod.keys: read (for Compress games)", "[NXDock] nxdock::report sent, install.log 4 MiB",
+                                 "[http] file: 12595257 bytes, 4 connections, pieces of 4194304",
+                                 "[NXDock] check: 0100A1B2C3D40800 v65536 has a damaged or missing part"}) {
+            CHECK(RedactAddresses(keep) == keep);
+            CHECK(same(keep));
+        }
+
+        // 2. the lines of NXDock with the name of a game (made-up names)
+        std::vector<std::string> names;
+        CHECK(RedactLine("[    0.01] [NXDock] 0.9.0-beta.15: Star Lantern Odyssey (USA) (Glimmer Pack) nsz", &names) ==
+              "[    0.01] [NXDock] 0.9.0-beta.15: <game> (<game>) nsz");
+        CHECK(RedactLine("[    0.01] [NXDock] 0.9.0-beta.15: Mossy Caverns DX (Base game) ", &names) ==
+              "[    0.01] [NXDock] 0.9.0-beta.15: <game> (<game>) ");
+        CHECK(RedactLine("[    3.50] [NXDock] removed Mossy Caverns DX (Update v1.2.0): 0x0", &names) ==
+              "[    3.50] [NXDock] removed <game> (<game>): 0x0");
+        CHECK(RedactLine("=== 0100A1B2C3D40000 Pocket Lighthouse ===", &names) == "=== 0100A1B2C3D40000 <game> ===");
+        CHECK(same("=== 0100A1B2C3D40000 merged with its update, after installing it ===") && same("=== the check of 3 games ==="));
+        CHECK(RedactLine("0100A1B2C3D40000 Pocket Lighthouse: hidden, no program (program 0 bytes)", &names) ==
+              "0100A1B2C3D40000 <game>: hidden, no program (program 0 bytes)");
+        CHECK(same("[NXDock] 0100A1B2C3D40000: contents not listed (program 1/1, CNMT 0/1 of the game/update)"));
+        CHECK(same("[NXDock] report: not sent (status 0, zip)") && same("[NXDock] 0100A1B2C3D40000: not compressed: Could not compress 2002-4058"));
+        const std::vector<std::string> want_names = {"Star Lantern Odyssey (USA)", "Glimmer Pack", "Mossy Caverns DX", "Base game",
+                                                     "Mossy Caverns DX", "Update v1.2.0", "Pocket Lighthouse", "Pocket Lighthouse"};
+        CHECK(names == want_names);
+        // the saves over MTP: the folder of the game and the file
+        CHECK(RedactLine("[   40.00] [NXDock] MTP: saves: Pocket Lighthouse [0100A1B2C3D40000]/Player 1.zip refused: 0100A1B2C3D40000 is running") ==
+              "[   40.00] [NXDock] MTP: saves: <game> [0100A1B2C3D40000]/<file> refused: 0100A1B2C3D40000 is running");
+        CHECK(RedactLine("2026-11-26 10:00:00 saves: receiving Mossy Caverns DX/Slot (2).zip (40960 bytes)") ==
+              "2026-11-26 10:00:00 saves: receiving <game>/<file> (40960 bytes)");
+        // paths: the folders of NXDock and the IDs stay, other folders and the names of files go
+        CHECK(RedactLine("[NCA] trying to read local ticket file: sdmc:/Games/Star Lantern (USA)/0100a1b2c3d40000000000000000000a.tik") ==
+              "[NCA] trying to read local ticket file: sdmc:/<folder>/<folder>/0100a1b2c3d40000000000000000000a.tik");
+        CHECK(RedactLine("[NXDock] HOME shortcut 0500A1B2C3D40000 installed for sdmc:/switch/Pocket Lighthouse.nro") ==
+              "[NXDock] HOME shortcut 0500A1B2C3D40000 installed for sdmc:/switch/<file>.nro");
+        CHECK(same("[NXDock] HOME shortcut 0500A1B2C3D40000 installed for sdmc:/switch/NXDock/NXDock.nro"));
+        CHECK(same("[NXDock] prod.keys: not found in sdmc:/switch/") && same("written to sdmc:/atmosphere/config/system_settings.ini, done"));
+        CHECK(RedactLine("copy ums0:/Backups/Mossy Caverns DX [0100A1B2C3D40000][v0].nsz to sdmc:/Inbox/x y.xci: ok") ==
+              "copy ums0:/<folder>/<file>.nsz to sdmc:/<folder>/<file>.xci: ok");
+        CHECK(RedactLine("from sdmc:/0100A1B2C3D40000[v0].nsp") == "from sdmc:/0100A1B2C3D40000[v0].nsp");
+
+        // 3. the names of the history looked for in the logs too
+        const std::string hist =
+            "1\t1763400000\tsd\t1000\t1200\t2.0\tok\tnsz\tStar Lantern Odyssey\tGlimmer Pack\t\n"
+            "1\t1763400100\tnand\t5000\t5000\t9.5\tfailed\tnsp\tLittle Ox\tv1.0.2 (65536)\tNot enough space\x1f" "2002-0021 at 10.0.0.9\n"
+            "old line\twithout\tthe version, http://nas.lan/x\n";
+        std::vector<std::string> hn;
+        report::CollectNames(hist, report::Kind::History, hn);
+        CHECK((hn == std::vector<std::string>{"Star Lantern Odyssey", "Glimmer Pack", "Little Ox", "v1.0.2 (65536)"}));
+        CHECK(report::Redact(hist, report::Kind::History, hn) ==
+              "1\t1763400000\tsd\t1000\t1200\t2.0\tok\tnsz\t<game>\t<game>\t\n"
+              "1\t1763400100\tnand\t5000\t5000\t9.5\tfailed\tnsp\t<game>\t<game>\tNot enough space\x1f" "2002-0021 at <address>\n"
+              "old line\twithout\tthe version, <address>\n");
+        const std::string log = "[    1.00] [XCI] the Star Lantern Odyssey part\n[    1.10] Little Ox and Glimmer Pack, v1.0.2 (65536), Ox\n";
+        CHECK(report::Redact(log, report::Kind::Log, hn) ==
+              "[    1.00] [XCI] the <game> part\n[    1.10] <game> and <game>, v1.0.2 (65536), Ox\n");
+        CHECK(report::RedactNames("a game named game", {"game", "ga", "Ox"}) == "a game named game"); // too short, or in <game>
+        // a crash report: its addresses only
+        CHECK(report::Redact("Atmosphere Crash Report (v4):\nStar Lantern Odyssey 10.0.0.9\n", report::Kind::Crash, hn) ==
+              "Atmosphere Crash Report (v4):\nStar Lantern Odyssey <address>\n");
+        CHECK(report::KindOf("logs/history.tsv") == report::Kind::History && report::KindOf("logs/install.log") == report::Kind::Log &&
+              report::KindOf("crash_reports/01763400006_0100000000001000.log") == report::Kind::Crash);
+
+        // and in the zip: the files on the card as they were, the zip without the names
+        const std::string sd2 = root + "/sd2";
+        std::system(("mkdir -p " + sd2 + "/switch/NXDock " + sd2 + "/atmosphere/crash_reports").c_str());
+        const std::string ilog = "[    0.01] [NXDock] 0.9.0-beta.15: Pocket Lighthouse (Base game) nsp\n"
+                                 "[    0.20] [NXDock] the library answered: 0x0, 40960 bytes from http://192.168.1.20:3030/install/x\n"
+                                 "[    0.30] [NXDock] Pocket Lighthouse, Star Lantern Odyssey\n";
+        Put(sd2 + "/switch/NXDock/install.log", ilog);
+        Put(sd2 + "/switch/NXDock/history.tsv", hist);
+        Put(sd2 + "/atmosphere/crash_reports/01763400000_0100A1B2C3D40000.log", "Crash at 10.0.0.9\n");
+        const std::string zpath = root + "/clean.zip";
+        CHECK(report::WriteZip(zpath, "info\n", report::Files(sd2)));
+        zip::Reader z;
+        CHECK(z.Open(zpath));
+        std::map<std::string, std::string> in;
+        for (const auto& e : z.Entries()) {
+            std::string out;
+            z.Extract(e, [&](const void* d, size_t n) {
+                out.append(static_cast<const char*>(d), n);
+                return true;
+            });
+            in[e.name] = out;
+        }
+        CHECK(in.size() == 4);
+        CHECK(in["logs/install.log"] == "[    0.01] [NXDock] 0.9.0-beta.15: <game> (<game>) nsp\n"
+                                        "[    0.20] [NXDock] the library answered: 0x0, 40960 bytes from <address>\n"
+                                        "[    0.30] [NXDock] <game>, <game>\n");
+        CHECK(in["crash_reports/01763400000_0100A1B2C3D40000.log"] == "Crash at <address>\n");
+        for (const auto& [name, text] : in) {
+            CHECK(text.find("Lighthouse") == std::string::npos && text.find("Lantern") == std::string::npos && text.find("Little Ox") == std::string::npos);
+            CHECK(text.find("192.168") == std::string::npos && text.find("nas.lan") == std::string::npos);
+        }
+        FILE* kept = std::fopen((sd2 + "/switch/NXDock/install.log").c_str(), "rb");
+        std::string card(ilog.size() + 10, '\0');
+        card.resize(kept ? std::fread(card.data(), 1, card.size(), kept) : 0);
+        if (kept) std::fclose(kept);
+        CHECK(card == ilog); // the file on the card stays as it is
+    }
 
     // the deflate of the writer: data that does not pack, an empty file, and one stored next to it
     {

@@ -50,7 +50,8 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$src:/src" -w /src devkitpro/devkita64 sh
   # mod packages put and taken away
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -o /tmp/mods_test tests/mods_test.cpp source/mods.cpp source/zip.cpp /usr/lib/x86_64-linux-gnu/libz.so.1
   /tmp/mods_test
-  # the report for the library: only the logs, the history and the newest crash reports, deflated
+  # the report for the library: only the logs, the history and the newest crash reports, deflated,
+  # without the names of games and files nor addresses (#4)
   g++ -std=c++20 -Wall -Wextra -O1 -Isource -I/tmp/zinc -o /tmp/report_test tests/report_test.cpp source/report.cpp source/zip.cpp /usr/lib/x86_64-linux-gnu/libz.so.1
   /tmp/report_test /tmp
   # the MTP responder of NXDock, with a fake cable
