@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-beta.16
+
+These changes have not been tested in depth yet, so some bugs may remain.
 
 - Send a report leaves out game names, addresses of the library and of shops, and IP addresses from the logs and
-  the history (#4).
+  the history (#4, thanks @TerrorSource).
 
 ## 0.9.0-beta.15
 
